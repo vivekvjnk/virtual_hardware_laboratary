@@ -6,6 +6,7 @@ This project provides a Python package for managing and running ngspice simulati
 ## Features
 
 *   **ngspice Simulation Management**: Facilitates the setup, execution, and analysis of ngspice circuit simulations.
+*   **Model and Control Upload**: Allows users to upload their own ngspice model and control template files (`.j2`) to the server.
 *   **Web Interface/API**: Built with FastAPI, allowing for interaction with the simulator through a web interface or programmatic API calls.
 *   **Data Validation**: Uses Pydantic for robust data validation, ensuring consistency and correctness of simulation parameters and results.
 *   **Data Visualization**: Integrates Matplotlib and NumPy for processing and visualizing simulation outputs.
@@ -33,6 +34,30 @@ pip install .
 
 ## Usage
 
+### Running the MCP Server
+To start the MCP server, navigate to the project's root directory and run:
+
+```bash
+uvicorn ngspice_simulator_package.mcp_server:app --host 0.0.0.0 --port 55273
+```
+
+The server will be accessible at `http://localhost:55273`.
+
+### Uploading Model and Control Files
+You can upload your own ngspice model (`.j2`) and control (`.j2`) template files using the dedicated API endpoints.
+
+**Upload a Model File:**
+```bash
+curl -X POST -F "file=@/path/to/your/model.j2" http://localhost:55273/upload_model
+```
+
+**Upload a Control File:**
+```bash
+curl -X POST -F "file=@/path/to/your/control.j2" http://localhost:55273/upload_control
+```
+Replace `/path/to/your/model.j2` and `/path/to/your/control.j2` with the actual paths to your files.
+
+### Listing Available Models and Controls
 (Further usage instructions will be added here once the project's specific functionalities are detailed.)
 
 ## Project Structure
