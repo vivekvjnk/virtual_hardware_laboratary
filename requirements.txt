@@ -1,0 +1,8 @@
+
+fastapi
+jinja2
+matplotlib
+numpy
+pydantic
+uvicorn
+PyYAML
