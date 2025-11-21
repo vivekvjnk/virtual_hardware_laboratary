@@ -87,6 +87,13 @@ class SimulationManager:
                 models.append({"name": filename, "metadata": metadata})
         return models
 
+    def get_model_metadata(self, model_name):
+        """Retrieves metadata for a specific model template."""
+        file_path = os.path.join(self.models_dir, model_name)
+        if not os.path.exists(file_path):
+            return None
+        return self.parse_metadata(file_path)
+
     def list_controls(self):
         """Lists available control templates with their metadata."""
         controls = []
@@ -96,6 +103,14 @@ class SimulationManager:
                 metadata = self.parse_metadata(file_path)
                 controls.append({"name": filename, "metadata": metadata})
         return controls
+
+    def get_control_metadata(self, control_name):
+        """Retrieves metadata for a specific control template."""
+        file_path = os.path.join(self.controls_dir, control_name)
+        if not os.path.exists(file_path):
+            return None
+        return self.parse_metadata(file_path)
+
 
     def read_results(self, sim_id):
         """Retrieves the manifest for a given simulation ID."""

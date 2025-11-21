@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel, Field
 from typing import Dict, Any, Optional
 
-from simulation_manager import SimulationManager # Assuming simulation_manager.py is in the same directory
+from .simulation_manager import SimulationManager # Assuming simulation_manager.py is in the same directory
 
 # Initialize SimulationManager
 manager = SimulationManager()
