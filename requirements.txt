@@ -6,3 +6,4 @@ numpy
 pydantic
 uvicorn
 PyYAML
+python-multipart
