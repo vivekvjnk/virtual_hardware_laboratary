@@ -19,7 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, ValidationError, SecretStr
 
 # Import your SimulationManager - adjust path if needed
-from .simulation_manager import SimulationManager
+from virtual_hardware_lab.simulation_manager import SimulationManager
 
 # -------------------------
 # Logging + basic settings
@@ -102,7 +102,18 @@ def rpc_initialize(params: Dict[str, Any]):
     # Provide server info and any capabilities (extend as needed)
     return {
         "protocolVersion": protocol,
-        "serverInfo": {"name": "virtual_hardware_lab", "version": "0.1.0"},
+        "serverInfo": {
+            "name": "virtual_hardware_lab",
+            "version": "0.1.0",
+            "description": "A Virtual Hardware Lab for deterministic and reproducible SPICE simulations, powered by ngspice.",
+            "usage_guidance": (
+                "Interact with this lab to list available SPICE models (circuit definitions) "
+                "and control programs (experiment setups). Run simulations by combining these "
+                "with specific parameters. Model and control files are separate for modularity "
+                "and reuse. Retrieve detailed results and artifacts. Use 'get_documentation' "
+                "for comprehensive details."
+            ),
+        },
         "capabilities": {
             "supportsNotifications": True,
             # Add more capability flags if you implement them:
@@ -154,6 +165,16 @@ def rpc_get_results(params: Dict[str, Any]):
     return manager.read_results(sim_id)
 
 
+def rpc_get_documentation(params: Dict[str, Any]):
+    try:
+        with open("/workspace/ngspice_simulator/docs/VIRTUAL_HARDWARE_LAB_DOCUMENTATION.md", "r") as f:
+            return f.read()
+    except FileNotFoundError:
+        return "Documentation file not found."
+    except Exception as e:
+        logger.exception("Failed to read documentation")
+        return f"Error retrieving documentation: {str(e)}"
+
 def rpc_run_experiment(params: Dict[str, Any]):
     """
     Strict validation: use RunExperimentRequest.parse_obj to raise pydantic errors with helpful info.
@@ -195,6 +216,7 @@ RPC_METHODS: Dict[str, Callable[[Any], Any]] = {
     "list_controls": lambda params: rpc_list_controls(params),
     "run_experiment": lambda params: rpc_run_experiment(params),
     "get_results": lambda params: rpc_get_results(params),
+    "get_documentation": lambda params: rpc_get_documentation(params),
 }
 
 
@@ -232,7 +254,7 @@ def rpc_tools_list(params: Dict[str, Any]):
             "id": "list_models",
             "name": "list_models",
             "title": "List Models",
-            "description": "List available Jinja model templates (GET /models).",
+            "description": "List available NGSpice model templates (GET /models).",
             "inputSchema": {"type": "object", "properties": {}},  # no inputs
             "outputSchema": _obj_schema(),
             "version": "1.0",
@@ -272,7 +294,7 @@ def rpc_tools_list(params: Dict[str, Any]):
             "id": "upload_model",
             "name": "upload_model",
             "title": "Upload Model Template",
-            "description": "Upload a new Jinja2 model template (POST /upload_model).",
+            "description": "Upload a new NGSpice model template (POST /upload_model).",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -288,7 +310,7 @@ def rpc_tools_list(params: Dict[str, Any]):
             "id": "upload_control",
             "name": "upload_control",
             "title": "Upload Control Template",
-            "description": "Upload a new Jinja2 control template (POST /upload_control).",
+            "description": "Upload a new NGSpice control template (POST /upload_control).",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -322,6 +344,15 @@ def rpc_tools_list(params: Dict[str, Any]):
                 },
                 "required": ["uri"],
             },
+            "version": "1.0",
+        },
+        {
+            "id": "get_documentation",
+            "name": "get_documentation",
+            "title": "Get Virtual Hardware Lab Documentation",
+            "description": "Retrieve the comprehensive documentation for the Virtual Hardware Lab.",
+            "inputSchema": {"type": "object", "properties": {}},
+            "outputSchema": {"type": "string"},
             "version": "1.0",
         },
     ]

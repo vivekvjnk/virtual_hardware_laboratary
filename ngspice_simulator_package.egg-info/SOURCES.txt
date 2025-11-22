@@ -1,9 +1,0 @@
-setup.py
-ngspice_simulator_package/__init__.py
-ngspice_simulator_package/mcp_server.py
-ngspice_simulator_package/simulation_manager.py
-ngspice_simulator_package.egg-info/PKG-INFO
-ngspice_simulator_package.egg-info/SOURCES.txt
-ngspice_simulator_package.egg-info/dependency_links.txt
-ngspice_simulator_package.egg-info/requires.txt
-ngspice_simulator_package.egg-info/top_level.txt

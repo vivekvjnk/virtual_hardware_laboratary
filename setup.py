@@ -2,7 +2,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name='ngspice_simulator_package',
+    name='virtual_hardware_lab',
     version='0.1.0',
     packages=find_packages(),
     install_requires=[
@@ -18,8 +18,8 @@ setup(
     ],
     author='Your Name',
     author_email='your.email@example.com',
-    description='A package for ngspice simulations',
-    url='https://github.com/vivekvjnk/ngspice_simulator',
+    description='A Virtual Hardware Lab package for deterministic and reproducible ngspice simulations.',
+    url='https://github.com/vivekvjnk/virtual_hardware_lab',
     classifiers=[
         'Programming Language :: Python :: 3',
         'License :: OSI Approved :: MIT License',

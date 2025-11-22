@@ -1,1 +1,0 @@
-ngspice_simulator_package
