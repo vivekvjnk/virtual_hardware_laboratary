@@ -90,6 +90,16 @@ The YAML metadata block ensures proper validation and introspection for LLM agen
 *   **Clear Boundaries**: Models define the physical system; Controls define the experiment. This modularity enhances reusability.
 *   **Jinja2 Templating**: Enables dynamic parameterization, allowing flexible experimentation with shared models/controls.
 
+### 6. Managing Models in Simulations (Important for LLM Agents)
+The VHL's `run_experiment` method takes a single `model_name` and `control_name`. It is critical that LLM agents **DO NOT** attempt to include or define model files (e.g., using `.include` directives or embedding `.subckt` definitions for other models) within the control SPICE files. The VHL's `SimulationManager` internally handles the merging of the specified model and control.
+
+LLM agents should specify the primary model for simulation via the `model_name` parameter in the `run_experiment` call. Any sub-circuits or dependent models that the primary model requires should be part of the primary model's `.j2` definition itself, or implicitly handled by the `SimulationManager` if it supports a library of common sub-circuits (which is not explicitly exposed to agents for direct control).
+
+**Key Takeaway for LLM Agents:**
+*   **Do NOT** use `.include` or embed model definitions in `control_params` or `control_name` content.
+*   **Only specify the main `model_name`** in the `run_experiment` RPC call.
+*   The VHL will handle the internal merging and setup of the complete SPICE netlist.
+
 ### 3. LLM-Friendly Interface
 *   **Metadata-Driven**: Embedded YAML metadata makes models and controls discoverable and interpretable for LLM agents, aiding automated experiment design.
 *   **Structured Outputs**: `manifest.json` and other outputs provide structured, machine-readable data for analysis.
@@ -104,7 +114,7 @@ The YAML metadata block ensures proper validation and introspection for LLM agen
 
 ## Client Interaction: Guide for LLM Agents via MCP Protocol
 
-The Virtual Hardware Lab (VHL) is designed to be interacted with primarily by LLM agents through a Machine Control Protocol (MCP) server. This section provides specific guidelines for LLM agents to effectively utilize the VHL's functionalities.
+The Virtual Hardware Lab (VHL) is designed to be interacted with primarily by LLM agents through a Model Context Protocol (MCP) server. This section provides specific guidelines for LLM agents to effectively utilize the VHL's functionalities.
 
 ### 1. MCP Endpoint
 
