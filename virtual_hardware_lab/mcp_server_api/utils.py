@@ -8,6 +8,9 @@ import yaml
 from typing import Any
 from fastapi import HTTPException
 from virtual_hardware_lab.simulation_core.simulation_manager import SimulationManager # Needed for metadata parsing and ngspice path
+import logging
+
+logger = logging.getLogger("virtual_hardware_lab")
 
 def jsonrpc_success(result: Any, id_val: Any):
     return {"jsonrpc": "2.0", "result": result, "id": id_val}
@@ -88,7 +91,9 @@ def safe_join(base_dir: str, *paths: str) -> str:
 
 async def save_and_validate_template_file(directory: str, filename: str, content: str):
     if not filename.endswith(".j2"):
-        raise HTTPException(status_code=400, detail="Invalid file type. Only .j2 files are allowed.")
+        logger.warning(f"Filename {filename} does not end with .j2 extension. Changing extension to .j2.")
+        filename = os.path.splitext(filename)[0] + ".j2"
+        
 
     # 1. Parse metadata to get default parameters for rendering
     metadata, template_content = _parse_metadata_from_content(content)
@@ -110,7 +115,7 @@ async def save_and_validate_template_file(directory: str, filename: str, content
     
     # 2. Render the template with dummy parameters for validation
     env = jinja2.Environment(loader=jinja2.BaseLoader)
-    template = env.from_string(template_content_bytes.decode('utf-8'))
+    template = env.from_string(content)
     rendered_spice_code = template.render(template_params)
 
     # 3. Validate the rendered SPICE code using ngspice
@@ -121,8 +126,8 @@ async def save_and_validate_template_file(directory: str, filename: str, content
     file_path = safe_join(directory, filename)
 
     def write_file():
-        with open(file_path, "wb") as f:
-            f.write(content_bytes)
+        with open(file_path, "w") as f:
+            f.write(content)
     await asyncio.to_thread(write_file)
 
     return {"filename": filename, "message": f"Successfully uploaded and validated {filename} to {directory}"}
