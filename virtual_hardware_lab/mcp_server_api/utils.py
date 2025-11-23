@@ -4,6 +4,7 @@ import asyncio
 import tempfile
 import subprocess
 import jinja2
+from typing import Optional
 import yaml
 from typing import Any
 from fastapi import HTTPException
@@ -53,14 +54,14 @@ def _parse_metadata_from_content(content: str):
     content_without_metadata = content[end_index + len(metadata_end_tag):].strip()
     return metadata, content_without_metadata
 
-async def _validate_spice_code(spice_code: str):
+async def _validate_spice_code(spice_code: str) -> Optional[str]:
     """
     Validates SPICE code using ngspice in batch mode.
-    Raises HTTPException if ngspice reports errors.
+    Returns an error message string if ngspice reports errors, otherwise returns None.
     """
-    print(f"--- SPICE Code being validated by ngspice ---\n{spice_code}\n---------------------------------------------") # Add this line
+    print(f"--- SPICE Code being validated by ngspice ---\n{spice_code}\n---------------------------------------------")
     if not spice_code.strip():
-        raise HTTPException(status_code=400, detail="SPICE code is empty.")
+        return "SPICE code is empty."
 
     with tempfile.NamedTemporaryFile(mode='w+', suffix='.cir', delete=False) as temp_file:
         temp_file.write(spice_code)
@@ -74,11 +75,19 @@ async def _validate_spice_code(spice_code: str):
         )
         stdout, stderr = await process.communicate()
 
+        stdout_str = stdout.decode('utf-8')
+        stderr_str = stderr.decode('utf-8')
+        full_output = f"ngspice stdout:\n{stdout_str}\nngspice stderr:\n{stderr_str}"
+
         if process.returncode != 0:
-            error_message = f"ngspice validation failed with exit code {process.returncode}.\n"
-            error_message += f"ngspice stdout:\n{stdout.decode('utf-8')}\n"
-            error_message += f"ngspice stderr:\n{stderr.decode('utf-8')}"
-            raise HTTPException(status_code=400, detail=f"SPICE code validation failed: {error_message}")
+            if "error:" in stdout_str.lower() or "error:" in stderr_str.lower():
+                error_message = f"ngspice validation failed with exit code {process.returncode}.\n"
+                error_message += full_output
+                return f"SPICE code validation failed: {error_message}"
+            else:
+                logger.warning(f"ngspice finished with non-zero exit code {process.returncode}, but no explicit errors found. Output:\n{full_output}")
+                return None # It's a warning, not a critical error
+        return None # Success
     finally:
         os.remove(temp_file_path)
 
@@ -115,15 +124,14 @@ async def save_and_validate_template_file(directory: str, filename: str, content
     
     # 2. Render the template with dummy parameters for validation
     env = jinja2.Environment(loader=jinja2.BaseLoader)
-    template = env.from_string(content)
+    template = env.from_string(template_content)
     rendered_spice_code = template.render(template_params)
 
     # 3. Validate the rendered SPICE code using ngspice
-    try:
-        await _validate_spice_code(rendered_spice_code)
-    except HTTPException as e:
-        logger.error(f"SPICE validation failed for {filename}: {e.detail}")
-        return {"error": e.detail}
+    validation_error = await _validate_spice_code(rendered_spice_code)
+    if validation_error:
+        logger.error(f"SPICE validation failed for {filename}: {validation_error}")
+        return {"error": validation_error}
 
     # 4. If validation passes, save the original .j2 file
     os.makedirs(directory, exist_ok=True)

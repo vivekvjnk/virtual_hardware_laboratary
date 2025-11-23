@@ -106,31 +106,21 @@ async def rpc_upload_model(params: Dict[str, Any]):
     filename = params.get("filename")
     content = params.get("content")
     if not filename or not content:
-        raise HTTPException(status_code=400, detail="Missing filename or content")
-    try:
-        logger.info(f"Uploading model: {filename}\nContent:\n{content}")
-        result = await save_and_validate_template_file(manager.models_dir, filename, content)
-        if "error" in result:
-            raise HTTPException(status_code=400, detail=result["error"])
-        return result
-    except Exception as e:
-        logger.exception("rpc_upload_model failed")
-        raise HTTPException(status_code=500, detail=f"Failed to upload model: {str(e)}")
+        return {"error": "Missing filename or content"}
+    logger.info(f"Uploading model: {filename}\nContent:\n{content}")
+    result = await save_and_validate_template_file(manager.models_dir, filename, content)
+    print(f"DEBUG: Result from save_and_validate_template_file (model): {result}") # Debug print
+    return result
 
 async def rpc_upload_control(params: Dict[str, Any]):
     filename = params.get("filename")
     content = params.get("content")
     if not filename or not content:
-        raise HTTPException(status_code=400, detail="Missing filename or content")
-    try:
-        logger.info(f"Uploading model: {filename}\nContent:\n{content}")
-        result = await save_and_validate_template_file(manager.controls_dir, filename, content)
-        if "error" in result:
-            raise HTTPException(status_code=400, detail=result["error"])
-        return result
-    except Exception as e:
-        logger.exception("rpc_upload_control failed")
-        raise HTTPException(status_code=500, detail=f"Failed to upload control: {str(e)}")
+        return {"error": "Missing filename or content"}
+    logger.info(f"Uploading model: {filename}\nContent:\n{content}")
+    result = await save_and_validate_template_file(manager.controls_dir, filename, content)
+    print(f"DEBUG: Result from save_and_validate_template_file (control): {result}") # Debug print
+    return result
 
 def rpc_get_artifact_link(params: Dict[str, Any]):
     sim_id = params.get("sim_id")
@@ -282,17 +272,18 @@ async def dispatch_jsonrpc(payload: dict):
         if is_notification:
             return Response(status_code=204)
 
+
+
+        # Check if the result contains an error from the RPC method itself
+        if isinstance(result, dict) and "error" in result:
+            return 200, jsonrpc_error(-32000, result["error"], id_val)
+
+
         if result is None:
             return 200, jsonrpc_success(None, id_val)
 
         return 200, jsonrpc_success(result, id_val)
     
-    except HTTPException as http_exc:
-        return http_exc.status_code, jsonrpc_error(
-            -32000 - http_exc.status_code, 
-            http_exc.detail, 
-            id_val
-        )
     except ValidationError as e:
         return 400, jsonrpc_error(-32602, "Invalid params", id_val, data=e.errors())
     except Exception as e:
