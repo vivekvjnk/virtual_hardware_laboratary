@@ -1,9 +1,11 @@
 
+import jinja2
 import unittest
+import json
 import os
 import shutil
 import asyncio
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 
 # Assuming simulation_manager is in a package that can be imported
 # Adjust this import based on your actual project structure
@@ -71,17 +73,17 @@ class TestSimulationManager(unittest.IsolatedAsyncioTestCase):
 
     def test_parse_metadata_from_content(self):
         content = """
-        * ---
-        * parameters:
-        *   gain:
-        *     type: float
-        *     default: 10.0
-        *   name:
-        *     type: str
-        * ---
-        .subckt test_model 1 2
-        R1 1 2 1k
-        .ends
+---
+parameters:
+  gain:
+    type: float
+    default: 10.0
+  name:
+    type: str
+---
+.subckt test_model 1 2
+R1 1 2 1k
+.ends
         """
         metadata, clean_content = _parse_metadata_from_content(content)
         self.assertIn("parameters", metadata)
@@ -119,7 +121,7 @@ class TestSimulationManager(unittest.IsolatedAsyncioTestCase):
     async def test_validate_spice_code_success(self, mock_create_subprocess_exec):
         mock_process = MagicMock()
         mock_process.returncode = 0
-        mock_process.communicate.return_value = (b'ngspice output', b'')
+        mock_process.communicate = AsyncMock(return_value=(b'ngspice output', b''))
         mock_create_subprocess_exec.return_value = mock_process
 
         error = await _validate_spice_code("V1 1 0 DC 5V")
@@ -130,7 +132,7 @@ class TestSimulationManager(unittest.IsolatedAsyncioTestCase):
     async def test_validate_spice_code_failure(self, mock_create_subprocess_exec):
         mock_process = MagicMock()
         mock_process.returncode = 1
-        mock_process.communicate.return_value = (b'Error: syntax error', b'stderr output')
+        mock_process.communicate = AsyncMock(return_value=(b'Error: syntax error', b'stderr output'))
         mock_create_subprocess_exec.return_value = mock_process
 
         error = await _validate_spice_code("INVALID SPICE CODE")
@@ -168,15 +170,15 @@ class TestSimulationManager(unittest.IsolatedAsyncioTestCase):
     def test_load_all_templates_and_from_dir(self):
         # Create dummy model and control files
         model_content = """
-        * ---
-        * parameters:
-        *   res_val:
-        *     type: float
-        *     default: 1k
-        * ---
-        .subckt test_resistor 1 2
-        R1 1 2 {{ res_val }}
-        .ends
+*---
+parameters:
+  res_val:
+    type: float
+    default: 1k
+*---
+.subckt test_resistor 1 2
+R1 1 2 {{ res_val }}
+.ends
         """
         with open(os.path.join(self.models_dir, "resistor.j2"), "w") as f:
             f.write(model_content)
@@ -218,9 +220,9 @@ class TestSimulationManager(unittest.IsolatedAsyncioTestCase):
 
     def test_list_models(self):
         model_content = """
-        * ---
-        * description: A test model
-        * ---
+*---
+description: A test model
+*---
         .subckt test_model 1 2
         .ends
         """
@@ -235,9 +237,9 @@ class TestSimulationManager(unittest.IsolatedAsyncioTestCase):
 
     def test_get_model_metadata(self):
         model_content = """
-        * ---
-        * description: Another test model
-        * ---
+*---
+description: Another test model
+*---
         .subckt another_model 1 2
         .ends
         """
@@ -253,9 +255,9 @@ class TestSimulationManager(unittest.IsolatedAsyncioTestCase):
 
     def test_list_controls(self):
         control_content = """
-        * ---
-        * description: A test control
-        * ---
+*---
+description: A test control
+*---
         V1 1 0 DC 1V
         .end
         """
@@ -270,9 +272,9 @@ class TestSimulationManager(unittest.IsolatedAsyncioTestCase):
 
     def test_get_control_metadata(self):
         control_content = """
-        * ---
-        * description: Another test control
-        * ---
+*---
+description: Another test control
+*---
         V1 1 0 DC 1V
         .end
         """
@@ -291,15 +293,15 @@ class TestSimulationManager(unittest.IsolatedAsyncioTestCase):
         mock_validate_spice_code.return_value = None # Simulate successful validation
 
         content = """
-        * ---
-        * parameters:
-        *   val:
-        *     type: float
-        *     default: 5.0
-        * ---
-        .subckt new_model 1 2
-        R1 1 2 {{ val }}
-        .ends
+*---
+parameters:
+  val:
+    type: float
+    default: 5.0
+*---
+.subckt new_model 1 2
+R1 1 2 {{ val }}
+.ends
         """
         result = await self.manager.save_and_validate_template_file(self.models_dir, "new_model.j2", content)
         self.assertIn("filename", result)
@@ -326,15 +328,15 @@ class TestSimulationManager(unittest.IsolatedAsyncioTestCase):
     async def test_start_sim_success(self, mock_compute_sha256, mock_create_subprocess_exec):
         # Setup dummy files
         model_content = """
-        * ---
-        * parameters:
-        *   Rval:
-        *     type: float
-        *     default: 1k
-        * ---
-        .subckt resistor_model 1 2
-        R1 1 2 {{ Rval }}
-        .ends
+*---
+parameters:
+  Rval:
+    type: float
+    default: 1k
+*---
+.subckt resistor_model 1 2
+R1 1 2 {{ Rval }}
+.ends
         """
         with open(os.path.join(self.models_dir, "resistor_model.j2"), "w") as f:
             f.write(model_content)
@@ -360,7 +362,7 @@ class TestSimulationManager(unittest.IsolatedAsyncioTestCase):
         mock_create_subprocess_exec.return_value = mock_process
 
         # Mock SHA computation to return predictable values
-        mock_compute_sha256.side_effect = ["model_sha_val", "control_sha_val", "merged_sha_val"]
+        mock_compute_sha256.side_effect = ["sim_id_sha_val", "model_sha_val", "control_sha_val", "merged_sha_val"]
 
         model_params = {"Rval": 2.2e3}
         control_params = {}

@@ -145,7 +145,7 @@ class SimulationManager:
         """Lists available control templates with their metadata."""
         controls = []
         for filename, content in self._control_inventory.items():
-            metadata, _ = self._parse_metadata_from_content(content)
+            metadata, _ = _parse_metadata_from_content(content)
             controls.append({"name": filename, "metadata": metadata})
         return controls
 
@@ -153,7 +153,7 @@ class SimulationManager:
         """Retrieves metadata for a specific control template."""
         content = self._control_inventory.get(control_name)
         if content:
-            metadata, _ = self._parse_metadata_from_content(content)
+            metadata, _ = _parse_metadata_from_content(content)
             return metadata
         return None
 
@@ -185,7 +185,7 @@ class SimulationManager:
 
         # 3. Merge Netlist
         merged_content = f"{model_content}\n\n* --- control ---\n{control_content}"
-        merged_sha = self._compute_sha256(merged_content)
+        merged_sha = _compute_sha256(merged_content)
 
         model_filepath = os.path.join(run_dir, "model.cir")
         control_filepath = os.path.join(run_dir, "control.cir")
@@ -208,7 +208,7 @@ class SimulationManager:
             # Update control_params with the full path for the output data file
             control_params['output_data_file'] = eis_data_filepath
             # Re-render control content with the updated path, and re-merge
-            control_content_with_path = self._render_template(control_name, control_params, raw_content=control_content)
+            control_content_with_path = _render_template(self.env, control_name, control_params, raw_content=control_content)
             merged_content = f"{model_content}\n\n* --- control ---\n{control_content_with_path}"
             with open(merged_filepath, "w") as f:
                 f.write(merged_content)
