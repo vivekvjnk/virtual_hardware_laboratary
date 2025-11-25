@@ -61,10 +61,10 @@ class SimulationManager:
 
     def _load_all_templates(self):
         """Loads all .j2 template contents into memory for quick access and validation."""
-        self._model_inventory = self._load_templates_from_dir(self.models_dir)
-        self._control_inventory = self._load_templates_from_dir(self.controls_dir)
+        self._model_inventory = self._load_templates_from_dir(self.models_dir, "model")
+        self._control_inventory = self._load_templates_from_dir(self.controls_dir, "control")
 
-    def _load_templates_from_dir(self, directory: str):
+    def _load_templates_from_dir(self, directory: str, template_type: str):
         """Helper to load templates from a given directory."""
         inventory = {}
         if not os.path.exists(directory):
@@ -73,8 +73,67 @@ class SimulationManager:
             if filename.endswith(".j2"):
                 file_path = os.path.join(directory, filename)
                 with open(file_path, 'r') as f:
-                    inventory[filename] = f.read()
+                    content = f.read()
+                
+                if template_type == "model":
+                    metadata, template_content = self._parse_metadata_from_content(content)
+                    
+                    # Extract parameters and their defaults from metadata
+                    parameters = {}
+                    if 'parameters' in metadata:
+                        for param_name, param_info in metadata['parameters'].items():
+                            parameters[param_name] = param_info.get('default')
+
+                    # Extract subcircuits
+                    subcircuits = self._extract_subcircuits(template_content)
+
+                    # Extract includes
+                    includes = self._extract_includes(template_content)
+
+                    inventory[filename] = {
+                        "raw_string": content,
+                        "models": subcircuits,
+                        "parameters": parameters,
+                        "includes": includes, # Add includes to the inventory
+                        "metadata": metadata # Store full metadata for other uses
+                    }
+                else: # For control templates, keep raw string
+                    inventory[filename] = content
         return inventory
+
+    def _extract_subcircuits(self, spice_code: str) -> list[str]:
+        """
+        Extracts subcircuit names from SPICE code.
+        Looks for lines starting with `.subckt` and extracts the subcircuit name.
+        """
+        subcircuits = []
+        for line in spice_code.splitlines():
+            line = line.strip()
+            if line.lower().startswith(".subckt"):
+                parts = line.split()
+                if len(parts) > 1:
+                    subcircuits.append(parts[1])
+        return subcircuits
+
+
+    def _extract_includes(self, spice_code: str) -> list[str]:
+        """
+        Extracts .include statements from SPICE code.
+        Looks for lines starting with `.include` and extracts the included filename.
+        """
+        includes = []
+        for line in spice_code.splitlines():
+            line = line.strip()
+            if line.lower().startswith(".include"):
+                parts = line.split()
+                if len(parts) > 1:
+                    # The include path might be quoted, remove quotes if present
+                    include_path = parts[1].strip('\'"')
+                    includes.append(include_path)
+        return includes
+
+
+
 
     def _parse_metadata_from_content(self, content: str):
         """
@@ -182,13 +241,13 @@ class SimulationManager:
 
         # Combine all known models and controls for validation context
         full_validation_context = ""
-        for tmpl_name, tmpl_content in self._model_inventory.items():
+        for tmpl_name, tmpl_info in self._model_inventory.items():
             if tmpl_name != filename: # Don't include self
-                _meta, _content = self._parse_metadata_from_content(tmpl_content)
+                _meta, _content = self._parse_metadata_from_content(tmpl_info["raw_string"])
                 full_validation_context += _content + "\n"
         for tmpl_name, tmpl_content in self._control_inventory.items():
             if tmpl_name != filename: # Don't include self
-                _meta, _content = self._parse_metadata_from_content(tmpl_content)
+                _meta, _content = self._parse_metadata_from_content(tmpl_info["raw_string"])
                 full_validation_context += _content + "\n"
 
         # Prepend the context to the rendered code for validation
@@ -218,24 +277,23 @@ class SimulationManager:
     def get_template_content(self, template_name: str, template_type: str) -> Optional[str]:
         """Retrieves the raw content of a model or control template."""
         if template_type == "model":
-            return self._model_inventory.get(template_name)
+            model_info = self._model_inventory.get(template_name)
+            return model_info["raw_string"] if model_info else None
         elif template_type == "control":
             return self._control_inventory.get(template_name)
         return None
     def list_models(self):
         """Lists available model templates with their metadata."""
         models = []
-        for filename, content in self._model_inventory.items():
-            metadata, _ = self._parse_metadata_from_content(content)
-            models.append({"name": filename, "metadata": metadata})
+        for filename, model_info in self._model_inventory.items():
+            models.append({"name": filename, "metadata": model_info["metadata"]})
         return models
 
     def get_model_metadata(self, model_name):
         """Retrieves metadata for a specific model template."""
-        content = self._model_inventory.get(model_name)
-        if content:
-            metadata, _ = self._parse_metadata_from_content(content)
-            return metadata
+        model_info = self._model_inventory.get(model_name)
+        if model_info:
+            return model_info["metadata"]
         return None
 
     def list_controls(self):
@@ -264,8 +322,11 @@ class SimulationManager:
         else:
             return None
 
-    def _render_template(self, template_path, params):
-        template = self.env.get_template(template_path)
+    def _render_template(self, template_path, params, raw_content: Optional[str] = None):
+        if raw_content:
+            template = jinja2.Environment(loader=jinja2.BaseLoader).from_string(raw_content)
+        else:
+            template = self.env.get_template(template_path)
         # Sort parameters to ensure deterministic rendering
         sorted_params = {k: params[k] for k in sorted(params)}
         return template.render(sorted_params)
@@ -281,7 +342,8 @@ class SimulationManager:
         os.makedirs(run_dir, exist_ok=True)
 
         # 1. Render Model and Control Templates
-        model_content = self._render_template(model_name, model_params)
+        model_raw_content = self._model_inventory[model_name]["raw_string"]
+        model_content = self._render_template(model_name, model_params, raw_content=model_raw_content)
         control_content = self._render_template(control_name, control_params)
 
         # 2. Compute SHAs for fragments
@@ -313,7 +375,7 @@ class SimulationManager:
             # Update control_params with the full path for the output data file
             control_params['output_data_file'] = eis_data_filepath
             # Re-render control content with the updated path, and re-merge
-            control_content_with_path = self._render_template(control_name, control_params)
+            control_content_with_path = self._render_template(control_name, control_params, raw_content=control_content)
             merged_content = f"{model_content}\n\n* --- control ---\n{control_content_with_path}"
             with open(merged_filepath, "w") as f:
                 f.write(merged_content)
