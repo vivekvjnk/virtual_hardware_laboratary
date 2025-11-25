@@ -18,7 +18,7 @@ from pydantic import ValidationError
 from virtual_hardware_lab.simulation_core.simulation_manager import SimulationManager
 from virtual_hardware_lab.mcp_server_api.schemas import RunExperimentRequest, JSONRPCRequest
 from virtual_hardware_lab.mcp_server_api import rpc_methods
-from virtual_hardware_lab.mcp_server_api.utils import jsonrpc_error
+
 
 # -------------------------
 # Logging + basic settings
