@@ -3,6 +3,7 @@
 import os
 import hashlib
 import json
+import re
 import jinja2
 import subprocess
 import numpy as np
@@ -144,17 +145,15 @@ class SimulationManager:
     def list_controls(self):
         """Lists available control templates with their metadata."""
         controls = []
-        for filename, content in self._control_inventory.items():
-            metadata, _ = _parse_metadata_from_content(content)
-            controls.append({"name": filename, "metadata": metadata})
+        for filename, control_info in self._control_inventory.items():
+            controls.append({"name": filename, "metadata": control_info["metadata"]})
         return controls
 
     def get_control_metadata(self, control_name):
         """Retrieves metadata for a specific control template."""
-        content = self._control_inventory.get(control_name)
-        if content:
-            metadata, _ = _parse_metadata_from_content(content)
-            return metadata
+        control_info = self._control_inventory.get(control_name)
+        if control_info:
+            return control_info["metadata"]
         return None
 
 
@@ -167,7 +166,7 @@ class SimulationManager:
         else:
             return None
 
-    def start_sim(self, model_name, model_params, control_name, control_params, sim_id=None):
+    async def start_sim(self, model_name, model_params, control_name, control_params, sim_id=None):
         if sim_id is None:
             sim_id = datetime.datetime.now().strftime("%Y%m%d%H%M%S") + "_" + _compute_sha256(str(model_params) + str(control_params))[:8]
         
@@ -216,7 +215,8 @@ class SimulationManager:
             command = ["ngspice", "-b", merged_filepath]
             print(f"Executing ngspice command: {' '.join(command)}")
             try:
-                ngspice_result = subprocess.run(
+                ngspice_result = await asyncio.to_thread(
+                    subprocess.run,
                     command,
                     capture_output=True,
                     text=True,
@@ -254,6 +254,11 @@ class SimulationManager:
         except Exception as e:
             print(f"An unexpected error occurred while running ngspice: {e}")
             raise
+
+        # Read ngspice log content for manifest
+        with open(ngspice_log_filepath, "r") as f:
+            ngspice_log_content = f.read()
+
         # 5. Generate Manifest
         manifest = {
             "sim_id": sim_id,
@@ -273,7 +278,8 @@ class SimulationManager:
                 "eis_data": eis_data_filepath,
                 "ngspice_log": ngspice_log_filepath,
                 "nyquist_plot": nyquist_plot_filepath
-            }
+            },
+            "ngspice_log_content": ngspice_log_content
         }
 
         with open(os.path.join(run_dir, "manifest.json"), "w") as f:
@@ -284,7 +290,7 @@ class SimulationManager:
         # 6. Parse ngspice output and generate Nyquist plot
         self._generate_nyquist_plot(eis_data_filepath, nyquist_plot_filepath, sim_id)
 
-        return manifest
+        return sim_id
 
     def _get_ngspice_version(self):
         try:
@@ -367,12 +373,16 @@ def _load_templates_from_dir(directory: str, template_type: str):
                     inventory[filename] = {
                         "raw_string": content,
                         "models": subcircuits,
-                        "parameters": parameters,
                         "includes": includes, # Add includes to the inventory
-                        "metadata": metadata # Store full metadata for other uses
+                        "metadata": metadata, # Store full metadata for other uses
+                        "parameters_with_defaults": parameters # Store parameters with defaults
                     }
-                else: # For control templates, keep raw string
-                    inventory[filename] = content
+                elif template_type == "control":
+                    metadata, clean_content = _parse_metadata_from_content(content)
+                    inventory[filename] = {
+                        "raw_string": clean_content,
+                        "metadata": metadata
+                    }
         return inventory
 
 def _get_default_params_for_rendering(metadata: dict) -> dict:
@@ -435,8 +445,8 @@ def _parse_metadata_from_content(content: str):
     Returns a tuple of (metadata_dict, content_without_metadata).
     If no metadata is found, returns ({}, original_content).
     """
-    metadata_start_tag = '* ---\n'
-    metadata_end_tag = '* ---\n'
+    metadata_start_tag = '*---\n'
+    metadata_end_tag = '*---\n'
 
     start_index = content.find(metadata_start_tag)
     end_index = content.find(metadata_end_tag, start_index + len(metadata_start_tag))
@@ -451,11 +461,13 @@ def _parse_metadata_from_content(content: str):
 
     try:
         metadata = yaml.safe_load(cleaned_metadata_block)
+        if not isinstance(metadata, dict): # Ensure it's a dict, not just any YAML
+            logger.warning("Metadata block is not a dictionary. Treating as no metadata.")
+            return {}, content
     except yaml.YAMLError as e:
-        print(f"Error parsing YAML metadata from content: {e}")
-        metadata = {}
+        logger.warning(f"Error parsing YAML metadata: {e}. Treating as no metadata.")
+        return {}, content
     
-    # Content after the metadata block
     content_without_metadata = content[end_index + len(metadata_end_tag):].strip()
     return metadata, content_without_metadata
 
