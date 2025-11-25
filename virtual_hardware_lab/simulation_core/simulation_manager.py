@@ -76,10 +76,14 @@ class SimulationManager:
         # 1. Parse metadata to get default parameters for rendering
         metadata, template_content = _parse_metadata_from_content(content)
         template_params = _get_default_params_for_rendering(metadata)
+
+        # Remove raw/endraw tags for internal validation rendering
+        # This prevents Jinja2 from trying to parse them if they are part of the raw SPICE content
+        cleaned_template_content = template_content.replace("{%- raw -%}", "").replace("{%- endraw -%}", "")
         
         # 2. Render the template with dummy parameters for validation
         env = jinja2.Environment(loader=jinja2.BaseLoader)
-        template = env.from_string(template_content)
+        template = env.from_string(cleaned_template_content)
         rendered_spice_code = template.render(template_params)
 
         # 2.1. Automatically include models/controls referenced by .subckt calls in the rendered code
@@ -125,7 +129,8 @@ class SimulationManager:
             model_info = self._model_inventory.get(template_name)
             return model_info["raw_string"] if model_info else None
         elif template_type == "control":
-            return self._control_inventory.get(template_name)
+            control_info = self._control_inventory.get(template_name)
+            return control_info["raw_string"] if control_info else None
         return None
 
     def list_models(self):
@@ -380,7 +385,7 @@ def _load_templates_from_dir(directory: str, template_type: str):
                 elif template_type == "control":
                     metadata, clean_content = _parse_metadata_from_content(content)
                     inventory[filename] = {
-                        "raw_string": clean_content,
+                        "raw_string": content,
                         "metadata": metadata
                     }
         return inventory

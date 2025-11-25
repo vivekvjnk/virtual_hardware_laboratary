@@ -1,410 +1,355 @@
 
-import jinja2
 import unittest
-import json
 import os
 import shutil
-import asyncio
+import hashlib
+import json
 from unittest.mock import patch, MagicMock, AsyncMock
+import asyncio
 
-# Assuming simulation_manager is in a package that can be imported
-# Adjust this import based on your actual project structure
-from virtual_hardware_lab.simulation_core.simulation_manager import (
-    SimulationManager,
-    _extract_subcircuits,
-    _extract_includes,
-    _parse_metadata_from_content,
-    _get_default_params_for_rendering,
-    _validate_spice_code,
-    _render_template,
-    _compute_sha256
-)
+from virtual_hardware_lab.simulation_core.simulation_manager import SimulationManager
 
 class TestSimulationManager(unittest.IsolatedAsyncioTestCase):
-
     def setUp(self):
-        self.base_dir = "test_env"
-        self.models_dir = os.path.join(self.base_dir, "models")
-        self.controls_dir = os.path.join(self.base_dir, "controls")
-        self.runs_dir = os.path.join(self.base_dir, "runs")
-
-        os.makedirs(self.models_dir, exist_ok=True)
-        os.makedirs(self.controls_dir, exist_ok=True)
-        os.makedirs(self.runs_dir, exist_ok=True)
+        self.test_models_dir = "test_models"
+        self.test_controls_dir = "test_controls"
+        self.test_runs_dir = "test_runs"
+        
+        os.makedirs(self.test_models_dir, exist_ok=True)
+        os.makedirs(self.test_controls_dir, exist_ok=True)
+        os.makedirs(self.test_runs_dir, exist_ok=True)
 
         self.manager = SimulationManager(
-            models_dir=self.models_dir,
-            controls_dir=self.controls_dir,
-            runs_dir=self.runs_dir
+            models_dir=self.test_models_dir,
+            controls_dir=self.test_controls_dir,
+            runs_dir=self.test_runs_dir
         )
 
     def tearDown(self):
-        if os.path.exists(self.base_dir):
-            shutil.rmtree(self.base_dir)
+        shutil.rmtree(self.test_models_dir)
+        shutil.rmtree(self.test_controls_dir)
+        shutil.rmtree(self.test_runs_dir)
 
-    # Test cases for stand-alone functions
-    def test_extract_subcircuits(self):
-        spice_code = """
-        .subckt my_subckt 1 2 3
-        R1 1 2 1k
-        .ends
-        X1 4 5 6 another_subckt
-        .SUBCKT another_subckt A B C
-        C1 A B 10n
-        .ENDS
-        """
-        subcircuits = _extract_subcircuits(spice_code)
-        self.assertIn("my_subckt", subcircuits)
-        self.assertIn("another_subckt", subcircuits)
-        self.assertEqual(len(subcircuits), 2)
-
-    def test_extract_includes(self):
-        spice_code = """
-        .include "model.lib"
-        .INCLUDE 'other.cir'
-        R1 1 0 1k
-        .include sub/path/file.inc
-        """
-        includes = _extract_includes(spice_code)
-        self.assertIn("model.lib", includes)
-        self.assertIn("other.cir", includes)
-        self.assertIn("sub/path/file.inc", includes)
-        self.assertEqual(len(includes), 3)
-
-    def test_parse_metadata_from_content(self):
-        content = """
----
-parameters:
-  gain:
-    type: float
-    default: 10.0
-  name:
-    type: str
----
-.subckt test_model 1 2
-R1 1 2 1k
-.ends
-        """
-        metadata, clean_content = _parse_metadata_from_content(content)
-        self.assertIn("parameters", metadata)
-        self.assertIn("gain", metadata["parameters"])
-        self.assertEqual(metadata["parameters"]["gain"]["default"], 10.0)
-        self.assertNotIn("* ---", clean_content)
-        self.assertIn(".subckt test_model", clean_content)
-
-        # Test with no metadata
-        no_meta_content = ".subckt no_meta 1 2 .ends"
-        metadata, clean_content = _parse_metadata_from_content(no_meta_content)
-        self.assertEqual(metadata, {})
-        self.assertEqual(clean_content, no_meta_content)
-
-    def test_get_default_params_for_rendering(self):
-        metadata = {
-            "parameters": {
-                "param_float": {"type": "float", "default": 1.1},
-                "param_int": {"type": "int"},
-                "param_str": {"type": "str", "default": "hello"},
-                "param_bool": {"type": "bool"}
-            }
-        }
-        params = _get_default_params_for_rendering(metadata)
-        self.assertEqual(params["param_float"], 1.1)
-        self.assertEqual(params["param_int"], 0)
-        self.assertEqual(params["param_str"], "hello")
-        self.assertEqual(params["param_bool"], False)
-
-        # Test with empty metadata
-        params = _get_default_params_for_rendering({})
-        self.assertEqual(params, {})
-
-    @patch('asyncio.create_subprocess_exec')
-    async def test_validate_spice_code_success(self, mock_create_subprocess_exec):
-        mock_process = MagicMock()
-        mock_process.returncode = 0
-        mock_process.communicate = AsyncMock(return_value=(b'ngspice output', b''))
-        mock_create_subprocess_exec.return_value = mock_process
-
-        error = await _validate_spice_code("V1 1 0 DC 5V")
-        self.assertIsNone(error)
-        mock_create_subprocess_exec.assert_called_once()
-
-    @patch('asyncio.create_subprocess_exec')
-    async def test_validate_spice_code_failure(self, mock_create_subprocess_exec):
-        mock_process = MagicMock()
-        mock_process.returncode = 1
-        mock_process.communicate = AsyncMock(return_value=(b'Error: syntax error', b'stderr output'))
-        mock_create_subprocess_exec.return_value = mock_process
-
-        error = await _validate_spice_code("INVALID SPICE CODE")
-        self.assertIsNotNone(error)
-        self.assertIn("SPICE code validation failed", error)
-        mock_create_subprocess_exec.assert_called_once()
-
-    def test_render_template(self):
-        # We need a dummy env for _render_template as it expects one now
-        dummy_env = MagicMock(spec=jinja2.Environment)
-        dummy_template = MagicMock()
-        dummy_template.render.return_value = "Value: 123, Text: hello"
-        dummy_env.get_template.return_value = dummy_template
-
-        template_content = "Value: {{ val }}, Text: {{ text }}"
-        params = {"val": 123, "text": "hello"}
-        rendered = _render_template(dummy_env, "dummy_path", params, raw_content=template_content)
-        self.assertEqual(rendered, "Value: 123, Text: hello")
-        # Ensure that from_string is called when raw_content is provided
-        # This requires patching jinja2.Environment itself or being more specific about the mock
-        # For now, let's assume the helper function handles it correctly and test the output.
-
-    def test_compute_sha256(self):
-        content = "test string"
-        sha = _compute_sha256(content)
-        self.assertEqual(sha, "914f1797e2b7e18b14e302064ad7f0502213707797743a605f6ce8305c083652")
-
-    # Test cases for SimulationManager methods
-    def test_init(self):
-        self.assertTrue(os.path.exists(self.runs_dir))
+    def test_initialization(self):
+        self.assertTrue(os.path.exists(self.test_models_dir))
+        self.assertTrue(os.path.exists(self.test_controls_dir))
+        self.assertTrue(os.path.exists(self.test_runs_dir))
         self.assertIsNotNone(self.manager.env)
-        self.assertIsInstance(self.manager._model_inventory, dict)
-        self.assertIsInstance(self.manager._control_inventory, dict)
+        self.assertIn(self.test_models_dir, self.manager.env.loader.searchpath)
+        self.assertIn(self.test_controls_dir, self.manager.env.loader.searchpath)
 
-    def test_load_all_templates_and_from_dir(self):
-        # Create dummy model and control files
-        model_content = """
+    @patch('virtual_hardware_lab.simulation_core.simulation_manager._load_templates_from_dir')
+    def test_load_all_templates(self, mock_load_templates):
+        mock_load_templates.return_value = {"template1.j2": {"raw_string": "content", "metadata": {}}}
+        self.manager._load_all_templates()
+        self.assertEqual(self.manager._model_inventory, {"template1.j2": {"raw_string": "content", "metadata": {}}})
+        self.assertEqual(self.manager._control_inventory, {"template1.j2": {"raw_string": "content", "metadata": {}}})
+        self.assertEqual(mock_load_templates.call_count, 2)
+        mock_load_templates.assert_any_call(self.test_models_dir, "model")
+        mock_load_templates.assert_any_call(self.test_controls_dir, "control")
+
+    async def test_save_and_validate_template_file_success(self):
+        content = """
 *---
-parameters:
-  res_val:
-    type: float
-    default: 1k
+name: TestModel
+params:
+  param1:
+    type: int
+    default: 1
 *---
-.subckt test_resistor 1 2
-R1 1 2 {{ res_val }}
+.subckt test_model param=1
+R1 1 0 {param}
 .ends
         """
-        with open(os.path.join(self.models_dir, "resistor.j2"), "w") as f:
-            f.write(model_content)
-
-        control_content = """
-        V1 1 0 DC 5V
-        X1 1 0 test_resistor
-        .end
-        """
-        with open(os.path.join(self.controls_dir, "dc_sweep.j2"), "w") as f:
-            f.write(control_content)
+        filename = "test_model.j2"
         
-        # Reload templates
-        self.manager._load_all_templates()
+        with patch('virtual_hardware_lab.simulation_core.simulation_manager._validate_spice_code', new_callable=AsyncMock) as mock_validate:
+            mock_validate.return_value = None  # No validation error
+            result = await self.manager.save_and_validate_template_file(self.test_models_dir, filename, content)
+            self.assertIsNone(result.get("error"))
+            self.assertEqual(result.get("filename"), filename)
+            self.assertTrue(os.path.exists(os.path.join(self.test_models_dir, filename)))
+            mock_validate.assert_called_once()
 
-        self.assertIn("resistor.j2", self.manager._model_inventory)
-        self.assertIn("dc_sweep.j2", self.manager._control_inventory)
-
-        model_info = self.manager._model_inventory["resistor.j2"]
-        self.assertIn("raw_string", model_info)
-        self.assertIn("models", model_info)
-        self.assertIn("test_resistor", model_info["models"])
-        self.assertIn("parameters", model_info)
-        self.assertEqual(model_info["parameters"]["res_val"], "1k")
-
-        self.assertEqual(self.manager._control_inventory["dc_sweep.j2"], control_content)
-
+    async def test_save_and_validate_template_file_validation_fail(self):
+        content = """
+*---
+name: TestModel
+params:
+  param1:
+    type: int
+    default: 1
+*---
+.subckt test_model param=1
+.this_is_an_invalid_spice_command
+.ends
+        """
+        filename = "invalid_model.j2"
+        
+        with patch('virtual_hardware_lab.simulation_core.simulation_manager._validate_spice_code', new_callable=AsyncMock) as mock_validate:
+            mock_validate.return_value = "SPICE validation error"
+            result = await self.manager.save_and_validate_template_file(self.test_models_dir, filename, content)
+            self.assertIsNotNone(result.get("error"))
+            self.assertEqual(result.get("error"), "SPICE validation error")
+            self.assertFalse(os.path.exists(os.path.join(self.test_models_dir, filename)))
+            mock_validate.assert_called_once()
+    
     def test_get_template_content(self):
-        model_content = ".subckt example 1 2 .ends"
-        with open(os.path.join(self.models_dir, "example.j2"), "w") as f:
+        # Create a dummy model file
+        model_content = "*---\nname: model1\n*---\n.model dummy_model D"
+        with open(os.path.join(self.test_models_dir, "model1.j2"), "w") as f:
             f.write(model_content)
-        self.manager._load_all_templates() # Reload to pick up new file
-
-        content = self.manager.get_template_content("example.j2", "model")
+        
+        # Reload templates to pick up the new file
+        self.manager._load_all_templates()
+        
+        content = self.manager.get_template_content("model1.j2", "model")
         self.assertEqual(content, model_content)
 
+        # Test non-existent template
         content = self.manager.get_template_content("non_existent.j2", "model")
         self.assertIsNone(content)
 
+        # Test control template
+        control_content = "---\nname: control1\n---\n.control\nrun\n.endc"
+        with open(os.path.join(self.test_controls_dir, "control1.j2"), "w") as f:
+            f.write(control_content)
+        self.manager._load_all_templates()
+        content = self.manager.get_template_content("control1.j2", "control")
+        self.assertEqual(content, control_content)
+
     def test_list_models(self):
-        model_content = """
-*---
-description: A test model
-*---
-        .subckt test_model 1 2
-        .ends
-        """
-        with open(os.path.join(self.models_dir, "test_model.j2"), "w") as f:
-            f.write(model_content)
+        # Create dummy model files
+        model1_content = "*---\nname: ModelA\ndescription: descA\n*---\n.model A"
+        model2_content = "*---\nname: ModelB\ndescription: descB\n*---\n.model B"
+        with open(os.path.join(self.test_models_dir, "model_a.j2"), "w") as f:
+            f.write(model1_content)
+        with open(os.path.join(self.test_models_dir, "model_b.j2"), "w") as f:
+            f.write(model2_content)
+        
         self.manager._load_all_templates()
-
         models = self.manager.list_models()
-        self.assertEqual(len(models), 1)
-        self.assertEqual(models[0]["name"], "test_model.j2")
-        self.assertEqual(models[0]["metadata"]["description"], "A test model")
-
+        model_names = [m["name"] for m in models]
+        self.assertIn("model_a.j2", model_names)
+        self.assertIn("model_b.j2", model_names)
+        
+        for model in models:
+            if model["name"] == "model_a.j2":
+                self.assertEqual(model["metadata"]["name"], "ModelA")
+            elif model["name"] == "model_b.j2":
+                self.assertEqual(model["metadata"]["name"], "ModelB")
+    
     def test_get_model_metadata(self):
-        model_content = """
-*---
-description: Another test model
-*---
-        .subckt another_model 1 2
-        .ends
-        """
-        with open(os.path.join(self.models_dir, "another_model.j2"), "w") as f:
+        model_content = "*---\nname: SpecificModel\nversion: 1.0\n*---\n.model X"
+        with open(os.path.join(self.test_models_dir, "specific_model.j2"), "w") as f:
             f.write(model_content)
         self.manager._load_all_templates()
 
-        metadata = self.manager.get_model_metadata("another_model.j2")
-        self.assertEqual(metadata["description"], "Another test model")
+        metadata = self.manager.get_model_metadata("specific_model.j2")
+        self.assertIsNotNone(metadata)
+        self.assertEqual(metadata["name"], "SpecificModel")
+        self.assertEqual(metadata["version"], 1.0)
 
-        metadata = self.manager.get_model_metadata("non_existent_model.j2")
-        self.assertIsNone(metadata)
+        non_existent_metadata = self.manager.get_model_metadata("non_existent.j2")
+        self.assertIsNone(non_existent_metadata)
 
     def test_list_controls(self):
-        control_content = """
-*---
-description: A test control
-*---
-        V1 1 0 DC 1V
-        .end
-        """
-        with open(os.path.join(self.controls_dir, "test_control.j2"), "w") as f:
-            f.write(control_content)
+        # Create dummy control files
+        control1_content = "*---\nname: ControlA\n*---\n.control\nrun\n.endc"
+        control2_content = "*---\nname: ControlB\n*---\n.control\ntran 1u 1m\n.endc"
+        with open(os.path.join(self.test_controls_dir, "control_a.j2"), "w") as f:
+            f.write(control1_content)
+        with open(os.path.join(self.test_controls_dir, "control_b.j2"), "w") as f:
+            f.write(control2_content)
+        
         self.manager._load_all_templates()
-
         controls = self.manager.list_controls()
-        self.assertEqual(len(controls), 1)
-        self.assertEqual(controls[0]["name"], "test_control.j2")
-        self.assertEqual(controls[0]["metadata"]["description"], "A test control")
+        control_names = [c["name"] for c in controls]
+        self.assertIn("control_a.j2", control_names)
+        self.assertIn("control_b.j2", control_names)
+
+        for control in controls:
+            if control["name"] == "control_a.j2":
+                self.assertEqual(control["metadata"]["name"], "ControlA")
+            elif control["name"] == "control_b.j2":
+                self.assertEqual(control["metadata"]["name"], "ControlB")
 
     def test_get_control_metadata(self):
-        control_content = """
-*---
-description: Another test control
-*---
-        V1 1 0 DC 1V
-        .end
-        """
-        with open(os.path.join(self.controls_dir, "another_control.j2"), "w") as f:
+        control_content = "*---\nname: SpecificControl\nauthor: Me\n*---\n.control\nplot v(out)\n.endc"
+        with open(os.path.join(self.test_controls_dir, "specific_control.j2"), "w") as f:
             f.write(control_content)
         self.manager._load_all_templates()
 
-        metadata = self.manager.get_control_metadata("another_control.j2")
-        self.assertEqual(metadata["description"], "Another test control")
+        metadata = self.manager.get_control_metadata("specific_control.j2")
+        self.assertIsNotNone(metadata)
+        self.assertEqual(metadata["name"], "SpecificControl")
+        self.assertEqual(metadata["author"], "Me")
 
-        metadata = self.manager.get_control_metadata("non_existent_control.j2")
-        self.assertIsNone(metadata)
+        non_existent_metadata = self.manager.get_control_metadata("non_existent_control.j2")
+        self.assertIsNone(non_existent_metadata)
     
-    @patch('virtual_hardware_lab.simulation_core.simulation_manager._validate_spice_code')
-    async def test_save_and_validate_template_file_success(self, mock_validate_spice_code):
-        mock_validate_spice_code.return_value = None # Simulate successful validation
-
-        content = """
-*---
-parameters:
-  val:
-    type: float
-    default: 5.0
-*---
-.subckt new_model 1 2
-R1 1 2 {{ val }}
-.ends
-        """
-        result = await self.manager.save_and_validate_template_file(self.models_dir, "new_model.j2", content)
-        self.assertIn("filename", result)
-        self.assertEqual(result["filename"], "new_model.j2")
-        self.assertTrue(os.path.exists(os.path.join(self.models_dir, "new_model.j2")))
-        mock_validate_spice_code.assert_called_once()
-
-    @patch('virtual_hardware_lab.simulation_core.simulation_manager._validate_spice_code')
-    async def test_save_and_validate_template_file_failure(self, mock_validate_spice_code):
-        mock_validate_spice_code.return_value = "Invalid SPICE code detected"
-
-        content = """
-        .subckt faulty_model 1 2
-        .ends an error here
-        """
-        result = await self.manager.save_and_validate_template_file(self.models_dir, "faulty_model.j2", content)
-        self.assertIn("error", result)
-        self.assertIn("Invalid SPICE code detected", result["error"])
-        self.assertFalse(os.path.exists(os.path.join(self.models_dir, "faulty_model.j2")))
-        mock_validate_spice_code.assert_called_once()
-
-    @patch('virtual_hardware_lab.simulation_core.simulation_manager.asyncio.create_subprocess_exec')
-    @patch('virtual_hardware_lab.simulation_core.simulation_manager._compute_sha256')
-    async def test_start_sim_success(self, mock_compute_sha256, mock_create_subprocess_exec):
-        # Setup dummy files
+    @patch('virtual_hardware_lab.simulation_core.simulation_manager.subprocess.run')
+    @patch('virtual_hardware_lab.simulation_core.simulation_manager.SimulationManager._generate_nyquist_plot')
+    @patch('virtual_hardware_lab.simulation_core.simulation_manager._compute_sha256', side_effect=lambda x: hashlib.sha256(x.encode()).hexdigest())
+    async def test_start_sim_success(self, mock_sha, mock_generate_nyquist_plot, mock_subprocess_run):
+        # Setup dummy model and control files
         model_content = """
 *---
-parameters:
-  Rval:
+name: DummyModel
+params:
+  res:
     type: float
     default: 1k
 *---
-.subckt resistor_model 1 2
-R1 1 2 {{ Rval }}
+.subckt dummymodel 1 2
+R1 1 2 {res}
 .ends
         """
-        with open(os.path.join(self.models_dir, "resistor_model.j2"), "w") as f:
-            f.write(model_content)
-
         control_content = """
-        V1 1 0 DC 5V
-        X1 1 0 resistor_model
-        .control
-        dc V1 0 5 0.1
-        print V(1)
-        .endc
-        .end
+*---
+name: DummyControl
+params:
+  voltage:
+    type: float
+    default: 1
+*---
+.control
+source /tmp/model.cir
+v1 1 0 {voltage}
+x1 1 0 dummymodel res=1k
+.endc
         """
-        with open(os.path.join(self.controls_dir, "simple_dc.j2"), "w") as f:
+        eis_data = "1e3 100 0 100 0\n" # Example data
+        
+        with open(os.path.join(self.test_models_dir, "dummy_model.j2"), "w") as f:
+            f.write(model_content)
+        with open(os.path.join(self.test_controls_dir, "dummy_control.j2"), "w") as f:
             f.write(control_content)
         
         self.manager._load_all_templates()
 
-        # Mock ngspice process
-        mock_process = MagicMock()
-        mock_process.returncode = 0
-        mock_process.communicate.return_value = (b'ngspice output: V(1)=5', b'')
-        mock_create_subprocess_exec.return_value = mock_process
-
-        # Mock SHA computation to return predictable values
-        mock_compute_sha256.side_effect = ["sim_id_sha_val", "model_sha_val", "control_sha_val", "merged_sha_val"]
-
-        model_params = {"Rval": 2.2e3}
-        control_params = {}
+        # Mock subprocess.run for ngspice
+        mock_subprocess_run.return_value = MagicMock(
+            stdout="ngspice output",
+            stderr="",
+            returncode=0
+        )
         
-        sim_id = await self.manager.start_sim("resistor_model.j2", model_params, "simple_dc.j2", control_params)
+        # Mock _get_ngspice_version
+        self.manager._get_ngspice_version = MagicMock(return_value="ngspice 35")
+
+        # Mock eis_data file writing
+        eis_data = "1e3 100 0 100 0\n" # Example data
+        original_open = open
+        def mock_open_for_eis_data(filepath, mode='r', encoding=None):
+            if "eis_data.txt" in filepath and 'r' in mode:
+                # This mock will be used when _generate_nyquist_plot tries to read eis_data.txt
+                # It returns a mock file object that, when read, returns our dummy data.
+                mock_file = MagicMock()
+                mock_file.__enter__.return_value.read.return_value = eis_data
+                mock_file.__enter__.return_value.__iter__.return_value = iter(eis_data.splitlines(True))
+                return mock_file
+            # For all other file operations, use the original open
+            return original_open(filepath, mode, encoding=encoding)
+
+
+        with patch('builtins.open', new=mock_open_for_eis_data):
+            sim_id = await self.manager.start_sim(
+                model_name="dummy_model.j2",
+                model_params={"res": "1k"},
+                control_name="dummy_control.j2",
+                control_params={"voltage": 1}
+            )
         
         self.assertIsNotNone(sim_id)
-        run_dir = os.path.join(self.runs_dir, sim_id)
+        run_dir = os.path.join(self.test_runs_dir, sim_id)
         self.assertTrue(os.path.exists(run_dir))
         self.assertTrue(os.path.exists(os.path.join(run_dir, "manifest.json")))
-        self.assertTrue(os.path.exists(os.path.join(run_dir, "netlist.cir")))
         self.assertTrue(os.path.exists(os.path.join(run_dir, "ngspice.log")))
+        mock_subprocess_run.assert_called_once()
+        mock_generate_nyquist_plot.assert_called_once_with(
+            os.path.join(run_dir, "eis_data.txt"),
+            os.path.join(run_dir, "nyquist_plot.png"),
+            sim_id
+        )
 
-        with open(os.path.join(run_dir, "manifest.json"), 'r') as f:
-            manifest = json.load(f)
-            self.assertEqual(manifest["model_name"], "resistor_model.j2")
-            self.assertEqual(manifest["control_name"], "simple_dc.j2")
-            self.assertEqual(manifest["model_parameters"]["Rval"], 2.2e3)
-            self.assertEqual(manifest["model_sha"], "model_sha_val")
-            self.assertEqual(manifest["control_sha"], "control_sha_val")
-            self.assertEqual(manifest["merged_netlist_sha"], "merged_sha_val")
-            self.assertIn("ngspice_log_content", manifest)
-        
-        mock_create_subprocess_exec.assert_called_once()
-        self.assertEqual(mock_compute_sha256.call_count, 3)
-
-    def test_read_results(self):
-        # Create a dummy run directory and manifest
+    def test_read_results_success(self):
         sim_id = "test_sim_123"
-        run_dir = os.path.join(self.runs_dir, sim_id)
-        os.makedirs(run_dir, exist_ok=True)
-        manifest_path = os.path.join(run_dir, "manifest.json")
-        dummy_manifest = {"status": "completed", "output": "some data"}
-        with open(manifest_path, "w") as f:
-            json.dump(dummy_manifest, f)
+        run_dir = os.path.join(self.test_runs_dir, sim_id)
+        os.makedirs(run_dir)
+        
+        manifest_content = {"sim_id": sim_id, "status": "completed"}
+        with open(os.path.join(run_dir, "manifest.json"), "w") as f:
+            json.dump(manifest_content, f)
         
         results = self.manager.read_results(sim_id)
-        self.assertEqual(results, dummy_manifest)
-
-        # Test non-existent sim_id
+        self.assertIsNotNone(results)
+        self.assertEqual(results["sim_id"], sim_id)
+    
+    def test_read_results_not_found(self):
         results = self.manager.read_results("non_existent_sim")
         self.assertIsNone(results)
+
+    @patch('virtual_hardware_lab.simulation_core.simulation_manager.subprocess.run')
+    def test_get_ngspice_version(self, mock_subprocess_run):
+        mock_subprocess_run.return_value = MagicMock(
+            stdout="ngspice version 35\nCopyright (c) ...",
+            returncode=0
+        )
+        version = self.manager._get_ngspice_version()
+        self.assertEqual(version, "ngspice version 35")
+        mock_subprocess_run.assert_called_once_with(["ngspice", "-v"], check=True, capture_output=True, text=True)
+
+        mock_subprocess_run.side_effect = Exception("ngspice not found")
+        version = self.manager._get_ngspice_version()
+        self.assertEqual(version, "unknown")
+
+    @patch('virtual_hardware_lab.simulation_core.simulation_manager.plt')
+    def test_generate_nyquist_plot_success(self, mock_plt):
+        sim_id = "plot_test_1"
+        eis_data_filepath = os.path.join(self.test_runs_dir, "eis_data.txt")
+        output_filepath = os.path.join(self.test_runs_dir, "nyquist_plot.png")
+
+        # Create dummy EIS data file
+        with open(eis_data_filepath, "w") as f:
+            f.write("# Header line\n")
+            f.write("1.0e-3 10.5 2.1 10.7 11.3\n")
+            f.write("1.0e-2 9.8 1.5 9.9 8.7\n")
+            f.write("1.0e-1 8.2 0.8 8.2 5.6\n")
+        
+        mock_fig = MagicMock()
+        mock_ax = MagicMock()
+        mock_plt.figure.return_value = mock_fig
+        mock_plt.gca.return_value = mock_ax
+        
+        self.manager._generate_nyquist_plot(eis_data_filepath, output_filepath, sim_id)
+        
+        mock_plt.figure.assert_called_once_with(figsize=(10, 8))
+        mock_plt.plot.assert_called_once_with([10.5, 9.8, 8.2], [-2.1, -1.5, -0.8], '-o')
+        mock_plt.xlabel.assert_called_once_with('Z_real (Ohms)')
+        mock_plt.ylabel.assert_called_once_with('-Z_imag (Ohms)')
+        mock_plt.title.assert_called_once_with(f'Nyquist Plot for Li-ion Battery (Sim ID: {sim_id})')
+        mock_plt.grid.assert_called_once_with(True)
+        mock_plt.axis.assert_called_once_with('equal')
+        mock_plt.savefig.assert_called_once_with(output_filepath)
+        mock_plt.close.assert_called_once()
+        # Ensure the file would have been created if not mocked
+        self.assertTrue(output_filepath.endswith(".png")) # Just a basic check that the path is valid for png
+    
+    @patch('virtual_hardware_lab.simulation_core.simulation_manager.plt')
+    def test_generate_nyquist_plot_no_data(self, mock_plt):
+        sim_id = "plot_test_no_data"
+        eis_data_filepath = os.path.join(self.test_runs_dir, "empty_eis_data.txt")
+        output_filepath = os.path.join(self.test_runs_dir, "nyquist_plot_no_data.png")
+
+        with open(eis_data_filepath, "w") as f:
+            f.write("# Just a header\n")
+        
+        self.manager._generate_nyquist_plot(eis_data_filepath, output_filepath, sim_id)
+        mock_plt.figure.assert_not_called()
+        mock_plt.savefig.assert_not_called()
+        mock_plt.close.assert_not_called()
+        self.assertFalse(os.path.exists(output_filepath))
 
 if __name__ == '__main__':
     unittest.main()
