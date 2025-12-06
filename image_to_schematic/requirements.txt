@@ -1,4 +1,0 @@
-sam3
-matplotlib
-numpy
-psutil

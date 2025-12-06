@@ -1,23 +1,23 @@
 # app.py
 import os
 import logging
-import inspect
-from typing import Any, Dict, Union
-from fastapi.responses import JSONResponse, Response
 
-import uvicorn
+from fastapi.responses import JSONResponse, Response
+from fastapi.middleware.cors import CORSMiddleware
+from virtual_hardware_lab.simulation_core.simulation_manager import SimulationManager
+from virtual_hardware_lab.mcp_server_api import rpc_methods
+
 from fastapi import (
     FastAPI,
     Body,
     Request,
     HTTPException,
 )
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import ValidationError
-
-from virtual_hardware_lab.simulation_core.simulation_manager import SimulationManager
+from typing import Any, Dict, Union
 from virtual_hardware_lab.mcp_server_api.schemas import RunExperimentRequest, JSONRPCRequest
-from virtual_hardware_lab.mcp_server_api import rpc_methods
+from pydantic import ValidationError
+import inspect
+import uvicorn
 
 
 # -------------------------
