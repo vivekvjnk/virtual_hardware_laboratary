@@ -1,20 +1,43 @@
 import { server } from "../../src/mcp/server.js";
-import {
-  ListToolsRequestSchema,
-  CallToolRequestSchema,
-} from "@modelcontextprotocol/sdk/types.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 
-describe("MCP Server (thin transport)", () => {
+describe("MCP Server (via MCP InMemoryTransport)", () => {
+  let clientTransport: InMemoryTransport;
+  let serverTransport: InMemoryTransport;
+  
+  function nextMessage(): Promise<any> {
+    return new Promise((resolve) => {
+      clientTransport.onmessage = (message) => {
+        resolve(message);
+      };
+    });
+  }
+
+  beforeEach(async () => {
+    [clientTransport, serverTransport] =
+      InMemoryTransport.createLinkedPair();
+      
+    await server.connect(serverTransport);
+    await serverTransport.start();
+    
+
+  });
+    
+  async function flush() {
+    await Promise.resolve();
+  }
+
   test("lists all expected tools", async () => {
-    const response = await server.handleRequest({
+    const responsePromise = nextMessage();
+
+    await clientTransport.send({
       jsonrpc: "2.0",
       id: 1,
-      method: ListToolsRequestSchema.method,
+      method: "tools/list",
       params: {},
     });
 
-    expect(response).toBeDefined();
-    expect(response.result).toBeDefined();
+    const response = await responsePromise;
 
     const toolNames = response.result.tools.map(
       (t: any) => t.name
@@ -30,53 +53,56 @@ describe("MCP Server (thin transport)", () => {
   });
 
   test("routes add_component tool call", async () => {
-    const response = await server.handleRequest({
+    const responsePromise = nextMessage();
+
+    await clientTransport.send({
       jsonrpc: "2.0",
       id: 2,
-      method: CallToolRequestSchema.method,
+      method: "tools/call",
       params: {
         name: "add_component",
         arguments: {
           component_name: "MCPTestComponent",
-          file_content: `
-            export const MCPTestComponent = () => null;
-          `,
+          file_content: `export const MCPTestComponent = () => null;`,
         },
       },
     });
 
-    expect(response).toBeDefined();
-    expect(response.result).toBeDefined();
-
+    const response = await responsePromise;
     const content = response.result.content[0];
-    expect(content.type).toBe("json");
-    expect(content.json.success).toBe(true);
+
+    expect(content.type).toBe("text");
+
+    const payload = JSON.parse(content.text);
+    expect(payload.success).toBe(true);
   });
 
   test("routes list_local_components tool call", async () => {
-    const response = await server.handleRequest({
+    const responsePromise = nextMessage();
+
+    await clientTransport.send({
       jsonrpc: "2.0",
       id: 3,
-      method: CallToolRequestSchema.method,
+      method: "tools/call",
       params: {
         name: "list_local_components",
         arguments: {},
       },
     });
 
-    expect(response).toBeDefined();
-    expect(response.result).toBeDefined();
+    const response = await responsePromise;
+    const payload = JSON.parse(response.result.content[0].text);
 
-    const content = response.result.content[0];
-    expect(content.type).toBe("json");
-    expect(Array.isArray(content.json)).toBe(true);
+    expect(Array.isArray(payload)).toBe(true);
   });
 
   test("routes search_library tool call", async () => {
-    const response = await server.handleRequest({
+    const responsePromise = nextMessage();
+
+    await clientTransport.send({
       jsonrpc: "2.0",
       id: 4,
-      method: CallToolRequestSchema.method,
+      method: "tools/call",
       params: {
         name: "search_library",
         arguments: {
@@ -87,11 +113,8 @@ describe("MCP Server (thin transport)", () => {
       },
     });
 
-    expect(response).toBeDefined();
-    expect(response.result).toBeDefined();
-
-    const content = response.result.content[0];
-    expect(content.type).toBe("json");
-    expect(Array.isArray(content.json)).toBe(true);
+    const response = await responsePromise;
+    const payload = JSON.parse(response.result.content[0].text);
+    expect(Array.isArray(payload)).toBe(true);
   });
 });
