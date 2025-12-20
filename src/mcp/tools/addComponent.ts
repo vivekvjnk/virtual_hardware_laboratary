@@ -23,7 +23,10 @@ export async function addComponent(
 ): Promise<AddComponentResult> {
   await ensureLibraryDirs();
 
-  const filename = `${componentName}.tsx`;
+  let filename = componentName;
+  if (!filename.endsWith(".kicad_mod") && !filename.endsWith(".tsx")) {
+    filename = `${componentName}.tsx`;
+  }
   let tempPath: string | null = null;
 
   try {
@@ -41,7 +44,7 @@ export async function addComponent(
     }
 
     // ---- Commit (overwrite allowed) ----
-    const finalPath = await commitComponent(tempPath, componentName);
+    const finalPath = await commitComponent(tempPath, filename);
 
     return {
       success: true,

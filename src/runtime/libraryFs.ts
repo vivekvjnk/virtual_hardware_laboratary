@@ -35,11 +35,11 @@ export async function writeTempComponent(
  */
 export async function commitComponent(
   tempPath: string,
-  componentName: string
+  targetFilename: string
 ): Promise<string> {
   const finalPath = path.join(
     LOCAL_LIBRARY_DIR,
-    `${componentName}.tsx`
+    targetFilename
   );
 
   await fs.rename(tempPath, finalPath);

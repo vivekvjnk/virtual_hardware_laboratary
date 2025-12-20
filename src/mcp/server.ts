@@ -36,17 +36,17 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "add_component",
         description:
-          "Add or update a TSX component in the local library. Validation is automatic.",
+          "Add or update a TSX component or KiCAD footprint (.kicad_mod) in the local library. Validation is automatic.",
         inputSchema: {
           type: "object",
           properties: {
             component_name: {
               type: "string",
-              description: "Logical name of the component",
+              description: "Logical name of the component (e.g. 'MyResistor') or filename with extension (e.g. 'footprint.kicad_mod')",
             },
             file_content: {
               type: "string",
-              description: "Complete TSX file content",
+              description: "Complete file content (TSX or KiCAD footprint)",
             },
           },
           required: ["component_name", "file_content"],

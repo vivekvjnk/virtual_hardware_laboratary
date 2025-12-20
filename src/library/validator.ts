@@ -1,6 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
 import ts from "typescript";
+import { LOCAL_LIBRARY_DIR } from "../config/paths.js";
 
 export interface ValidationResult {
   success: boolean;
@@ -23,10 +24,15 @@ export async function validateComponent(
     };
   }
 
-  if (path.extname(tempFilePath) !== ".tsx") {
+  const ext = path.extname(tempFilePath);
+  if (ext === ".kicad_mod") {
+    return { success: true, errors: [] };
+  }
+
+  if (ext !== ".tsx") {
     return {
       success: false,
-      errors: ["Component file must have .tsx extension"],
+      errors: ["Component file must have .tsx or .kicad_mod extension"],
     };
   }
 
@@ -78,6 +84,39 @@ export async function validateComponent(
       );
     });
 
+    return { success: false, errors };
+  }
+
+  // ---------- Layer 3.5: Import Validation ----------
+  const importedKicadFiles: string[] = [];
+
+  function visit(node: ts.Node) {
+    if (ts.isImportDeclaration(node)) {
+      const moduleSpecifier = node.moduleSpecifier;
+      if (ts.isStringLiteral(moduleSpecifier)) {
+        const importPath = moduleSpecifier.text;
+        if (importPath.endsWith(".kicad_mod")) {
+          importedKicadFiles.push(importPath);
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(sourceFile);
+
+  for (const kicadFile of importedKicadFiles) {
+    const basename = path.basename(kicadFile);
+    const kicadPath = path.join(LOCAL_LIBRARY_DIR, basename);
+    try {
+      await fs.access(kicadPath);
+    } catch {
+      errors.push(
+        `Imported footprint not found in library: ${basename}. Please upload it first.`
+      );
+    }
+  }
+
+  if (errors.length > 0) {
     return { success: false, errors };
   }
 
