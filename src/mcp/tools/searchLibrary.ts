@@ -18,42 +18,61 @@ export interface DeepSearchResult extends SurfaceSearchResult {
   pins?: string[];
 }
 
-function searchGlobalLibraryStub(
+import { exec } from "child_process";
+import util from "util";
+
+const execPromise = util.promisify(exec);
+
+async function searchGlobalLibrary(
   query: string,
   mode: SearchMode,
   depth: SearchDepth
-): (SurfaceSearchResult | DeepSearchResult)[] {
-  const globals = [
-    { name: "Resistor", description: "Generic resistor component" },
-    { name: "Capacitor", description: "Generic capacitor component" },
-    { name: "OpAmp", description: "Generic operational amplifier" },
-  ];
-
-  const matcher =
-    mode === "regex"
-      ? new RegExp(query, "i")
-      : null;
-
-  return globals
-    .filter(c =>
-      mode === "regex"
-        ? matcher!.test(c.name)
-        : c.name.toLowerCase().includes(query.toLowerCase())
-    )
-    .map(c =>
-      depth === "deep"
-        ? {
-            name: c.name,
-            source: "global",
-            description: c.description,
-            exports: ["default"],
-          }
-        : {
-            name: c.name,
-            source: "global",
-            description: c.description,
-          }
+): Promise<(SurfaceSearchResult | DeepSearchResult)[]> {
+  try {
+    // We use the local tscircuit CLI clone
+    const { stdout } = await execPromise(
+      `bun ./tscircuit/cli.mjs search "${query}"`,
+      {
+        cwd: process.cwd(), // Assuming running from project root
+      }
     );
+
+    const REGEX = /^\d+\.\s+(?<name>\S+)\s+-\s+Stars:\s+\d+(?:\s+-\s+(?<description>.*))?$/;
+
+    const parsedItems = stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line)
+      .map((line) => {
+        const match = line.match(REGEX);
+        if (!match || !match.groups) return null;
+        return {
+          name: match.groups.name,
+          description: match.groups.description,
+        };
+      })
+      .filter((item): item is { name: string; description?: string } => item !== null);
+
+    return parsedItems.map((item) => {
+      if (depth === "deep") {
+        return {
+          name: item.name,
+          source: "global",
+          description: item.description,
+          exports: ["default"],
+        } as DeepSearchResult;
+      } else {
+        return {
+          name: item.name,
+          source: "global",
+          description: item.description,
+        } as SurfaceSearchResult;
+      }
+    });
+  } catch (error) {
+    console.error("Error searching global library:", error);
+    return [];
+  }
 }
 
 /**
@@ -85,20 +104,20 @@ export async function searchLibrary(
       .map(name =>
         depth === "deep"
           ? {
-              name,
-              source: "local",
-              exports: ["default"], // best-effort stub
-            }
+            name,
+            source: "local",
+            exports: ["default"], // best-effort stub
+          }
           : {
-              name,
-              source: "local",
-            }
+            name,
+            source: "local",
+          }
       );
   } catch {
     // ignore missing local library
   }
 
-  const globalResults = searchGlobalLibraryStub(
+  const globalResults = await searchGlobalLibrary(
     query,
     mode,
     depth

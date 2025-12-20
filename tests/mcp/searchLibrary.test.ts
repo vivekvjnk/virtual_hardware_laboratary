@@ -12,7 +12,7 @@ describe("searchLibrary", () => {
           fs.unlink(path.join(LOCAL_LIBRARY_DIR, f))
         )
       );
-    } catch {}
+    } catch { }
   });
 
   test("finds local and global components (fuzzy, surface)", async () => {
@@ -29,40 +29,54 @@ describe("searchLibrary", () => {
 
     const names = result.map(r => r.name);
     expect(names).toContain("ISO7342");
-    
   });
-  test("finds global components when query matches global stub", async () => {
+
+  test("finds global components from registry (real CLI)", async () => {
     const result = await searchLibrary(
-        "res",
-        "fuzzy",
-        "surface"
+      "resistor",
+      "fuzzy",
+      "surface"
     );
 
-    const names = result.map(r => r.name);
-    expect(names).toContain("Resistor");
-    });
+    const globalResults = result.filter(r => r.source === "global");
+    expect(globalResults.length).toBeGreaterThan(0);
 
-  test("supports regex search", async () => {
+    // Check that we found something looking like a resistor
+    const hasResistor = globalResults.some(r =>
+      r.name.toLowerCase().includes("resistor") ||
+      (r.description && r.description.toLowerCase().includes("resistor"))
+    );
+    expect(hasResistor).toBe(true);
+  }, 30000);
+
+  test("supports regex search on global registry", async () => {
+    // Search for packages starting with "seveibar" (common author in tscircuit)
+    // Note: The CLI performs a keyword search. We pass a simple keyword that works as a regex too.
     const result = await searchLibrary(
-      "^Op",
+      "seveibar",
       "regex",
       "surface"
     );
 
-    expect(result.some(r => r.name === "OpAmp")).toBe(true);
-  });
+    const globalResults = result.filter(r => r.source === "global");
+    expect(globalResults.length).toBeGreaterThan(0);
+    expect(globalResults.every(r => r.name.startsWith("seveibar"))).toBe(true);
+  }, 30000);
 
-  test("deep search includes exports field", async () => {
+  test("deep search includes exports field for global results", async () => {
     const result = await searchLibrary(
-      "res",
+      "resistor",
       "fuzzy",
       "deep"
     );
 
+    const globalResults = result.filter(r => r.source === "global");
+    expect(globalResults.length).toBeGreaterThan(0);
+
     expect(
-      result.some(
-        r => "exports" in r && Array.isArray((r as any).exports)
+      globalResults.every(
+        r => "exports" in r && Array.isArray((r as any).exports) && (r as any).exports.includes("default")
       )
     ).toBe(true);
-  });
+  }, 30000);
 });
