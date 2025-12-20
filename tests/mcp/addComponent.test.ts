@@ -106,4 +106,55 @@ describe("addComponent", () => {
     const tempFiles = await fs.readdir(TEMP_DIR);
     expect(tempFiles.length).toBe(0);
   });
+
+  test("successfully adds a .kicad_mod footprint", async () => {
+    const result = await addComponent(
+      "test_footprint.kicad_mod",
+      "(module test_footprint (layer F.Cu) (tedit 5A0F0000))"
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.componentPath).toBeDefined();
+
+    const files = await fs.readdir(LOCAL_LIBRARY_DIR);
+    expect(files).toContain("test_footprint.kicad_mod");
+  });
+
+  test("rejects .tsx component that imports missing .kicad_mod footprint", async () => {
+    const result = await addComponent(
+      "ComponentWithMissingFootprint",
+      `
+      // @ts-ignore
+      import footprint from "./missing_footprint.kicad_mod";
+      export const Component = () => footprint;
+      `
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.errors).toBeDefined();
+    expect(result.errors![0]).toContain("Imported footprint not found in library");
+  });
+
+  test("successfully adds .tsx component when imported .kicad_mod exists", async () => {
+    // First add the footprint
+    await addComponent(
+      "existing_footprint.kicad_mod",
+      "(module existing_footprint)"
+    );
+
+    // Then add the component that uses it
+    const result = await addComponent(
+      "ComponentWithFootprint",
+      `
+      // @ts-ignore
+      import footprint from "./existing_footprint.kicad_mod";
+      export const Component = () => footprint;
+      `
+    );
+
+    expect(result.success).toBe(true);
+
+    const files = await fs.readdir(LOCAL_LIBRARY_DIR);
+    expect(files).toContain("ComponentWithFootprint.tsx");
+  });
 });
