@@ -1,6 +1,24 @@
 import fs from "fs/promises";
+import { jest } from "@jest/globals";
 import path from "path";
 import { listLocalComponents } from "../../src/mcp/tools/listLocal.js";
+
+// Mock paths to use isolated directories for this test suite
+jest.mock("../../src/config/paths.js", () => {
+  const original = jest.requireActual("../../src/config/paths.js") as any;
+  const path = require("path");
+
+  // Create a unique ID for this test suite run
+  const TEST_ID = "listLocal_" + Math.random().toString(36).substring(7);
+  const TEST_ROOT = path.join(original.PROJECT_ROOT, ".test_env", TEST_ID);
+
+  return {
+    ...original,
+    LOCAL_LIBRARY_DIR: path.join(TEST_ROOT, "library", "local"),
+    TEMP_DIR: path.join(TEST_ROOT, ".tmp"),
+  };
+});
+
 import { LOCAL_LIBRARY_DIR } from "../../src/config/paths.js";
 
 describe("listLocalComponents", () => {
@@ -12,7 +30,7 @@ describe("listLocalComponents", () => {
           fs.unlink(path.join(LOCAL_LIBRARY_DIR, f))
         )
       );
-    } catch {}
+    } catch { }
   });
 
   test("returns empty array when library is empty", async () => {

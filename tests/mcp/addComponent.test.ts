@@ -1,5 +1,22 @@
 import fs from "fs/promises";
+import { jest } from "@jest/globals";
 import path from "path";
+
+// Mock paths to use isolated directories for this test suite
+jest.mock("../../src/config/paths.js", () => {
+  const original = jest.requireActual("../../src/config/paths.js") as any;
+  const path = require("path");
+
+  // Create a unique ID for this test suite run
+  const TEST_ID = "addComp_" + Math.random().toString(36).substring(7);
+  const TEST_ROOT = path.join(original.PROJECT_ROOT, ".test_env", TEST_ID);
+
+  return {
+    ...original,
+    LOCAL_LIBRARY_DIR: path.join(TEST_ROOT, "library", "local"),
+    TEMP_DIR: path.join(TEST_ROOT, ".tmp"),
+  };
+});
 
 import { addComponent } from "../../src/mcp/tools/addComponent.js";
 import {
@@ -17,7 +34,7 @@ describe("addComponent", () => {
           fs.unlink(path.join(TEMP_DIR, f))
         )
       );
-    } catch {}
+    } catch { }
 
     // Cleanup library
     try {
@@ -27,7 +44,7 @@ describe("addComponent", () => {
           fs.unlink(path.join(LOCAL_LIBRARY_DIR, f))
         )
       );
-    } catch {}
+    } catch { }
   });
 
   test("successfully adds a valid component", async () => {

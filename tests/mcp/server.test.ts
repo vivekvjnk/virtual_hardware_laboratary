@@ -1,10 +1,28 @@
+import { jest } from "@jest/globals";
+
+// Mock paths to use isolated directories for this test suite
+jest.mock("../../src/config/paths.js", () => {
+  const original = jest.requireActual("../../src/config/paths.js") as any;
+  const path = require("path");
+
+  // Create a unique ID for this test suite run
+  const TEST_ID = "server_" + Math.random().toString(36).substring(7);
+  const TEST_ROOT = path.join(original.PROJECT_ROOT, ".test_env", TEST_ID);
+
+  return {
+    ...original,
+    LOCAL_LIBRARY_DIR: path.join(TEST_ROOT, "library", "local"),
+    TEMP_DIR: path.join(TEST_ROOT, ".tmp"),
+  };
+});
+
 import { server } from "../../src/mcp/server.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 
 describe("MCP Server (via MCP InMemoryTransport)", () => {
   let clientTransport: InMemoryTransport;
   let serverTransport: InMemoryTransport;
-  
+
   function nextMessage(): Promise<any> {
     return new Promise((resolve) => {
       clientTransport.onmessage = (message) => {
@@ -16,13 +34,13 @@ describe("MCP Server (via MCP InMemoryTransport)", () => {
   beforeEach(async () => {
     [clientTransport, serverTransport] =
       InMemoryTransport.createLinkedPair();
-      
+
     await server.connect(serverTransport);
     await serverTransport.start();
-    
+
 
   });
-    
+
   async function flush() {
     await Promise.resolve();
   }

@@ -46,21 +46,21 @@ describe("validator.ts", () => {
 
     expect(result.success).toBe(false);
     expect(result.errors).toContain(
-      "Component file must have .tsx extension"
+      "Component file must have .tsx or .kicad_mod extension"
     );
   });
 
   test("fails on syntax error", async () => {
-  const filePath = await makeTempFile(
-    "broken.tsx",
-    "export const X = ;"
-  );
+    const filePath = await makeTempFile(
+      "broken.tsx",
+      "export const X = ;"
+    );
 
-  const result = await validateComponent(filePath);
+    const result = await validateComponent(filePath);
 
-  expect(result.success).toBe(false);
-  expect(result.errors.length).toBeGreaterThan(0);
- });
+    expect(result.success).toBe(false);
+    expect(result.errors.length).toBeGreaterThan(0);
+  });
 
   test("fails if module has no exports", async () => {
     const filePath = await makeTempFile(
