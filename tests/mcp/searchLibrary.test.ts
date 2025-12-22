@@ -1,7 +1,16 @@
-import fs from "fs/promises";
 import { jest } from "@jest/globals";
-import path from "path";
-import { searchLibrary } from "../../src/mcp/tools/searchLibrary.js";
+
+// Mock child_process to allow simulating failures
+jest.mock("child_process", () => {
+  const original = jest.requireActual("child_process") as any;
+  return {
+    ...original,
+    exec: jest.fn((cmd, opts, cb) => {
+      // Default to real execution
+      return original.exec(cmd, opts, cb);
+    }),
+  };
+});
 
 // Mock paths to use isolated directories for this test suite
 jest.mock("../../src/config/paths.js", () => {
@@ -19,9 +28,17 @@ jest.mock("../../src/config/paths.js", () => {
   };
 });
 
+import fs from "fs/promises";
+import path from "path";
+import { searchLibrary } from "../../src/mcp/tools/searchLibrary.js";
+import { exec } from "child_process";
 import { LOCAL_LIBRARY_DIR } from "../../src/config/paths.js";
 
 describe("searchLibrary", () => {
+  beforeAll(async () => {
+    await fs.mkdir(LOCAL_LIBRARY_DIR, { recursive: true });
+  });
+
   afterEach(async () => {
     try {
       const files = await fs.readdir(LOCAL_LIBRARY_DIR);
@@ -31,6 +48,7 @@ describe("searchLibrary", () => {
         )
       );
     } catch { }
+    jest.clearAllMocks();
   });
 
   test("finds local and global components (fuzzy, surface)", async () => {
@@ -129,4 +147,15 @@ describe("searchLibrary", () => {
     );
     expect(has7400).toBe(true);
   }, 30000);
+
+  test("returns empty array when no global components match query", async () => {
+    const results = await searchLibrary(
+      "BQ79626", // guaranteed to have no matches
+      "fuzzy",
+      "surface"
+    );
+
+    expect(results).toEqual([]);
+  }, 10000);
+
 });

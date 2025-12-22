@@ -29,11 +29,14 @@ async function searchGlobalLibrary(
   depth: SearchDepth
 ): Promise<(SurfaceSearchResult | DeepSearchResult)[]> {
   try {
-    // We use the local tscircuit CLI clone
+    const TSCIRCUIT_CLI =
+      process.env.TSCIRCUIT_CLI ??
+      path.resolve(process.cwd(), "tscircuit", "cli.mjs");
+
     const { stdout } = await execPromise(
-      `bun ./tscircuit/cli.mjs search "${query}"`,
+      `bun "${TSCIRCUIT_CLI}" search "${query}"`,
       {
-        cwd: process.cwd(), // Assuming running from project root
+        cwd: process.cwd(),
       }
     );
 
@@ -47,10 +50,10 @@ async function searchGlobalLibrary(
     const parsedItems = stdout
       .split("\n")
       .map((line) => line.trim())
-      .filter((line) => line)
+      .filter(Boolean)
       .map((line) => {
         let match = line.match(REGISTRY_REGEX);
-        if (match && match.groups) {
+        if (match?.groups) {
           return {
             name: match.groups.name,
             description: match.groups.description,
@@ -58,15 +61,15 @@ async function searchGlobalLibrary(
         }
 
         match = line.match(KICAD_REGEX);
-        if (match && match.groups) {
+        if (match?.groups) {
           return {
             name: match.groups.name,
-            description: match.groups.description || "KiCad footprint",
+            description: match.groups.description ?? "KiCad footprint",
           };
         }
 
         match = line.match(JLC_REGEX);
-        if (match && match.groups) {
+        if (match?.groups) {
           return {
             name: match.groups.name,
             description: match.groups.description,
@@ -75,7 +78,10 @@ async function searchGlobalLibrary(
 
         return null;
       })
-      .filter((item) => item !== null) as { name: string; description: string | undefined }[];
+      .filter(
+        (item): item is { name: string; description: string | undefined } =>
+          item !== null
+      );
 
     return parsedItems.map((item) => {
       if (depth === "deep") {
@@ -85,17 +91,17 @@ async function searchGlobalLibrary(
           description: item.description,
           exports: ["default"],
         } as DeepSearchResult;
-      } else {
-        return {
-          name: item.name,
-          source: "global",
-          description: item.description,
-        } as SurfaceSearchResult;
       }
+
+      return {
+        name: item.name,
+        source: "global",
+        description: item.description,
+      } as SurfaceSearchResult;
     });
   } catch (error) {
     console.error("Error searching global library:", error);
-    return [];
+    throw new Error("Library CLI failed");
   }
 }
 
