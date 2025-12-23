@@ -19,6 +19,9 @@ ENV PATH="$BUN_INSTALL/bin:$PATH"
 # Install pnpm (original)
 RUN npm install -g pnpm
 
+# Install tscircuit for searchLibrary tool
+RUN bun install -g tscircuit
+
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 

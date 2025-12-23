@@ -18,8 +18,14 @@ export interface DeepSearchResult extends SurfaceSearchResult {
   pins?: string[];
 }
 
-import { exec } from "child_process";
+import { exec, execSync } from "child_process";
 import util from "util";
+
+function resolveGlobalTsci(): string {
+  return execSync("which tsci", { encoding: "utf-8" }).trim()
+}
+const TSCI_BIN = resolveGlobalTsci()
+
 
 const execPromise = util.promisify(exec);
 
@@ -29,16 +35,16 @@ async function searchGlobalLibrary(
   depth: SearchDepth
 ): Promise<(SurfaceSearchResult | DeepSearchResult)[]> {
   try {
-    const TSCIRCUIT_CLI =
-      process.env.TSCIRCUIT_CLI ??
-      path.resolve(process.cwd(), "tscircuit", "cli.mjs");
-
+    console.log("TSCI BIN location:", TSCI_BIN)
     const { stdout } = await execPromise(
-      `bun "${TSCIRCUIT_CLI}" search "${query}"`,
+      `"${TSCI_BIN}" search "${query}"`,
       {
         cwd: process.cwd(),
+        shell: "/bin/bash",
+        env: process.env,
       }
-    );
+    )
+
 
     // Regex for registry items (with stars)
     const REGISTRY_REGEX = /^\d+\.\s+(?<name>\S+)\s+-\s+Stars:\s+\d+(?:\s+-\s+(?<description>.*))?$/;
@@ -56,7 +62,7 @@ async function searchGlobalLibrary(
         if (match?.groups) {
           return {
             name: match.groups.name,
-            description: match.groups.description,
+            description: match.groups.description as string | undefined,
           };
         }
 
@@ -72,7 +78,7 @@ async function searchGlobalLibrary(
         if (match?.groups) {
           return {
             name: match.groups.name,
-            description: match.groups.description,
+            description: match.groups.description as string | undefined,
           };
         }
 
@@ -82,7 +88,7 @@ async function searchGlobalLibrary(
         (item): item is { name: string; description: string | undefined } =>
           item !== null
       );
-
+    console.log("Parsed global search results:", parsedItems)
     return parsedItems.map((item) => {
       if (depth === "deep") {
         return {
@@ -152,6 +158,10 @@ export async function searchLibrary(
     mode,
     depth
   );
+
+  console.log("Library search query: ", query)
+  console.log("Local search results:", localResults)
+  console.log("Global search results:", globalResults)
 
   return [
     ...localResults.sort((a, b) =>

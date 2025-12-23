@@ -19,11 +19,19 @@ import { HttpServerTransport } from "./transport/HttpServerTransport.js";
  * Helper: always return structured JSON for OpenHands
  */
 function jsonResult(value: unknown) {
+  let text: string;
+
+  try {
+    text = JSON.stringify(value, null, 2);
+  } catch {
+    text = String(value);
+  }
+
   return {
     content: [
       {
-        type: "json",
-        value,
+        type: "text",
+        text,
       },
     ],
   };

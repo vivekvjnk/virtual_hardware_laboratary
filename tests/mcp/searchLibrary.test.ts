@@ -31,7 +31,6 @@ jest.mock("../../src/config/paths.js", () => {
 import fs from "fs/promises";
 import path from "path";
 import { searchLibrary } from "../../src/mcp/tools/searchLibrary.js";
-import { exec } from "child_process";
 import { LOCAL_LIBRARY_DIR } from "../../src/config/paths.js";
 
 describe("searchLibrary", () => {
