@@ -10,7 +10,7 @@ import {
 
 import { addComponent } from "./tools/addComponent.js";
 import { listLocalComponents } from "./tools/listLocal.js";
-import { searchLibrary } from "./tools/searchLibrary.js";
+import { resolveComponent } from "./tools/resolveComponent.js";
 
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { HttpServerTransport } from "./transport/HttpServerTransport.js";
@@ -58,63 +58,67 @@ export function createLibraryServer(): Server {
    * Tool inventory
    */
   server.setRequestHandler(ListToolsRequestSchema, async () => {
+    const tools = [
+      {
+        name: "add_component",
+        description:
+          "Add or update a TSX component or KiCAD footprint (.kicad_mod) in the local library. Validation is automatic.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            component_name: {
+              type: "string",
+              description:
+                "Logical name of the component (e.g. 'MyResistor') or filename with extension (e.g. 'footprint.kicad_mod')",
+            },
+            file_content: {
+              type: "string",
+              description:
+                "Complete file content (TSX or KiCAD footprint)",
+            },
+          },
+          required: ["component_name", "file_content"],
+        },
+      },
+      {
+        name: "list_local_components",
+        description:
+          "List components explicitly added to the local library.",
+        inputSchema: {
+          type: "object",
+          properties: {},
+        },
+      },
+      {
+        name: "resolve_component",
+        description:
+          "Resolve a component into local imports. May require selection.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            query: {
+              type: "string",
+              description: "Search query or full component name for selection",
+            },
+            depth: {
+              type: "string",
+              enum: ["surface", "deep"],
+            },
+          },
+          required: ["query", "depth"],
+        },
+      },
+    ];
+
+    // Convert to dictionary for protocol conformance
+    const toolsMap = tools.reduce((acc, tool) => {
+      acc[tool.name] = tool;
+      return acc;
+    }, {} as Record<string, any>);
+
     return {
-      tools: [
-        {
-          name: "add_component",
-          description:
-            "Add or update a TSX component or KiCAD footprint (.kicad_mod) in the local library. Validation is automatic.",
-          inputSchema: {
-            type: "object",
-            properties: {
-              component_name: {
-                type: "string",
-                description:
-                  "Logical name of the component (e.g. 'MyResistor') or filename with extension (e.g. 'footprint.kicad_mod')",
-              },
-              file_content: {
-                type: "string",
-                description:
-                  "Complete file content (TSX or KiCAD footprint)",
-              },
-            },
-            required: ["component_name", "file_content"],
-          },
-        },
-        {
-          name: "list_local_components",
-          description:
-            "List components explicitly added to the local library.",
-          inputSchema: {
-            type: "object",
-            properties: {},
-          },
-        },
-        {
-          name: "search_library",
-          description:
-            "Search local and global libraries for components.",
-          inputSchema: {
-            type: "object",
-            properties: {
-              query: {
-                type: "string",
-                description: "Search query",
-              },
-              mode: {
-                type: "string",
-                enum: ["fuzzy", "regex"],
-              },
-              depth: {
-                type: "string",
-                enum: ["surface", "deep"],
-              },
-            },
-            required: ["query", "mode", "depth"],
-          },
-        },
-      ],
-    };
+      tools: toolsMap,
+    } as any;
   });
 
   /**
@@ -147,22 +151,15 @@ export function createLibraryServer(): Server {
         });
       }
 
-      case "search_library": {
-        const { query, mode, depth } = args as {
+      case "resolve_component": {
+        const { query, depth } = args as {
           query: string;
-          mode: "fuzzy" | "regex";
           depth: "surface" | "deep";
         };
 
-        const matches = await searchLibrary(query, mode, depth);
+        const result = await resolveComponent(query, depth);
 
-        return jsonResult({
-          query,
-          mode,
-          depth,
-          results: matches,
-          count: matches.length,
-        });
+        return jsonResult(result);
       }
 
       default:

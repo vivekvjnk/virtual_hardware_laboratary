@@ -59,7 +59,7 @@ describe("MCP Protocol Conformance", () => {
         // Verify keys exist
         expect(tools).toHaveProperty("add_component");
         expect(tools).toHaveProperty("list_local_components");
-        expect(tools).toHaveProperty("search_library");
+        expect(tools).toHaveProperty("resolve_component");
 
         // Verify structure of a tool
         expect(tools["list_local_components"]).toHaveProperty("name", "list_local_components");

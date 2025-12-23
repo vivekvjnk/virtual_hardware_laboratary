@@ -28,16 +28,18 @@ export const PROJECT_ROOT = path.resolve(__dirname, "..", "..");
 export const SRC_DIR = path.join(PROJECT_ROOT, "src");
 
 /**
+ * Imports directory.
+ * This is where resolved components are stored.
+ */
+export const IMPORTS_DIR = process.env.VHL_IMPORTS_DIR || path.join(PROJECT_ROOT, "imports");
+
+/**
  * Local component library directory.
  *
  * This is the ONLY place where librarian-added components live.
  * Anything here is guaranteed to be validated.
  */
-export const LOCAL_LIBRARY_DIR = process.env.VHL_LIBRARY_DIR || path.join(
-  SRC_DIR,
-  "library",
-  "local"
-);
+export const LOCAL_LIBRARY_DIR = process.env.VHL_LIBRARY_DIR || IMPORTS_DIR;
 
 /**
  * Temporary working directory.

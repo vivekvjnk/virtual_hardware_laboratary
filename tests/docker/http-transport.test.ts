@@ -162,7 +162,7 @@ describe("Docker HTTP Transport Integration", () => {
             expect.arrayContaining([
                 "add_component",
                 "list_local_components",
-                "search_library",
+                "resolve_component",
             ])
         );
     }, 30000);
@@ -190,19 +190,19 @@ describe("Docker HTTP Transport Integration", () => {
         expect(content.type).toBe("text");
 
         const payload = JSON.parse(content.text);
-        expect(Array.isArray(payload)).toBe(true);
+        expect(payload.components).toBeDefined();
+        expect(Array.isArray(payload.components)).toBe(true);
     }, 30000);
 
-    test("MCP endpoint calls search_library", async () => {
+    test("MCP endpoint calls resolve_component", async () => {
         const request = {
             jsonrpc: "2.0",
             id: 3,
             method: "tools/call",
             params: {
-                name: "search_library",
+                name: "resolve_component",
                 arguments: {
                     query: "resistor",
-                    mode: "fuzzy",
                     depth: "surface",
                 },
             },
@@ -218,7 +218,7 @@ describe("Docker HTTP Transport Integration", () => {
         expect(content.type).toBe("text");
 
         const payload = JSON.parse(content.text);
-        expect(Array.isArray(payload)).toBe(true);
+        expect(payload.status).toBeDefined();
     }, 30000);
 
     test("MCP endpoint calls add_component", async () => {

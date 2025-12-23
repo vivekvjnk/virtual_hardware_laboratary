@@ -1,60 +1,60 @@
 import { jest } from "@jest/globals";
 
-// Mock paths to use isolated directories for this test suite
-jest.mock("../../src/config/paths.js", () => {
-  const original = jest.requireActual("../../src/config/paths.js") as any;
-  const path = require("path");
-
-  // Create a unique ID for this test suite run
-  const TEST_ID = "server_" + Math.random().toString(36).substring(7);
-  const TEST_ROOT = path.join(original.PROJECT_ROOT, ".test_env", TEST_ID);
-
-  return {
-    ...original,
-    LOCAL_LIBRARY_DIR: path.join(TEST_ROOT, "library", "local"),
-    TEMP_DIR: path.join(TEST_ROOT, ".tmp"),
-  };
-});
-
-// Mock the searchLibrary tool to avoid network calls
-jest.mock("../../src/mcp/tools/searchLibrary.js", () => ({
-  searchLibrary: jest.fn().mockResolvedValue([
-    { name: "MockResistor", description: "A mock resistor" }
-  ]),
+// Mock paths
+jest.unstable_mockModule("../../src/config/paths.js", () => ({
+  LOCAL_LIBRARY_DIR: "/tmp/vhl-test/library/local",
+  TEMP_DIR: "/tmp/vhl-test/.tmp",
+  PROJECT_ROOT: process.cwd(),
+  IMPORTS_DIR: "/tmp/vhl-test/imports",
 }));
 
-import { server } from "../../src/mcp/server.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+// Mock the resolveComponent tool
+jest.unstable_mockModule("../../src/mcp/tools/resolveComponent.js", () => ({
+  resolveComponent: (query: string, depth: string) => {
+    return Promise.resolve({
+      status: "resolved",
+      component: "MockResistor",
+      path: "/mock/path/MockResistor.tsx"
+    });
+  },
+  clearSessions: () => { },
+}));
+
+// Now import the modules
+const { createLibraryServer } = await import("../../src/mcp/server.js");
+const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
 
 describe("MCP Server (via MCP InMemoryTransport)", () => {
-  let clientTransport: InMemoryTransport;
-  let serverTransport: InMemoryTransport;
-
-  function nextMessage(): Promise<any> {
-    return new Promise((resolve) => {
-      clientTransport.onmessage = (message) => {
-        resolve(message);
-      };
-    });
-  }
+  let clientTransport: any;
+  let serverTransport: any;
+  let server: any;
+  let messages: any[] = [];
 
   beforeEach(async () => {
+    messages = [];
     [clientTransport, serverTransport] =
       InMemoryTransport.createLinkedPair();
 
+    clientTransport.onmessage = (msg: any) => {
+      messages.push(msg);
+    };
+
+    server = createLibraryServer();
     await server.connect(serverTransport);
     await serverTransport.start();
-
-
   });
 
-  async function flush() {
-    await Promise.resolve();
+  async function waitForResponse(id: number, timeout = 2000): Promise<any> {
+    const start = Date.now();
+    while (Date.now() - start < timeout) {
+      const found = messages.find(m => m.id === id);
+      if (found) return found;
+      await new Promise(r => setTimeout(r, 50));
+    }
+    throw new Error(`Timeout waiting for response id ${id}. Messages: ${JSON.stringify(messages, null, 2)}`);
   }
 
   test("lists all expected tools", async () => {
-    const responsePromise = nextMessage();
-
     await clientTransport.send({
       jsonrpc: "2.0",
       id: 1,
@@ -62,8 +62,7 @@ describe("MCP Server (via MCP InMemoryTransport)", () => {
       params: {},
     });
 
-    const response = await responsePromise;
-
+    const response = await waitForResponse(1);
     const toolNames = Object.values(response.result.tools).map(
       (t: any) => t.name
     );
@@ -72,14 +71,12 @@ describe("MCP Server (via MCP InMemoryTransport)", () => {
       expect.arrayContaining([
         "add_component",
         "list_local_components",
-        "search_library",
+        "resolve_component",
       ])
     );
   });
 
   test("routes add_component tool call", async () => {
-    const responsePromise = nextMessage();
-
     await clientTransport.send({
       jsonrpc: "2.0",
       id: 2,
@@ -93,18 +90,15 @@ describe("MCP Server (via MCP InMemoryTransport)", () => {
       },
     });
 
-    const response = await responsePromise;
+    const response = await waitForResponse(2);
+    expect(response.result).toBeDefined();
     const content = response.result.content[0];
-
     expect(content.type).toBe("text");
-
     const payload = JSON.parse(content.text);
     expect(payload.success).toBe(true);
   });
 
   test("routes list_local_components tool call", async () => {
-    const responsePromise = nextMessage();
-
     await clientTransport.send({
       jsonrpc: "2.0",
       id: 3,
@@ -115,31 +109,30 @@ describe("MCP Server (via MCP InMemoryTransport)", () => {
       },
     });
 
-    const response = await responsePromise;
+    const response = await waitForResponse(3);
+    expect(response.result).toBeDefined();
     const payload = JSON.parse(response.result.content[0].text);
-
-    expect(Array.isArray(payload)).toBe(true);
+    expect(payload.components).toBeDefined();
   });
 
-  test("routes search_library tool call", async () => {
-    const responsePromise = nextMessage();
-
+  test("routes resolve_component tool call", async () => {
     await clientTransport.send({
       jsonrpc: "2.0",
       id: 4,
       method: "tools/call",
       params: {
-        name: "search_library",
+        name: "resolve_component",
         arguments: {
-          query: "res",
-          mode: "fuzzy",
-          depth: "surface",
+          query: "resistor",
+          depth: "surface"
         },
       },
     });
 
-    const response = await responsePromise;
-    const payload = JSON.parse(response.result.content[0].text);
-    expect(Array.isArray(payload)).toBe(true);
+    const response = await waitForResponse(4);
+    expect(response.result).toBeDefined();
+    const result = JSON.parse(response.result.content[0].text);
+    expect(result.status).toBe("resolved");
+    expect(result.component).toBe("MockResistor");
   });
 });
