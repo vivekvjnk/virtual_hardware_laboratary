@@ -161,7 +161,10 @@ Add or update a TSX component or KiCAD footprint in the local library.
 ```json
 {
   "success": true,
-  "componentPath": "/app/lib/MyResistor.tsx"
+  "component": {
+    "success": true,
+    "componentPath": "/app/lib/MyResistor.tsx"
+  }
 }
 ```
 
@@ -204,16 +207,19 @@ List all components in the local library.
 
 **Response:**
 ```json
-[
-  {
-    "name": "MyResistor",
-    "file": "MyResistor.tsx"
-  },
-  {
-    "name": "MyCapacitor",
-    "file": "MyCapacitor.tsx"
-  }
-]
+{
+  "components": [
+    {
+      "name": "MyResistor",
+      "file": "MyResistor.tsx"
+    },
+    {
+      "name": "MyCapacitor",
+      "file": "MyCapacitor.tsx"
+    }
+  ],
+  "count": 2
+}
 ```
 
 **Example (HTTP):**
@@ -231,59 +237,55 @@ curl -X POST http://localhost:8080/mcp \
   }'
 ```
 
-### Tool 3: `search_library`
+### Tool 3: `resolve_component`
 
-Search both local and global (tscircuit registry) libraries for components.
+Search global (tscircuit registry) libraries for components and import them into the local library. This is a **multi-step transaction** that may require user selection.
 
 **Input Schema:**
 ```json
 {
-  "query": "string (required)",
-  "mode": "fuzzy | regex (required)",
-  "depth": "surface | deep (required)"
+  "query": "string (required)"
 }
 ```
 
 **Parameters:**
-- `query`: Search query string
-- `mode`: 
-  - `fuzzy`: Case-insensitive substring matching
-  - `regex`: Regular expression pattern matching
-- `depth`:
-  - `surface`: Returns only name and source
-  - `deep`: Returns name, source, and additional metadata (exports, pins)
+- `query`: Search query (e.g., `NE555`) or a specific component name from a previous search result (e.g., `NE555P`).
 
-**Response (surface):**
+**Workflow:**
+1. **Search**: Call `resolve_component` with a general query.
+2. **Selection Required**: If multiple matches are found, the server returns `status: "selection_required"` with a list of `options`.
+3. **Resolve**: Call `resolve_component` again with the *exact* name of the desired component from the `options` list.
+4. **Resolved**: The server imports the component and returns `status: "resolved"` with the local `path`.
+
+**Response Examples:**
+
+*Selection Required:*
 ```json
-[
-  {
-    "name": "MyResistor",
-    "source": "local",
-    "description": "Custom resistor component"
-  },
-  {
-    "name": "seveibar.resistor",
-    "source": "global",
-    "description": "Standard resistor - Stars: 42"
-  }
-]
+{
+  "status": "selection_required",
+  "options": [
+    "NE555",
+    "NE555P",
+    "NE555N"
+  ]
+}
 ```
 
-**Response (deep):**
+*Resolved:*
 ```json
-[
-  {
-    "name": "MyResistor",
-    "source": "local",
-    "exports": ["default"]
-  },
-  {
-    "name": "seveibar.resistor",
-    "source": "global",
-    "description": "Standard resistor",
-    "exports": ["default"]
-  }
-]
+{
+  "status": "resolved",
+  "component": "NE555P",
+  "path": "/app/lib/NE555P.tsx"
+}
+```
+
+*No Results:*
+```json
+{
+  "status": "no_results",
+  "message": "No results found matching your query."
+}
 ```
 
 **Example (HTTP):**
@@ -295,11 +297,9 @@ curl -X POST http://localhost:8080/mcp \
     "id": 3,
     "method": "tools/call",
     "params": {
-      "name": "search_library",
+      "name": "resolve_component",
       "arguments": {
-        "query": "resistor",
-        "mode": "fuzzy",
-        "depth": "surface"
+        "query": "NE555"
       }
     }
   }'
@@ -338,8 +338,8 @@ curl -X POST http://localhost:8080/mcp \
         "inputSchema": { ... }
       },
       {
-        "name": "search_library",
-        "description": "Search local and global libraries for components.",
+        "name": "resolve_component",
+        "description": "Resolve a component into local imports. May require selection.",
         "inputSchema": { ... }
       }
     ]
@@ -445,19 +445,23 @@ console.log(tools.result.tools);
 
 #### Step 3: Use the Tools
 
-**Search for Components:**
+**Search and Resolve Components:**
 ```typescript
-const searchResults = await callMCPTool('search_library', {
-  query: 'resistor',
-  mode: 'fuzzy',
-  depth: 'surface'
+// Phase 1: Search
+const searchResult = await callMCPTool('resolve_component', {
+  query: 'NE555'
 });
 
-console.log('Found components:', searchResults);
-// [
-//   { name: 'seveibar.resistor', source: 'global', description: '...' },
-//   ...
-// ]
+if (searchResult.status === 'selection_required') {
+  // Phase 2: Select from options
+  const selectedComponent = searchResult.options[0];
+  const resolveResult = await callMCPTool('resolve_component', {
+    query: selectedComponent
+  });
+  console.log('Resolved:', resolveResult.path);
+} else if (searchResult.status === 'resolved') {
+  console.log('Already resolved:', searchResult.path);
+}
 ```
 
 **Add a Component:**
@@ -541,18 +545,22 @@ Here's a complete workflow for an agent creating a new component:
 class HardwareDesignAgent {
   async createComponent(userRequest: string) {
     // 1. Search for existing components
-    const searchResults = await callMCPTool('search_library', {
-      query: userRequest,
-      mode: 'fuzzy',
-      depth: 'deep'
+    const searchResult = await callMCPTool('resolve_component', {
+      query: userRequest
     });
 
-    // 2. If found, use existing component
-    if (searchResults.length > 0) {
-      return {
-        found: true,
-        component: searchResults[0]
-      };
+    // 2. If found or selection required, handle it
+    if (searchResult.status === 'resolved') {
+      return { found: true, path: searchResult.path };
+    }
+    
+    if (searchResult.status === 'selection_required') {
+      // Logic to pick best match or ask user
+      const bestMatch = searchResult.options[0];
+      const finalResult = await callMCPTool('resolve_component', {
+        query: bestMatch
+      });
+      return { found: true, path: finalResult.path };
     }
 
     // 3. Generate new component code (using LLM)
@@ -623,7 +631,7 @@ pnpm test tests/docker/
 │  │  Tool Handlers                      │   │
 │  │  • add_component                    │   │
 │  │  • list_local_components            │   │
-│  │  • search_library                   │   │
+│  │  • resolve_component                │   │
 │  └─────────────────────────────────────┘   │
 │                                             │
 │  ┌─────────────────────────────────────┐   │
@@ -656,7 +664,7 @@ virtual_hardware_laboratory/
 │   │   ├── tools/
 │   │   │   ├── addComponent.ts   # Add component tool
 │   │   │   ├── listLocal.ts      # List local components tool
-│   │   │   └── searchLibrary.ts  # Search library tool
+│   │   │   └── resolveComponent.ts # Resolve component tool
 │   │   └── transport/
 │   │       └── HttpServerTransport.ts  # HTTP transport
 │   ├── runtime/
@@ -673,7 +681,7 @@ virtual_hardware_laboratory/
 
 ### Component Lifecycle
 
-1. **Search**: Agent searches for components using `search_library`
+1. **Search**: Agent searches for components using `resolve_component`
 2. **Generate**: If not found, agent generates component code
 3. **Stage**: Component is written to temporary directory
 4. **Validate**: TypeScript compilation and dependency checks

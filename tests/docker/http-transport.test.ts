@@ -203,7 +203,6 @@ describe("Docker HTTP Transport Integration", () => {
                 name: "resolve_component",
                 arguments: {
                     query: "resistor",
-                    depth: "surface",
                 },
             },
         };

@@ -10,7 +10,7 @@ jest.unstable_mockModule("../../src/config/paths.js", () => ({
 
 // Mock the resolveComponent tool
 jest.unstable_mockModule("../../src/mcp/tools/resolveComponent.js", () => ({
-  resolveComponent: (query: string, depth: string) => {
+  resolveComponent: (query: string) => {
     return Promise.resolve({
       status: "resolved",
       component: "MockResistor",
@@ -124,7 +124,6 @@ describe("MCP Server (via MCP InMemoryTransport)", () => {
         name: "resolve_component",
         arguments: {
           query: "resistor",
-          depth: "surface"
         },
       },
     });

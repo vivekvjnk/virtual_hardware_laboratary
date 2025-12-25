@@ -100,12 +100,8 @@ export function createLibraryServer(): Server {
               type: "string",
               description: "Search query or full component name for selection. Always use approximate component name for search. Use specific component name only after verifying the search results. Eg: Search NE555(approximate query) --> System returns options [NE555, NE555P, NE555N] --> Import NE555P with specific query. NOTE: Never try to import standard passive components like R, C, L, etc.",
             },
-            depth: {
-              type: "string",
-              enum: ["surface", "deep"],
-            },
           },
-          required: ["query", "depth"],
+          required: ["query"],
         },
       },
     ];
@@ -138,7 +134,7 @@ export function createLibraryServer(): Server {
         };
 
         const result = await addComponent(component_name, file_content);
-
+        console.log("addComponent Result:", result);
         return jsonResult({
           success: true,
           component: result,
@@ -147,7 +143,7 @@ export function createLibraryServer(): Server {
 
       case "list_local_components": {
         const components = await listLocalComponents();
-
+        console.log("listLocalComponents Result:", components);
         return jsonResult({
           components,
           count: components.length,
@@ -155,13 +151,12 @@ export function createLibraryServer(): Server {
       }
 
       case "resolve_component": {
-        const { query, depth } = args as {
+        const { query } = args as {
           query: string;
-          depth: "surface" | "deep";
         };
 
-        const result = await resolveComponent(query, depth);
-
+        const result = await resolveComponent(query);
+        console.log("resolveComponent Result:", result);
         return jsonResult(result);
       }
 
