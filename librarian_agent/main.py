@@ -23,7 +23,9 @@ def main():
     )
 
     args = parser.parse_args()
-
+    if not args.scud_path:
+        args.scud_path = "./docs/bq79616_scud.md"
+        
     scud_path = os.path.abspath(args.scud_path)
     
     try:

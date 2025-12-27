@@ -156,6 +156,17 @@ In the current DNP state, all these lines (`CB12`-`CB16` and `VC12`-`VC16`) are 
     *   **Channel 1:** Unlike channels 2-8, Channel 1 includes an intermediate filter stage. The divider node `GPIO1_R` (with C60 and D3) connects via R128 (1k) to `GPIO1_C`. `GPIO1_C` then connects to J4 Pin 2. Thus, the BMS pin `GPIO1` measures the filtered divider voltage through a 1k series resistor.
     *   **TP44** provides a test point on the `GPIO1_R` net (the divider node).
 
+# Library Mapping
+
+| Designator | Component Name | Library Path | Status |
+| --- | --- | --- | --- |
+| U1 | BQ79616PAPRQ1 | `imports/BQ79616PAPR` | Imported |
+| U2 | ISO7342CQDWRQ1 | `imports/ISO7342CDWR` | Imported (Equivalent) |
+| Q1 | NPN Transistor | `imports/MMBT3904` | Imported (Generic) |
+| Q2 | NPN Transistor | `imports/MMBT3904` | Imported (Generic) |
+| R*, C* | Various Resistors/Capacitors | - | To be mapped to standard library |
+| J* | Various Headers | - | To be mapped to standard library |
+
 # Uncertainties, Assumptions & Confidence
 
 *   **Assumption:** The numbers 12 through 16 in the configuration block represent the cell index in the stack.
