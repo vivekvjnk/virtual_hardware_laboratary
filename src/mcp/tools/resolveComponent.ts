@@ -1,29 +1,161 @@
 import fs from "fs/promises";
 import path from "path";
+import crypto from "crypto";
 import { LOCAL_LIBRARY_DIR as DEFAULT_LIB_DIR } from "../../config/paths.js";
 import { getFilesRecursive } from "../../runtime/libraryFs.js";
 import { CLIInteractionHandler, CLIInteractionState } from "../../utils/cliInteraction.js";
 
-export type ResolveResult =
-  | { status: "resolved"; component: string; path: string }
-  | { status: "selection_required"; selection_id: string; prompt: string; options: string[] }
-  | { status: "no_results"; message: string }
-  | { status: "error"; message: string };
+export type ResolveState =
+  | "idle"
+  | "checking_local"
+  | "checking_global"
+  | "selection_required"
+  | "trying_import"
+  | "finished"
+  | "failed";
 
-interface Session {
-  handler: CLIInteractionHandler;
-  originalQuery: string;
+export interface ResolveStatus {
+  task_id: string;
+  state: ResolveState;
+  location?: string;
+  source?: "local" | "global";
+  selection?: {
+    selection_id: string;
+    prompt: string;
+    options: string[];
+  };
+  exit_code?: number;
+  reason?: string;
 }
 
-const sessions = new Map<string, Session>();
+class ResolveTask {
+  public readonly taskId: string;
+  public state: ResolveState = "idle";
+  private handler: CLIInteractionHandler | null = null;
+  private componentName: string;
+  private location?: string;
+  private source?: "local" | "global";
+  private exitCode?: number;
+  private reason?: string;
+
+  constructor(componentName: string) {
+    this.taskId = `rc-${crypto.randomBytes(4).toString("hex")}`;
+    this.componentName = componentName;
+  }
+
+  public async start() {
+    this.state = "checking_local";
+
+    // Run the resolution logic in the background
+    this.runResolution().catch(err => {
+      this.state = "failed";
+      this.reason = err.message;
+    });
+  }
+
+  private async runResolution() {
+    const local = await resolveLocal(this.componentName);
+    if (local) {
+      this.location = local;
+      this.source = "local";
+      this.state = "finished";
+      return;
+    }
+
+    this.state = "checking_global";
+    this.handler = new CLIInteractionHandler();
+
+    // In the new model, we go straight to import which handles search/selection
+    this.state = "trying_import";
+    const state = await this.handler.execute("tsci", ["import", this.componentName], getLibDir());
+    await this.handleHandlerState(state);
+  }
+
+  private async handleHandlerState(state: CLIInteractionState) {
+    switch (state.state) {
+      case "completed":
+        const match = state.output?.match(/(?:Imported|Installed|✔ Imported|✔ Installed).*?([^\s]+\.tsx)/i);
+        if (match) {
+          this.location = match[1].trim();
+          this.source = "global";
+          this.state = "finished";
+        } else {
+          const local = await resolveLocal(this.componentName);
+          if (local) {
+            this.location = local;
+            this.source = "global";
+            this.state = "finished";
+            this.reason = "Component found in local library";
+          } else {
+            this.state = "failed";
+            this.reason = state.output || "Unknown error during import";
+          }
+        }
+        break;
+      case "selection_required":
+        this.state = "selection_required";
+        break;
+      case "failed":
+        this.state = "failed";
+        this.exitCode = state.exit_code;
+        this.reason = state.reason;
+        break;
+    }
+  }
+
+  public async select(selectionId: string, selectedOption: string) {
+    if (this.state !== "selection_required" || !this.handler) {
+      throw new Error("No active selection required");
+    }
+
+    this.state = "trying_import";
+
+    // Process the response in the background
+    this.handler.respond(selectionId, selectedOption).then(async (newState) => {
+      await this.handleHandlerState(newState);
+    }).catch(err => {
+      this.state = "failed";
+      this.reason = err.message;
+    });
+  }
+
+  public getStatus(): ResolveStatus {
+    const status: ResolveStatus = {
+      task_id: this.taskId,
+      state: this.state,
+      location: this.location,
+      source: this.source,
+      exit_code: this.exitCode,
+      reason: this.reason,
+    };
+
+    if (this.state === "selection_required" && this.handler) {
+      const hState = this.handler.getState();
+      if (hState.selection) {
+        status.selection = {
+          selection_id: hState.selection.selection_id,
+          prompt: hState.selection.prompt,
+          options: hState.selection.options,
+        };
+      }
+    }
+
+    return status;
+  }
+
+  public close() {
+    if (this.handler) {
+      this.handler.kill();
+    }
+  }
+}
+
+let currentTask: ResolveTask | null = null;
 
 function getLibDir(): string {
   return process.env.VHL_LIBRARY_DIR || DEFAULT_LIB_DIR;
 }
 
-/**
- * Checks if the component already exists locally.
- */
 async function resolveLocal(query: string): Promise<string | null> {
   try {
     const libDir = getLibDir();
@@ -32,7 +164,6 @@ async function resolveLocal(query: string): Promise<string | null> {
     const normalizedQuery = query.toLowerCase().replace(/\\/g, "/");
     const tsciName = normalizedQuery.replace(/\//g, ".");
 
-    // 1. Direct path checks
     const possiblePaths = [
       path.join(libDir, query),
       path.join(libDir, query + ".tsx"),
@@ -50,7 +181,6 @@ async function resolveLocal(query: string): Promise<string | null> {
       } catch { }
     }
 
-    // 2. Recursive match
     const match = files.find(f => {
       const relativePath = path.relative(libDir, f).toLowerCase().replace(/\\/g, "/");
       const baseName = path.basename(f, ".tsx").toLowerCase();
@@ -66,118 +196,52 @@ async function resolveLocal(query: string): Promise<string | null> {
 
     if (match) return match;
 
-    // 3. Partial match
     return files.find(f =>
       f.toLowerCase().includes(normalizedQuery.toLowerCase())
     ) || null;
-  } catch {
+    } catch (err) {
+    console.log("Error accessing library directory: ", err);
     return null;
   }
 }
 
-export async function resolveComponent(query: string): Promise<ResolveResult> {
-  // 1. Try local lookup
-  const local = await resolveLocal(query);
-  if (local) {
-    return { status: "resolved", component: query, path: local };
+export async function resolveComponentStart(componentName: string): Promise<ResolveStatus> {
+  if (currentTask && currentTask.getStatus().state !== "finished" && currentTask.getStatus().state !== "failed") {
+    throw new Error("A resolution task is already running");
   }
 
-  // 2. Check if this is an active selection from a previous search
-  let targetSession: Session | null = null;
-  let targetId: string | null = null;
-
-  const waitingSessions = Array.from(sessions.entries()).filter(([id, s]) => s.handler.getState().state === "selection_required");
-
-  for (const [id, session] of waitingSessions) {
-    const state = session.handler.getState();
-    if (state.selection?.options.some(opt => opt.includes(query) || query.includes(opt))) {
-      targetSession = session;
-      targetId = state.selection.selection_id;
-      break;
-    }
-  }
-
-  if (!targetSession && waitingSessions.length === 1) {
-    targetSession = waitingSessions[0][1];
-    targetId = targetSession.handler.getState().selection!.selection_id;
-  }
-
-  if (targetSession && targetId) {
-    // If the query looks like a component name (contains a slash), update the original query
-    if (query.includes("/")) {
-      targetSession.originalQuery = query;
-    }
-
-    const newState = await targetSession.handler.respond(targetId, query);
-
-    for (const [id, s] of sessions.entries()) {
-      if (s === targetSession) {
-        sessions.delete(id);
-        break;
-      }
-    }
-
-    if (newState.state === "selection_required") {
-      sessions.set(newState.selection!.selection_id, targetSession);
-    }
-
-    return handleState(newState, targetSession.originalQuery);
-  }
-
-  // 3. Otherwise, start a new search
-  const handler = new CLIInteractionHandler();
-  const state = await handler.execute("tsci", ["import", query], getLibDir());
-
-  if (state.state === "selection_required") {
-    const selectionId = state.selection!.selection_id;
-    sessions.set(selectionId, { handler, originalQuery: query });
-  }
-
-  return handleState(state, query);
+  currentTask = new ResolveTask(componentName);
+  await currentTask.start();
+  return currentTask.getStatus();
 }
 
-async function handleState(state: CLIInteractionState, originalQuery: string): Promise<ResolveResult> {
-  switch (state.state) {
-    case "completed":
-      const match = state.output?.match(/(?:Imported|Installed|✔ Imported|✔ Installed).*?([^\s]+\.tsx)/i);
-      if (match) {
-        return { status: "resolved", component: originalQuery, path: match[1].trim() };
-      }
-
-      if (state.output?.match(/(?:Imported|Installed|✔ Imported|✔ Installed)/i)) {
-        const local = await resolveLocal(originalQuery);
-        if (local) {
-          return { status: "resolved", component: originalQuery, path: local };
-        }
-      }
-
-      if (state.output?.includes("No results found matching your query.")) {
-        return { status: "no_results", message: "No results found matching your query." };
-      }
-      return { status: "error", message: `Import completed but path not found in output. Output: ${state.output}` };
-
-    case "selection_required":
-      return {
-        status: "selection_required",
-        selection_id: state.selection!.selection_id,
-        prompt: state.selection!.prompt,
-        options: state.selection!.options
-      };
-
-    case "failed":
-      if (state.reason?.includes("No results found matching your query.")) {
-        return { status: "no_results", message: "No results found matching your query." };
-      }
-      return { status: "error", message: state.reason || `tsci failed with code ${state.exit_code}` };
-
-    default:
-      return { status: "error", message: "Unexpected state" };
+export async function resolveComponentStatus(taskId: string): Promise<ResolveStatus> {
+  if (!currentTask || currentTask.taskId !== taskId) {
+    throw new Error(`Task ${taskId} not found`);
   }
+  return currentTask.getStatus();
+}
+
+export async function resolveComponentSelect(taskId: string, selectionId: string, selectedOption: string): Promise<ResolveStatus> {
+  if (!currentTask || currentTask.taskId !== taskId) {
+    throw new Error(`Task ${taskId} not found`);
+  }
+  await currentTask.select(selectionId, selectedOption);
+  return currentTask.getStatus();
+}
+
+export async function resolveComponentClose(taskId: string): Promise<{ success: boolean }> {
+  if (currentTask && currentTask.taskId === taskId) {
+    currentTask.close();
+    currentTask = null;
+    return { success: true };
+  }
+  return { success: false };
 }
 
 export function clearSessions() {
-  for (const session of sessions.values()) {
-    session.handler.kill();
+  if (currentTask) {
+    currentTask.close();
+    currentTask = null;
   }
-  sessions.clear();
 }

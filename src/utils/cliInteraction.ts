@@ -117,20 +117,6 @@ export class CLIInteractionHandler extends EventEmitter {
         }, this.WAIT_TIMEOUT);
     }
 
-    private isStatusLine(line: string): boolean {
-        const l = line.trim();
-        if (l.length === 0) return true;
-        if (/^[-⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/.test(l)) return true;
-        if (l.includes("Searching...") || l.includes("Fetching...") || l.includes("Working...") || l.includes("Loading...") || l.includes("Installing...")) return true;
-        if (l.startsWith("✔")) return true;
-        return false;
-    }
-
-    private isPrompt(line: string): boolean {
-        const l = line.trim();
-        if (l.startsWith("✔")) return false;
-        return l.includes("?") || l.includes("›") || l.includes("»") || l.endsWith(":") || l.includes("(Y/n)") || l.includes("[y/N]");
-    }
 
     private stripMarkers(line: string): string {
         return line.replace(/^[❯*»]\s*/, "").replace(/^\[[ x]\]\s*/, "").replace(/^\([ x]\)\s*/, "").trim();
@@ -138,28 +124,13 @@ export class CLIInteractionHandler extends EventEmitter {
 
     private handlePotentialInteraction() {
         debug("Handling potential interaction...");
-        let allLines = this.buffer.split("\n").map(l => l.trim()).filter(l => l.length > 0);
-
-        let lastPromptIndex = -1;
-        for (let i = allLines.length - 1; i >= 0; i--) {
-            if (this.isPrompt(allLines[i])) {
-                lastPromptIndex = i;
-                break;
-            }
-        }
-        debug(`Last prompt index: ${lastPromptIndex}`);
-
-        if (this.buffer.length === this.lastBufferLength) {
+        if (this.buffer.length === this.lastBufferLength && this.buffer.length > 0) {
             debug("Buffer stopped growing.");
-            if (lastPromptIndex === -1) {
-                debug("No prompt found and buffer stopped growing. Waiting for exit...");
-                // We don't resolve here, we wait for exit or more data.
-                // But if we've waited too long, we might want to resolve as completed.
-                // For now, let's just keep waiting.
-                return;
-            } else {
-                const prompt = allLines[lastPromptIndex];
-                const options = allLines.slice(lastPromptIndex + 1).map(l => this.stripMarkers(l)).filter(l => l.length > 0);
+            let allLines = this.buffer.split("\n").map(l => l.trim()).filter(l => l.length > 0);
+
+            if (allLines.length > 0) {
+                const prompt = allLines[0];
+                const options = allLines.slice(1).map(l => this.stripMarkers(l)).filter(l => l.length > 0);
                 debug(`Prompt detected: ${prompt}`);
 
                 this.selectionId = crypto.randomUUID();
