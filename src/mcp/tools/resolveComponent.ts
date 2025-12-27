@@ -5,6 +5,10 @@ import { LOCAL_LIBRARY_DIR as DEFAULT_LIB_DIR } from "../../config/paths.js";
 import { getFilesRecursive } from "../../runtime/libraryFs.js";
 import { CLIInteractionHandler, CLIInteractionState } from "../../utils/cliInteraction.js";
 
+// Long-polling constants to prevent status-polling thrash
+const MAX_WAIT_MS = 4000;        // hard cap for long-polling
+const POLL_INTERVAL_MS = 1000;   // internal server polling interval
+
 export type ResolveState =
   | "idle"
   | "checking_local"
@@ -199,7 +203,7 @@ async function resolveLocal(query: string): Promise<string | null> {
     return files.find(f =>
       f.toLowerCase().includes(normalizedQuery.toLowerCase())
     ) || null;
-    } catch (err) {
+  } catch (err) {
     console.log("Error accessing library directory: ", err);
     return null;
   }
@@ -219,6 +223,41 @@ export async function resolveComponentStatus(taskId: string): Promise<ResolveSta
   if (!currentTask || currentTask.taskId !== taskId) {
     throw new Error(`Task ${taskId} not found`);
   }
+
+  const isTerminalOrAgentWait = (state: ResolveState): boolean => {
+    return state === "finished" || state === "failed" || state === "selection_required";
+  };
+
+  const initialStatus = currentTask.getStatus();
+
+  // Terminal / agent-wait states return immediately
+  // Never block when the agent must decide
+  if (isTerminalOrAgentWait(initialStatus.state)) {
+    return initialStatus;
+  }
+
+  // Long-polling for transient states (checking_local, checking_global, trying_import)
+  // Block only while the server is working
+  const startTime = Date.now();
+
+  while (Date.now() - startTime < MAX_WAIT_MS) {
+    await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
+    const currentStatus = currentTask.getStatus();
+
+    // Any state change should be surfaced immediately
+    if (currentStatus.state !== initialStatus.state) {
+      return currentStatus;
+    }
+
+    console.log("Polling for resolution status...");
+    // Transition to terminal / agent-wait state
+    if (isTerminalOrAgentWait(currentStatus.state)) {
+      return currentStatus;
+    }
+    console.log("Resolution status: ", currentStatus.state);
+  }
+
+  // Timeout reached: return most recent state
   return currentTask.getStatus();
 }
 
