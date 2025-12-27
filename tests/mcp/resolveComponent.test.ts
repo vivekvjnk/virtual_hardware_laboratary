@@ -47,7 +47,7 @@ describe("resolveComponent", () => {
             "export default () => null;"
         );
 
-        const result = await resolveComponent("MyResistor", "surface");
+        const result = await resolveComponent("MyResistor");
 
         expect(result.status).toBe("resolved");
         if (result.status === "resolved") {
@@ -65,19 +65,21 @@ describe("resolveComponent", () => {
 
         (spawn as any).mockReturnValue(mockProc);
 
-        const promise = resolveComponent("resistor", "surface");
+        const promise = resolveComponent("resistor");
 
         // Simulate tsci output
         setTimeout(() => {
             mockProc.stdout.emit("data", Buffer.from("Select a part to import\n] @tscircuit/resistor - \n] @tscircuit/axial-resistor - \n"));
-        }, 10);
+        }, 50);
 
         const result = await promise;
 
         expect(result.status).toBe("selection_required");
         if (result.status === "selection_required") {
-            expect(result.options).toContain("@tscircuit/resistor");
-            expect(result.options).toContain("@tscircuit/axial-resistor");
+            expect(result.selection_id).toBeDefined();
+            expect(result.prompt).toBe("Select a part to import");
+            expect(result.options).toContain("] @tscircuit/resistor -");
+            expect(result.options).toContain("] @tscircuit/axial-resistor -");
         }
     });
 
@@ -91,18 +93,19 @@ describe("resolveComponent", () => {
         (spawn as any).mockReturnValue(mockProc);
 
         // Phase 1: Start import
-        const promise1 = resolveComponent("resistor", "surface");
+        const promise1 = resolveComponent("resistor");
         setTimeout(() => {
             mockProc.stdout.emit("data", Buffer.from("Select a part to import\n] @tscircuit/resistor - \n"));
-        }, 10);
+        }, 50);
         const result1 = await promise1;
         expect(result1.status).toBe("selection_required");
 
         // Phase 2: Complete import
-        const promise2 = resolveComponent("@tscircuit/resistor", "surface");
+        const promise2 = resolveComponent("@tscircuit/resistor");
         setTimeout(() => {
             mockProc.stdout.emit("data", Buffer.from("Imported @tscircuit/resistor to /app/imports/resistor.tsx\n"));
-        }, 10);
+            mockProc.emit("exit", 0);
+        }, 50);
         const result2 = await promise2;
 
         expect(result2.status).toBe("resolved");
@@ -121,7 +124,7 @@ describe("resolveComponent", () => {
 
         (spawn as any).mockReturnValue(mockProc);
 
-        const promise = resolveComponent("nonexistent", "surface");
+        const promise = resolveComponent("nonexistent");
 
         setTimeout(() => {
             mockProc.emit("exit", 1);
@@ -131,7 +134,7 @@ describe("resolveComponent", () => {
 
         expect(result.status).toBe("error");
         if (result.status === "error") {
-            expect(result.message).toContain("Search failed");
+            expect(result.message).toContain("tsci failed with code 1");
         }
     });
 
@@ -143,11 +146,12 @@ describe("resolveComponent", () => {
 
         (spawn as any).mockReturnValue(mockProc);
 
-        const promise = resolveComponent("nonexistent", "surface");
+        const promise = resolveComponent("nonexistent");
 
         setTimeout(() => {
             mockProc.stdout.emit("data", Buffer.from("No results found matching your query.\n"));
-        }, 10);
+            mockProc.emit("exit", 1);
+        }, 50);
 
         const result = await promise;
 

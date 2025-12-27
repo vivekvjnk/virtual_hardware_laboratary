@@ -1,212 +1,183 @@
 import fs from "fs/promises";
 import path from "path";
-import { spawn, ChildProcessWithoutNullStreams } from "child_process";
-import crypto from "crypto";
-import { LOCAL_LIBRARY_DIR } from "../../config/paths.js";
+import { LOCAL_LIBRARY_DIR as DEFAULT_LIB_DIR } from "../../config/paths.js";
 import { getFilesRecursive } from "../../runtime/libraryFs.js";
+import { CLIInteractionHandler, CLIInteractionState } from "../../utils/cliInteraction.js";
 
 export type ResolveResult =
   | { status: "resolved"; component: string; path: string }
-  | { status: "selection_required"; options: string[] }
+  | { status: "selection_required"; selection_id: string; prompt: string; options: string[] }
   | { status: "no_results"; message: string }
   | { status: "error"; message: string };
 
-interface ImportSession {
-  proc: ChildProcessWithoutNullStreams;
-  options: string[];
+interface Session {
+  handler: CLIInteractionHandler;
+  originalQuery: string;
 }
 
-const sessions = new Map<string, ImportSession>();
+const sessions = new Map<string, Session>();
+
+function getLibDir(): string {
+  return process.env.VHL_LIBRARY_DIR || DEFAULT_LIB_DIR;
+}
 
 /**
  * Checks if the component already exists locally.
  */
 async function resolveLocal(query: string): Promise<string | null> {
   try {
-    const files = await getFilesRecursive(LOCAL_LIBRARY_DIR);
-    const match = files.find(f =>
-      path.basename(f).toLowerCase().includes(query.toLowerCase()) && f.endsWith(".tsx")
-    );
-    return match || null;
+    const libDir = getLibDir();
+    const files = await getFilesRecursive(libDir);
+
+    const normalizedQuery = query.toLowerCase().replace(/\\/g, "/");
+    const tsciName = normalizedQuery.replace(/\//g, ".");
+
+    // 1. Direct path checks
+    const possiblePaths = [
+      path.join(libDir, query),
+      path.join(libDir, query + ".tsx"),
+      path.join(libDir, "node_modules", "@tsci", tsciName, "index.js"),
+      path.join(libDir, "node_modules", "@tsci", tsciName, "index.tsx"),
+      path.join(libDir, "node_modules", "@tsci", tsciName, "index.cjs"),
+      path.join(libDir, tsciName, "index.tsx"),
+      path.join(libDir, tsciName + ".tsx"),
+    ];
+
+    for (const p of possiblePaths) {
+      try {
+        await fs.access(p);
+        return p;
+      } catch { }
+    }
+
+    // 2. Recursive match
+    const match = files.find(f => {
+      const relativePath = path.relative(libDir, f).toLowerCase().replace(/\\/g, "/");
+      const baseName = path.basename(f, ".tsx").toLowerCase();
+
+      return (relativePath === normalizedQuery ||
+        relativePath === normalizedQuery + ".tsx" ||
+        baseName === normalizedQuery ||
+        relativePath.endsWith("/" + normalizedQuery + ".tsx") ||
+        relativePath.endsWith("/" + normalizedQuery) ||
+        relativePath.includes(`@tsci/${tsciName}`) ||
+        relativePath.includes(`@tsci/${normalizedQuery.replace(/\//g, ".")}`));
+    });
+
+    if (match) return match;
+
+    // 3. Partial match
+    return files.find(f =>
+      f.toLowerCase().includes(normalizedQuery.toLowerCase())
+    ) || null;
   } catch {
     return null;
   }
-}
-
-/**
- * Phase 1: Search for components and identify if a selection is needed.
- */
-function startImport(query: string): Promise<{ sessionId: string; options: string[] }> {
-  return new Promise((resolve, reject) => {
-    const proc = spawn("tsci", ["import", query], {
-      cwd: LOCAL_LIBRARY_DIR,
-      stdio: "pipe",
-    });
-
-    console.log("Searching for: ", query, "...");
-    let buffer = "";
-    const options = new Set<string>();
-    let isListingActive = false;
-
-    // Define listeners as named functions so they can be removed
-    const onStdout = (chunk: Buffer) => {
-      // Strip ANSI escape codes
-      const text = chunk.toString().replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, "");
-      buffer += text;
-
-      if (buffer.includes("No results found matching your query.")) {
-        cleanup();
-        return resolve({ sessionId: "no_results", options: [] });
-      }
-
-      if (buffer.includes("Select a part to import")) {
-        isListingActive = true;
-      }
-
-      if (isListingActive) {
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-
-        lines.forEach(line => {
-          if (line.includes("Select a part to import")) return;
-          // Capture the name after ']' or '❯' and before the separator ' -'
-           const cleanMatch = line.match(/\]\s*(.*?)\s*-/);
-          if (cleanMatch && cleanMatch[1]) {
-            options.add(cleanMatch[1].trim());
-          }
-        });
-
-        if (options.size > 0) {
-          cleanup(); // CRITICAL: Stop listening before resolving
-          const sessionId = crypto.randomUUID();
-          const finalOptions = [...options];
-          sessions.set(sessionId, { proc, options: finalOptions });
-          resolve({ sessionId, options: finalOptions });
-        }
-      }
-    };
-
-    const onExit = (code: number | null) => {
-      cleanup();
-      if (options.size === 0) {
-        if (buffer.includes("No results found")) {
-          resolve({ sessionId: "no_results", options: [] });
-        } else {
-          reject(new Error(`tsci exited with code ${code}`));
-        }
-      }
-    };
-
-    const cleanup = () => {
-      proc.stdout.off("data", onStdout);
-      proc.off("exit", onExit);
-    };
-
-    proc.stdout.on("data", onStdout);
-    proc.on("exit", onExit);
-    proc.on("error", (err) => { cleanup(); reject(err); });
-  });
-}
-
-/**
- * Phase 2: Use arrow keys to select the item and wait for the import path.
- */
-async function completeImport(selection: string): Promise<string> {
-  const sessionEntry = [...sessions.entries()].find(([_, s]) =>
-    s.options.includes(selection)
-  );
-
-  if (!sessionEntry) throw new Error("Invalid or expired selection");
-
-  const [sessionId, session] = sessionEntry;
-  const targetIndex = session.options.indexOf(selection);
-
-  // ANSI escape sequences
-  const DOWN_ARROW = "\u001b[B";
-  const ENTER = "\n";
-
-  // Simulate keyboard navigation
-  if (targetIndex > 0) {
-    for (let i = 0; i < targetIndex; i++) {
-      session.proc.stdin.write(DOWN_ARROW);
-    }
-  }
-  session.proc.stdin.write(ENTER);
-
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      cleanup();
-      session.proc.kill();
-      sessions.delete(sessionId);
-      reject(new Error("Import timed out after 30 seconds"));
-    }, 30000);
-
-    const onOutput = (chunk: Buffer) => {
-      const text = chunk.toString();
-      // Matches "Imported ... /path.tsx" or "✔ Imported ... /path.tsx"
-      const match = text.match(/(?:Imported|✔ Imported).*?([^\s]+\.tsx)/i);
-
-      if (match) {
-        const filePath = match[1].trim();
-        cleanup();
-        session.proc.kill();
-        sessions.delete(sessionId);
-        resolve(filePath);
-      }
-    };
-
-    const cleanup = () => {
-      clearTimeout(timeout);
-      session.proc.stdout.off("data", onOutput);
-      session.proc.stderr.off("data", onOutput);
-    };
-
-    // Listen to both because success messages often go to stderr
-    session.proc.stdout.on("data", onOutput);
-    session.proc.stderr.on("data", onOutput);
-
-    session.proc.on("exit", (code) => {
-      cleanup();
-      sessions.delete(sessionId);
-      if (code !== 0 && code !== null) reject(new Error(`tsci exited with code ${code}`));
-    });
-  });
 }
 
 export async function resolveComponent(query: string): Promise<ResolveResult> {
   // 1. Try local lookup
   const local = await resolveLocal(query);
   if (local) {
-    return { status: "resolved", component: path.basename(local, ".tsx"), path: local };
+    return { status: "resolved", component: query, path: local };
   }
 
   // 2. Check if this is an active selection from a previous search
-  for (const [_, s] of sessions.entries()) {
-    if (s.options.includes(query)) {
-      try {
-        const importedPath = await completeImport(query);
-        return { status: "resolved", component: query, path: importedPath };
-      } catch (err) {
-        return { status: "error", message: err instanceof Error ? err.message : "Import failed" };
-      }
+  let targetSession: Session | null = null;
+  let targetId: string | null = null;
+
+  const waitingSessions = Array.from(sessions.entries()).filter(([id, s]) => s.handler.getState().state === "selection_required");
+
+  for (const [id, session] of waitingSessions) {
+    const state = session.handler.getState();
+    if (state.selection?.options.some(opt => opt.includes(query) || query.includes(opt))) {
+      targetSession = session;
+      targetId = state.selection.selection_id;
+      break;
     }
   }
 
-  // 3. Otherwise, start a new search
-  try {
-    const { sessionId, options } = await startImport(query);
-    if (sessionId === "no_results") {
-      return { status: "no_results", message: "No results found matching your query." };
+  if (!targetSession && waitingSessions.length === 1) {
+    targetSession = waitingSessions[0][1];
+    targetId = targetSession.handler.getState().selection!.selection_id;
+  }
+
+  if (targetSession && targetId) {
+    // If the query looks like a component name (contains a slash), update the original query
+    if (query.includes("/")) {
+      targetSession.originalQuery = query;
     }
-    return { status: "selection_required", options };
-  } catch (err) {
-    return { status: "error", message: "Search failed or tsci error" };
+
+    const newState = await targetSession.handler.respond(targetId, query);
+
+    for (const [id, s] of sessions.entries()) {
+      if (s === targetSession) {
+        sessions.delete(id);
+        break;
+      }
+    }
+
+    if (newState.state === "selection_required") {
+      sessions.set(newState.selection!.selection_id, targetSession);
+    }
+
+    return handleState(newState, targetSession.originalQuery);
+  }
+
+  // 3. Otherwise, start a new search
+  const handler = new CLIInteractionHandler();
+  const state = await handler.execute("tsci", ["import", query], getLibDir());
+
+  if (state.state === "selection_required") {
+    const selectionId = state.selection!.selection_id;
+    sessions.set(selectionId, { handler, originalQuery: query });
+  }
+
+  return handleState(state, query);
+}
+
+async function handleState(state: CLIInteractionState, originalQuery: string): Promise<ResolveResult> {
+  switch (state.state) {
+    case "completed":
+      const match = state.output?.match(/(?:Imported|Installed|✔ Imported|✔ Installed).*?([^\s]+\.tsx)/i);
+      if (match) {
+        return { status: "resolved", component: originalQuery, path: match[1].trim() };
+      }
+
+      if (state.output?.match(/(?:Imported|Installed|✔ Imported|✔ Installed)/i)) {
+        const local = await resolveLocal(originalQuery);
+        if (local) {
+          return { status: "resolved", component: originalQuery, path: local };
+        }
+      }
+
+      if (state.output?.includes("No results found matching your query.")) {
+        return { status: "no_results", message: "No results found matching your query." };
+      }
+      return { status: "error", message: `Import completed but path not found in output. Output: ${state.output}` };
+
+    case "selection_required":
+      return {
+        status: "selection_required",
+        selection_id: state.selection!.selection_id,
+        prompt: state.selection!.prompt,
+        options: state.selection!.options
+      };
+
+    case "failed":
+      if (state.reason?.includes("No results found matching your query.")) {
+        return { status: "no_results", message: "No results found matching your query." };
+      }
+      return { status: "error", message: state.reason || `tsci failed with code ${state.exit_code}` };
+
+    default:
+      return { status: "error", message: "Unexpected state" };
   }
 }
 
 export function clearSessions() {
   for (const session of sessions.values()) {
-    session.proc.kill();
+    session.handler.kill();
   }
   sessions.clear();
 }
