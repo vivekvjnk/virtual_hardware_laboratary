@@ -156,16 +156,6 @@ In the current DNP state, all these lines (`CB12`-`CB16` and `VC12`-`VC16`) are 
     *   **Channel 1:** Unlike channels 2-8, Channel 1 includes an intermediate filter stage. The divider node `GPIO1_R` (with C60 and D3) connects via R128 (1k) to `GPIO1_C`. `GPIO1_C` then connects to J4 Pin 2. Thus, the BMS pin `GPIO1` measures the filtered divider voltage through a 1k series resistor.
     *   **TP44** provides a test point on the `GPIO1_R` net (the divider node).
 
-# Library Mapping
-
-| Designator | Component Name | Library Path | Status |
-| --- | --- | --- | --- |
-| U1 | BQ79616PAPRQ1 | `imports/BQ79616PAPR` | Imported |
-| U2 | ISO7342CQDWRQ1 | `imports/ISO7342CDWR` | Imported (Equivalent) |
-| Q1 | NPN Transistor | `imports/MMBT3904` | Imported (Generic) |
-| Q2 | NPN Transistor | `imports/MMBT3904` | Imported (Generic) |
-| R*, C* | Various Resistors/Capacitors | - | To be mapped to standard library |
-| J* | Various Headers | - | To be mapped to standard library |
 
 # Uncertainties, Assumptions & Confidence
 
@@ -183,3 +173,20 @@ In the current DNP state, all these lines (`CB12`-`CB16` and `VC12`-`VC16`) are 
 *   **Uncertainty:** U2 `OUTA` (Pin 14) appears unconnected.
 *   **Resolved:** Q1 is active, Q2 is DNP. The NPN supply circuit is populated.
 *   **Conflict:** J3 pinout text vs schematic wires. Text says Pin 5 is TX, Pin 4 is RX. Schematic wires show Pin 4 is TX, Pin 3 is RX_C. Schematic wires are assumed correct.
+
+# Library Mapping
+
+| Designator | Component | Library Reference | Notes |
+|------------|-----------|-------------------|-------|
+| U1 | TI BQ79616PAPQ1 | `imports/BQ79616PAPR` | 16-Channel Battery Monitor |
+| U2 | TI ISO7342CQDWRQ1 | `imports/ISO7342CDWR` | Digital Isolator |
+| Q1 | NPN Transistor | `imports/MMBT3904` | External LDO Pass Element |
+| D3 | 24V Dual Zener | `imports/BZX84C24` | GPIO1 Protection |
+| D1 | Green LED | `generic/LED_0603_GREEN` | Power Indicator |
+| RT1-RT8 | 10k NTC | `generic/NTC_10K` | Temperature Sensing |
+| J4 | 2x8 Header | `generic/HEADER_2X8` | GPIO Configuration |
+| J17 | 2x5 Header | `generic/HEADER_2X5` | USB2ANY / MCU Interface |
+| J3 | 6-pin Header | `generic/HEADER_1X6` | Direct UART |
+| J1, J2, J5, J18, J21 | 2-pin Header | `generic/HEADER_1X2` | Configuration Jumpers |
+| R, C | Various | `generic/R_0603`, `generic/C_0603` | Passives (values as per inventory) |
+
