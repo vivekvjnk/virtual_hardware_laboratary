@@ -18,7 +18,6 @@ import {
     resolveComponentStart,
     resolveComponentStatus,
     resolveComponentSelect,
-    resolveComponentClose,
     clearSessions
 } from "../../src/mcp/tools/resolveComponent.js";
 

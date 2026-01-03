@@ -123,15 +123,23 @@ Returns current state + any payload (selection, result, error).
 
 ---
 
-### 6.4 `resolve_component_close`
+## 7. Automatic Cleanup
 
-Explicitly disposes task state.
+Tasks are **automatically cleaned up** when they reach terminal states (`finished` or `failed`). This happens during the `resolve_component_status` call that returns the terminal state.
+
+**Benefits:**
+- Reduces cognitive load on the agent
+- No need to remember to call a separate cleanup tool
+- Task slot is immediately freed for new resolutions
+- Simpler workflow with fewer steps
+
+**Important:** Once a task reaches `finished` or `failed` state and you retrieve that status, the task is automatically disposed. Subsequent status calls with the same `task_id` will fail with "Task not found".
 
 ---
 
-## 7. Generic Interactive CLI Handling (CRITICAL)
+## 8. Generic Interactive CLI Handling (CRITICAL)
 
-### 7.1 Detection
+### 8.1 Detection
 
 An **interactive event** occurs when:
 
@@ -140,7 +148,7 @@ An **interactive event** occurs when:
 
 ---
 
-### 7.2 Parsing Rule (Generic)
+### 8.2 Parsing Rule (Generic)
 
 From captured CLI output:
 
@@ -161,7 +169,7 @@ Parsed generically.
 
 ---
 
-### 7.3 Internal Representation
+### 8.3 Internal Representation
 
 ```json
 {
@@ -174,7 +182,7 @@ Parsed generically.
 
 ---
 
-### 7.4 Agent-Facing State (`selection_required`)
+### 8.4 Agent-Facing State (`selection_required`)
 
 ```json
 {
@@ -191,7 +199,7 @@ Server **pauses** until agent responds.
 
 ---
 
-## 8. Mapping Agent Choice → CLI Selection
+## 9. Mapping Agent Choice → CLI Selection
 
 ### Agent Response
 
@@ -226,9 +234,9 @@ No semantic logic. No retries.
 
 ---
 
-## 9. Import & Failure Semantics (IMPORTANT)
+## 10. Import & Failure Semantics (IMPORTANT)
 
-### 9.1 Exit Code Is the Only Failure Signal
+### 10.1 Exit Code Is the Only Failure Signal
 
 * `exit code == 0` → success
 * `exit code ≠ 0` → failure
@@ -237,7 +245,7 @@ No semantic logic. No retries.
 
 ---
 
-### 9.2 On Failure
+### 10.2 On Failure
 
 Capture:
 
@@ -257,7 +265,7 @@ Return transparently to agent.
 
 ---
 
-### 9.3 Failure After Selection
+### 10.3 Failure After Selection
 
 If failure occurs after a selection:
 
@@ -269,7 +277,7 @@ No auto-retry.
 
 ---
 
-## 10. Completion State
+## 11. Completion State
 
 ### `finished`
 
@@ -281,11 +289,11 @@ No auto-retry.
 }
 ```
 
-Task must be explicitly closed.
+Task is automatically cleaned up when this state is retrieved via `resolve_component_status`.
 
 ---
 
-## 11. Explicit Non-Goals
+## 12. Explicit Non-Goals
 
 Do NOT implement:
 
@@ -301,7 +309,7 @@ This is **intentional**.
 
 ---
 
-## 12. Implementation Philosophy (For the Coding Agent)
+## 13. Implementation Philosophy (For the Coding Agent)
 
 > Treat `tsci` as an opaque, interactive process.
 > Treat the agent as the decision maker.
@@ -311,7 +319,7 @@ Nothing more.
 
 ---
 
-## 13. Final One-Line Summary
+## 14. Final One-Line Summary
 
 > **`resolve_component` is a single-task, state-driven MCP process that transparently relays all `tsci` interactive prompts to the agent and applies the agent’s choice mechanically.**
 

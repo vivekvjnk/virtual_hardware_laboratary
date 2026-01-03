@@ -210,7 +210,7 @@ async function resolveLocal(query: string): Promise<string | null> {
 }
 
 export async function resolveComponentStart(componentName: string): Promise<ResolveStatus> {
-  if (currentTask && currentTask.getStatus().state !== "finished" && currentTask.getStatus().state !== "failed") {
+  if (currentTask) {
     throw new Error("A resolution task is already running");
   }
 
@@ -228,11 +228,20 @@ export async function resolveComponentStatus(taskId: string): Promise<ResolveSta
     return state === "finished" || state === "failed" || state === "selection_required";
   };
 
+  const isTerminalState = (state: ResolveState): boolean => {
+    return state === "finished" || state === "failed";
+  };
+
   const initialStatus = currentTask.getStatus();
 
   // Terminal / agent-wait states return immediately
   // Never block when the agent must decide
   if (isTerminalOrAgentWait(initialStatus.state)) {
+    // Auto-cleanup on terminal states
+    if (isTerminalState(initialStatus.state)) {
+      currentTask.close();
+      currentTask = null;
+    }
     return initialStatus;
   }
 
@@ -246,19 +255,34 @@ export async function resolveComponentStatus(taskId: string): Promise<ResolveSta
 
     // Any state change should be surfaced immediately
     if (currentStatus.state !== initialStatus.state) {
+      // Auto-cleanup on terminal states
+      if (isTerminalState(currentStatus.state)) {
+        currentTask.close();
+        currentTask = null;
+      }
       return currentStatus;
     }
 
-    console.log("Polling for resolution status...");
+
     // Transition to terminal / agent-wait state
     if (isTerminalOrAgentWait(currentStatus.state)) {
+      // Auto-cleanup on terminal states
+      if (isTerminalState(currentStatus.state)) {
+        currentTask.close();
+        currentTask = null;
+      }
       return currentStatus;
     }
-    console.log("Resolution status: ", currentStatus.state);
   }
 
   // Timeout reached: return most recent state
-  return currentTask.getStatus();
+  const finalStatus = currentTask.getStatus();
+  // Auto-cleanup on terminal states even after timeout
+  if (isTerminalState(finalStatus.state)) {
+    currentTask.close();
+    currentTask = null;
+  }
+  return finalStatus;
 }
 
 export async function resolveComponentSelect(taskId: string, selectionId: string, selectedOption: string): Promise<ResolveStatus> {
@@ -269,14 +293,6 @@ export async function resolveComponentSelect(taskId: string, selectionId: string
   return currentTask.getStatus();
 }
 
-export async function resolveComponentClose(taskId: string): Promise<{ success: boolean }> {
-  if (currentTask && currentTask.taskId === taskId) {
-    currentTask.close();
-    currentTask = null;
-    return { success: true };
-  }
-  return { success: false };
-}
 
 export function clearSessions() {
   if (currentTask) {

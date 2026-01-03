@@ -13,8 +13,7 @@ import { listLocalComponents } from "./tools/listLocal.js";
 import {
   resolveComponentStart,
   resolveComponentStatus,
-  resolveComponentSelect,
-  resolveComponentClose
+  resolveComponentSelect
 } from "./tools/resolveComponent.js";
 
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -110,7 +109,7 @@ export function createLibraryServer(): Server {
       },
       {
         name: "resolve_component_status",
-        description: "PROCESS STEP 2: Poll the current state of an active resolution task. Returns a status object with 'state' field that can be: 'checking_local' (searching local library), 'checking_global' (searching global registry), 'trying_import' (importing component), 'selection_required' (waiting for your selection - see resolve_component_select), 'finished' (success - contains 'location' and 'source' fields), or 'failed' (error - contains 'reason' field). When state is 'selection_required', the response includes a 'selection' object with 'selection_id', 'prompt', and 'options' array. You MUST poll this repeatedly (with delays) until the state changes from transient states. CRITICAL: Always check the state before taking action.",
+        description: "PROCESS STEP 2: Poll the current state of an active resolution task. Returns a status object with 'state' field that can be: 'checking_local' (searching local library), 'checking_global' (searching global registry), 'trying_import' (importing component), 'selection_required' (waiting for your selection - see resolve_component_select), 'finished' (success - contains 'location' and 'source' fields), or 'failed' (error - contains 'reason' field). When state is 'selection_required', the response includes a 'selection' object with 'selection_id', 'prompt', and 'options' array. You MUST poll this repeatedly (with delays) until the state changes from transient states. CRITICAL: Always check the state before taking action. NOTE: Tasks are automatically cleaned up when they reach 'finished' or 'failed' states, freeing the task slot for new resolutions.",
         inputSchema: {
           type: "object",
           properties: {
@@ -142,20 +141,6 @@ export function createLibraryServer(): Server {
             },
           },
           required: ["task_id", "selection_id", "selected_option"],
-        },
-      },
-      {
-        name: "resolve_component_close",
-        description: "PROCESS STEP 4 (CLEANUP): Explicitly close and clean up a resolution task. This kills any running CLI process and frees the task slot, allowing a new resolution to start. Call this after the task reaches 'finished' or 'failed' state, or if you need to abort an in-progress task. Returns {success: true} if the task was found and closed. IMPORTANT: You MUST close completed tasks to free up the single task slot before starting a new resolution.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            task_id: {
-              type: "string",
-              description: "The task ID to close.",
-            },
-          },
-          required: ["task_id"],
         },
       },
     ];
@@ -224,12 +209,6 @@ export function createLibraryServer(): Server {
           selected_option: string;
         };
         const result = await resolveComponentSelect(task_id, selection_id, selected_option);
-        return jsonResult(result);
-      }
-
-      case "resolve_component_close": {
-        const { task_id } = args as { task_id: string };
-        const result = await resolveComponentClose(task_id);
         return jsonResult(result);
       }
 
