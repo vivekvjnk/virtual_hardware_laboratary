@@ -7,6 +7,7 @@ from pydantic import SecretStr
 from openhands.sdk import (
     LLM,
     Agent,
+    LLMSummarizingCondenser,
     Conversation,
     Event,
     LLMConvertibleEvent,
@@ -27,7 +28,7 @@ class LibrarianAgent:
         self.agent = self._setup_agent()
         self.llm_messages = []
 
-    def _setup_llm(self) -> LLM:
+    def _setup_llm(self,usage_id="librarian_agent") -> LLM:
         api_key = os.getenv("LLM_API_KEY")
         if not api_key:
             raise ValueError("LLM_API_KEY environment variable is not set.")
@@ -36,7 +37,7 @@ class LibrarianAgent:
         base_url = os.getenv("LLM_BASE_URL")
         
         return LLM(
-            usage_id="librarian_agent",
+            usage_id=usage_id,
             model=model,
             base_url=base_url,
             api_key=SecretStr(api_key),
@@ -57,12 +58,16 @@ class LibrarianAgent:
                 }
             }
         }
+        
+        llm_condenser = self._setup_llm(usage_id="librarian_condenser")
+        condenser = LLMSummarizingCondenser(llm=llm_condenser, max_size=80, keep_first=8)
 
         return Agent(
             llm=self.llm,
             tools=tools,
             mcp_config=mcp_config,
-            system_prompt=SYSTEM_PROMPT
+            system_prompt=SYSTEM_PROMPT,
+            condenser=condenser,
         )
 
     def _conversation_callback(self, event: Event):
