@@ -52,3 +52,19 @@ export const IMPORTS_DIR = LOCAL_LIBRARY_DIR;
  * This directory may be created and deleted freely.
  */
 export const TEMP_DIR = path.join(PROJECT_ROOT, ".tmp");
+
+/**
+ * Circuits directory.
+ * 
+ * Used by VAP (VHL ANA Process) to store circuit files.
+ * This is separate from the component library.
+ */
+export const CIRCUITS_DIR = path.join(PROJECT_ROOT, "circuits");
+
+/**
+ * Temporary circuits directory.
+ * 
+ * Used by VAP for provisional circuit files during evaluation.
+ * Files here are either promoted to CIRCUITS_DIR (ACCEPT) or deleted (REJECT).
+ */
+export const CIRCUITS_TEMP_DIR = path.join(CIRCUITS_DIR, ".tmp");
