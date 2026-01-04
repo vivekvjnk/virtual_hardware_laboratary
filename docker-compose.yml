@@ -6,14 +6,19 @@ services:
     container_name: vhl-library
     ports:
       - "8080:8080"
+      - "8081:8081"
     volumes:
       - vhl-lib:/app/lib
+      - vhl-circuits:/app/circuits
     environment:
       - VHL_TRANSPORT=http
       - PORT=8080
+      - VAP_PORT=8081
       - VHL_LIBRARY_DIR=/app/lib
     restart: unless-stopped
 
 volumes:
   vhl-lib:
+    driver: local
+  vhl-circuits:
     driver: local

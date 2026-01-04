@@ -14,7 +14,6 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.25.1",
-    "circuit-json": "^0.0.351",
     "express": "^5.2.1"
   },
   "devDependencies": {
@@ -24,7 +23,6 @@
     "jest": "^29.7.0",
     "ts-jest": "^29.1.2",
     "ts-node": "^10.9.2",
-    "tscircuit": "^0.0.1103",
     "tsx": "^4.21.0",
     "typescript": "^5.4.0"
   },

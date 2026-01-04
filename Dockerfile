@@ -30,18 +30,22 @@ COPY src ./src
 
 RUN pnpm build
 
-# Create directory for library volume
-RUN mkdir -p /app/lib
+# Create directory for library and circuits volumes
+RUN mkdir -p /app/lib /app/circuits
 
 # Environment variables
 ENV VHL_TRANSPORT=http
 ENV PORT=8080
+ENV VAP_PORT=8081
 ENV VHL_LIBRARY_DIR=/app/lib
 
-# Expose port
-EXPOSE 8080
+# Expose ports
+EXPOSE 8080 8081
 
-# Define volume for persistent library storage
-VOLUME ["/app/lib"]
+# Define volumes for persistent storage
+VOLUME ["/app/lib", "/app/circuits"]
 
-CMD ["node", "dist/index.js"]
+COPY start.sh ./
+RUN chmod +x start.sh
+
+CMD ["./start.sh"]

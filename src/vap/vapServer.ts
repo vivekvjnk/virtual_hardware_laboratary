@@ -46,7 +46,7 @@ export function createVapServer(): Server {
             tools: [
                 {
                     name: "VAP_init",
-                    description: "Initialize a VAP evaluation process for a circuit.",
+                    description: "Initialize a VHL ANA Process(VAP) for evaluating a circuit.",
                     inputSchema: {
                         type: "object",
                         properties: {

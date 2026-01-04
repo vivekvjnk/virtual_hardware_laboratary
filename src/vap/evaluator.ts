@@ -38,7 +38,8 @@ export function evaluateCircuit(
         // Spawn tsci eval process
         // We use npx to ensure we use the local installation if available
         // NOTE: 'tsci build' runs evaluation and outputs circuit JSON
-        const proc = spawn("npx", ["tsci", "build", tsxPath], {
+        // In Docker, tsci is installed globally via Bun and is in PATH.
+        const proc = spawn("tsci", ["build", tsxPath], {
             stdio: "pipe",
             env: { ...process.env, CI: "true" }, // Ensure non-interactive mode
             detached: true, // Create new process group for reliable killing
