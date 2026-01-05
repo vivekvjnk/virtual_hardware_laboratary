@@ -1,0 +1,21 @@
+[project]
+name = "virtual-hardware-laboratary"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "openhands-sdk",
+    "openhands-tools",
+    "python-dotenv>=1.2.1",
+]
+
+[tool.uv.workspace]
+members = [
+    "agent-sdk/openhands-sdk",
+    "agent-sdk/openhands-tools",
+]
+
+[tool.uv.sources]
+openhands-sdk = { workspace = true }
+openhands-tools = { workspace = true }
