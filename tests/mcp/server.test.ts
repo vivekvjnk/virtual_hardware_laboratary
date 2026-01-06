@@ -9,16 +9,31 @@ jest.unstable_mockModule("../../src/config/paths.js", () => ({
 }));
 
 // Mock the resolveComponent tool
-jest.unstable_mockModule("../../src/mcp/tools/resolveComponent.js", () => ({
-  resolveComponent: (query: string) => {
-    return Promise.resolve({
-      status: "resolved",
-      component: "MockResistor",
-      path: "/mock/path/MockResistor.tsx"
-    });
-  },
+
+
+
+
+// Mock the resolveComponent tool
+jest.unstable_mockModule("../../src/mcp/tools/resolveComponent", () => ({
+  resolveComponentStart: jest.fn(() => {
+    console.log("Mock resolveComponentStart called");
+    return Promise.resolve({ task_id: "task-1", state: "checking_local" });
+  }),
+  resolveComponentStatus: jest.fn(() => Promise.resolve({ task_id: "task-1", state: "finished", location: "/mock/path.tsx", source: "local" })),
+  resolveComponentSelect: jest.fn(),
   clearSessions: () => { },
 }));
+
+// Mock the getComponent tool
+jest.unstable_mockModule("../../src/mcp/tools/getComponent", () => ({
+  getComponent: jest.fn(() => {
+    console.log("Mock getComponent called");
+    return Promise.resolve("pin1: BAT");
+  }),
+}));
+
+
+
 
 // Now import the modules
 const { createLibraryServer } = await import("../../src/mcp/server.js");
@@ -71,7 +86,10 @@ describe("MCP Server (via MCP InMemoryTransport)", () => {
       expect.arrayContaining([
         "add_component",
         "list_local_components",
-        "resolve_component",
+        "resolve_component_start",
+        "resolve_component_status",
+        "resolve_component_select",
+        "get_component",
       ])
     );
   });
@@ -115,23 +133,5 @@ describe("MCP Server (via MCP InMemoryTransport)", () => {
     expect(payload.components).toBeDefined();
   });
 
-  test("routes resolve_component tool call", async () => {
-    await clientTransport.send({
-      jsonrpc: "2.0",
-      id: 4,
-      method: "tools/call",
-      params: {
-        name: "resolve_component",
-        arguments: {
-          query: "resistor",
-        },
-      },
-    });
 
-    const response = await waitForResponse(4);
-    expect(response.result).toBeDefined();
-    const result = JSON.parse(response.result.content[0].text);
-    expect(result.status).toBe("resolved");
-    expect(result.component).toBe("MockResistor");
-  });
 });
