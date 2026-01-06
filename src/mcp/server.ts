@@ -15,6 +15,7 @@ import {
   resolveComponentStatus,
   resolveComponentSelect
 } from "./tools/resolveComponent.js";
+import { getComponent } from "./tools/getComponent.js";
 
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { HttpServerTransport } from "./transport/HttpServerTransport.js";
@@ -143,6 +144,20 @@ export function createLibraryServer(): Server {
           required: ["task_id", "selection_id", "selected_option"],
         },
       },
+      {
+        name: "get_component",
+        description: "Get pinout details of a device available under local library directory in VHL Librarian. Returns a list of 'pin:label' mappings in text format.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            device_name: {
+              type: "string",
+              description: "Name of the device (e.g. 'BQ79616PAPR')",
+            },
+          },
+          required: ["device_name"],
+        },
+      },
     ];
 
     // Convert to dictionary for protocol conformance
@@ -210,6 +225,14 @@ export function createLibraryServer(): Server {
         };
         const result = await resolveComponentSelect(task_id, selection_id, selected_option);
         return jsonResult(result);
+      }
+
+      case "get_component": {
+        const { device_name } = args as { device_name: string };
+        const result = await getComponent(device_name);
+        return jsonResult({
+          pinout_details: result,
+        });
       }
 
       default:

@@ -60,7 +60,12 @@ describe("MCP Protocol Conformance", () => {
         // Verify keys exist
         expect(toolNames).toContain("add_component");
         expect(toolNames).toContain("list_local_components");
-        expect(toolNames).toContain("resolve_component");
+
+        expect(toolNames).toContain("resolve_component_start");
+        expect(toolNames).toContain("resolve_component_status");
+        expect(toolNames).toContain("resolve_component_select");
+        expect(toolNames).toContain("get_component");
+
 
         // Verify structure of a tool
         const listTool = tools.find((t: any) => t.name === "list_local_components");
