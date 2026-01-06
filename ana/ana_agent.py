@@ -58,7 +58,7 @@ mcp_config = {
 
 condenser = LLMSummarizingCondenser(llm=llm_condenser, max_size=80, keep_first=8)
 # Initialize Agent
-system_prompt_path = os.path.join(cwd, "ana_system_prompt.j2")
+system_prompt_path = os.path.join(cwd, "ana/ana_system_prompt.j2")
 agent = Agent(
     llm=llm,
     tools=tools,
@@ -83,7 +83,7 @@ conversation.set_security_analyzer(LLMSecurityAnalyzer())
 
 logger.info("ANA Agent initialized successfully.")
 
-def process_scud(scud_path: str, schematic_images_path: str = None):
+def process_scud(scud_path: str, schematic_images_path: str = None, tsckt_op_manual_path: str = None):
     """
     Process a SCUD file and analyze its components.
     
@@ -95,12 +95,13 @@ def process_scud(scud_path: str, schematic_images_path: str = None):
     user_message = (
         f"Please process the SCUD file located at '{scud_path}'. "
     )
-    user_message += "tscircuit operation manual is located at 'ana/resources/tscircuit_operation_manual.md'."
+    if tsckt_op_manual_path:
+        user_message += f" TSCircuit operation manual is located at '{tsckt_op_manual_path}'."
     if schematic_images_path:
         user_message += f" Schematic images are located at '{schematic_images_path}'."
     
     user_message += "You can use ana/output directory to store any output files you generate during the task."
-    
+
     conversation.send_message(user_message)
     conversation.run()
     
@@ -111,5 +112,5 @@ def process_scud(scud_path: str, schematic_images_path: str = None):
 if __name__ == "__main__":
     scud_path = os.path.join(cwd, "ana/resources/bq79616_eval_board.scud")
     schematic_images_path = os.path.join(cwd, "ana/resources/schematic_images")
-    process_scud(scud_path, schematic_images_path)
-    
+    tsckt_op_manual_path = os.path.join(cwd, "ana/resources/tscircuit_operation_manual.md")
+    process_scud(scud_path, schematic_images_path, tsckt_op_manual_path)
