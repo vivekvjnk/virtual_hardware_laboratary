@@ -174,14 +174,14 @@ In the current DNP state, all these lines (`CB12`-`CB16` and `VC12`-`VC16`) are 
 *   **Resolved:** Q1 is active, Q2 is DNP. The NPN supply circuit is populated.
 *   **Conflict:** J3 pinout text vs schematic wires. Text says Pin 5 is TX, Pin 4 is RX. Schematic wires show Pin 4 is TX, Pin 3 is RX_C. Schematic wires are assumed correct.
 
-# Library Mapping
+# VHL Component Library References
 
-| Designator | Component Name | Library Location |
-|------------|----------------|------------------|
-| U1 | BQ79616PAPR | /app/lib/imports/BQ79616PAPR.tsx |
-| U2 | ISO7342FCQDWRQ1 | /app/lib/imports/ISO7342FCQDWRQ1.tsx |
-| Q1 | MMBT3904LT1G | /app/lib/imports/MMBT3904LT1G.tsx |
-| D1 | 150060GS75000 | /app/lib/imports/A_150060GS75000.tsx |
-| D3 | BZX84C24 | /app/lib/imports/BZX84C24.tsx |
-| RT1-RT8 | NCP18XH103F03RB | /app/lib/imports/NCP18XH103F03RB.tsx |
+| Designator | Component Name |
+|------------|----------------|
+| U1 | BQ79616PAPR |
+| U2 | ISO7342FCQDWRQ1 |
+| Q1 | MMBT3904LT1G |
+| D1 | 150060GS75000 |
+| D3 | BZX84C24 |
+| RT1-RT8 | NCP18XH103F03RB |
 
