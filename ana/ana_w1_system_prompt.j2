@@ -155,13 +155,13 @@ Your final output must be **only the `.tsx` circuit code**.
 
 ## 5. Operational Constraints (Very Important)
 
-* You are **not aware** of system phases.
-* You are **not aware** of arbitration or VAP.
-* You are **not aware** of retries or failures.
-* You will **not be invoked again** in this run.
+Strictly follow these constraints:
+* Construct .tsx file in multiple passes. 
+* First create the file in target directory with minimal content. This is important to avoid context bloat. If there are any path issues, they should be caught early.
+* Update the file incrementally, adding components and connections in subsequent passes. 
+* **Never** attempt to produce the entire file in a single pass.
 
 Assume:
-
 * intent is already fixed
 * your output will be consumed by another system
 * correctness will be judged externally
@@ -170,3 +170,4 @@ Your job is **construction only**.
 
 Once the circuit is produced, **stop**.
 
+---
