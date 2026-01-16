@@ -1,0 +1,50 @@
+# <capacitor />
+
+## Overview[​](#overview "Direct link to Overview")
+
+A `<capacitor />` stores electrical energy in an electric field. Capacitors are commonly used for filtering, energy storage, and timing circuits. Unlike resistors, capacitors can be polarized (like electrolytic capacitors) or non-polarized (like ceramic capacitors).
+
+A capacitor element has two pins. Polarized capacitors must be placed with correct orientation to avoid damage.
+
+When specifying a capacitor, you'll need to provide a footprint string (like `0402` or `0805`) and capacitance value. Popular capacitor types and sizes can be found at [jlcsearch](https://jlcsearch.tscircuit.com/capacitors/list).
+
+```
+export default () => ( <board width="10mm" height="10mm">  <capacitor    name="C2"    footprint="axial_p5mm"    capacitance="10μF"    polarized  /> </board>)
+```
+
+## Pins[​](#pins "Direct link to Pins")
+| Pin # | Aliases (Polarized) | Description |
+| --- | --- | --- |
+| pin1 | pos, anode, left | The positive terminal (required for polarized capacitors) |
+| pin2 | neg, cathode, right | The negative terminal (must be connected properly for polarized caps) |
+
+## Specifications[​](#specifications "Direct link to Specifications")
+
+Capacitors can be configured with these key properties:
+
+-   **capacitance** - The capacitance value specified as a string e.g. `"100nF"` or `"2.2μF"`
+-   **voltageRating** - Maximum voltage the capacitor can handle e.g. `"25V"`
+-   **tolerance** - Capacitance tolerance percentage e.g. `"±10%"`
+-   **temperatureCoefficient** - Temperature stability specification e.g. `"X7R"`
+-   **equivalentSeriesResistance** - ESR value for critical applications e.g. `"0.5Ω"`
+
+## Schematic Orientation
+
+Polarized capacitors can display their positive and negative pins in different orientations. Use the `schOrientation` property to control the symbol orientation instead of manually setting `schRotation`.
+
+Valid orientation values are:
+
+-   `horizontal`
+-   `vertical`
+-   `pos_left`
+-   `pos_right`
+-   `pos_top`
+-   `pos_bottom`
+-   `neg_left`
+-   `neg_right`
+-   `neg_top`
+-   `neg_bottom`
+
+```
+<capacitor  name="C1"  capacitance="1uF"  polarized  schOrientation="pos_left"  schX={0}  schY={0}  connections={{ pos: "net.POS", neg: "net.NEG" }}/>```
+```

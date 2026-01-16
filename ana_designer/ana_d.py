@@ -1,5 +1,4 @@
 import os
-import sys
 from pydantic import SecretStr
 from openhands.sdk import (
     LLM,
@@ -14,7 +13,6 @@ from openhands.sdk.tool import Tool, register_tool
 from openhands.tools.delegate import DelegateTool, register_agent, DelegationVisualizer
 from openhands.tools.file_editor import FileEditorTool
 from openhands.tools.terminal import TerminalTool
-from openhands.tools.preset.default import get_default_tools
 
 # Configure Logging
 logger = get_logger(__name__)
@@ -47,7 +45,9 @@ condenser = LLMSummarizingCondenser(llm=llm_condenser, max_size=80, keep_first=8
 # --- ANA-W1 Registration ---
 
 def create_ana_w1(llm: LLM) -> Agent:
-    """Factory function for ANA-W1 sub-agent."""
+    """Factory function for ANA-W1 sub-agent.
+       NOTE: 'user' instructions for ANA-W1 are provided at runtime by ANA-D.
+    """
     cwd = os.getcwd()
     system_prompt_path = os.path.join(cwd, "ana_worker/ana_w1_system_prompt.j2")
     
@@ -128,6 +128,7 @@ def run_ana_d(scud_path: str, schematic_images_path: str = None):
     iteration = 1
     while True:
         iteration += 1
+        
         print(f"\n[ANA-D] Phase 2 (Iteration {iteration}): Reviewing artifacts...")
         
         # 1. ANA-D analyzes artifacts and creates findings

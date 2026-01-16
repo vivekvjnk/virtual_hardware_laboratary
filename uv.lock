@@ -5743,6 +5743,7 @@ name = "virtual-hardware-laboratary"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "boto3" },
     { name = "openhands-sdk" },
     { name = "openhands-tools" },
     { name = "python-dotenv" },
@@ -5750,6 +5751,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "boto3", specifier = ">=1.42.21" },
     { name = "openhands-sdk", editable = "agent-sdk/openhands-sdk" },
     { name = "openhands-tools", editable = "agent-sdk/openhands-tools" },
     { name = "python-dotenv", specifier = ">=1.2.1" },
