@@ -157,12 +157,15 @@ describe("Docker HTTP Transport Integration", () => {
         expect(typeof response.result.tools).toBe("object");
         expect(Array.isArray(response.result.tools)).toBe(true);
 
-        const toolNames = Object.values(response.result.tools).map((t: any) => t.name);
+        const toolNames = response.result.tools.map((t: any) => t.name);
         expect(toolNames).toEqual(
             expect.arrayContaining([
                 "add_component",
                 "list_local_components",
-                "resolve_component",
+                "resolve_component_start",
+                "resolve_component_status",
+                "resolve_component_select",
+                "get_component",
             ])
         );
     }, 30000);
@@ -194,15 +197,15 @@ describe("Docker HTTP Transport Integration", () => {
         expect(Array.isArray(payload.components)).toBe(true);
     }, 30000);
 
-    test("MCP endpoint calls resolve_component", async () => {
+    test("MCP endpoint calls resolve_component_start", async () => {
         const request = {
             jsonrpc: "2.0",
             id: 3,
             method: "tools/call",
             params: {
-                name: "resolve_component",
+                name: "resolve_component_start",
                 arguments: {
-                    query: "resistor",
+                    component_name: "resistor",
                 },
             },
         };
@@ -217,7 +220,8 @@ describe("Docker HTTP Transport Integration", () => {
         expect(content.type).toBe("text");
 
         const payload = JSON.parse(content.text);
-        expect(payload.status).toBeDefined();
+        expect(payload.task_id).toBeDefined();
+        expect(payload.state).toBeDefined();
     }, 120000);
 
     test("MCP endpoint calls add_component", async () => {

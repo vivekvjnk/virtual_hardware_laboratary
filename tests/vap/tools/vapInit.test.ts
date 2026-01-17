@@ -5,7 +5,7 @@
 import { describe, it, expect, jest, beforeAll } from "@jest/globals";
 
 // Mock runtime
-const mockStartEvaluation = jest.fn();
+const mockStartEvaluation = jest.fn<any>();
 jest.unstable_mockModule("../../../src/vap/runtime.js", () => ({
     runtime: {
         startEvaluation: mockStartEvaluation,
@@ -26,9 +26,9 @@ describe("VAP_init Tool", () => {
             state: "EvalInProgress",
         });
 
-        const result = await vapInit("my_circuit", "content");
+        const result = await vapInit("my_circuit", "blob_123");
 
-        expect(mockStartEvaluation).toHaveBeenCalledWith("my_circuit", "content");
+        expect(mockStartEvaluation).toHaveBeenCalledWith("my_circuit", "blob_123");
         expect(result).toEqual({
             task_id: "task-123",
             state: "EvalInProgress",
@@ -38,6 +38,6 @@ describe("VAP_init Tool", () => {
     it("should propagate errors from runtime", async () => {
         mockStartEvaluation.mockRejectedValue(new Error("Already running"));
 
-        await expect(vapInit("my_circuit", "content")).rejects.toThrow("Already running");
+        await expect(vapInit("my_circuit", "blob_123")).rejects.toThrow("Already running");
     });
 });

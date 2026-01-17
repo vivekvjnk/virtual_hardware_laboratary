@@ -157,6 +157,18 @@ export class VAPRuntime {
             logs: [],
         };
     }
+
+    /**
+     * Reset the runtime state (for testing)
+     */
+    public reset() {
+        this.processState = createProcessState();
+        this.logState = createLogState();
+        this.controlState = createControlState();
+        this.activeTaskId = null;
+        this.activeCircuitName = null;
+        this.metadata = null;
+    }
 }
 
 // Export singleton

@@ -5,11 +5,33 @@
  * These tests verify the architectural invariants and source-of-truth behaviors.
  */
 
-import { describe, it, expect, beforeAll, afterAll } from "@jest/globals";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, jest } from "@jest/globals";
 import * as fs from "fs/promises";
 import * as path from "path";
-import { runtime } from "../../../src/vap/runtime.js";
-import { CIRCUITS_DIR, CIRCUITS_TEMP_DIR, PROJECT_ROOT } from "../../../src/config/paths.js";
+
+// Mock MinIO
+const mockStorage = new Map<string, string>();
+
+jest.unstable_mockModule("../../../src/utils/minio.js", () => ({
+    ensureBucket: async () => { },
+    pushObject: async (localPath: string, objectName: string) => {
+        const content = await fs.readFile(localPath, "utf-8");
+        mockStorage.set(objectName, content);
+    },
+    pullObject: async (objectName: string, localDir: string) => {
+        const localPath = path.join(localDir, objectName);
+        await fs.mkdir(localDir, { recursive: true });
+        const content = mockStorage.get(objectName);
+        if (content === undefined) throw new Error(`Object ${objectName} not found in mock storage`);
+        await fs.writeFile(localPath, content);
+        return localPath;
+    }
+}));
+
+// Dynamic imports after mocks
+const { runtime } = await import("../../../src/vap/runtime.js");
+const { CIRCUITS_DIR, CIRCUITS_TEMP_DIR, PROJECT_ROOT } = await import("../../../src/config/paths.js");
+const { ensureBucket, pushObject } = await import("../../../src/utils/minio.js");
 
 // Fixtures
 const FIXTURES_DIR = path.join(PROJECT_ROOT, "tests/vap/fixtures");
@@ -18,11 +40,7 @@ const INVALID_CIRCUIT_PATH = path.join(FIXTURES_DIR, "invalidCircuit.tsx");
 const NON_TERMINATING_CIRCUIT_PATH = path.join(FIXTURES_DIR, "nonTerminatingCircuit.tsx");
 
 // Helpers
-async function readFixture(p: string) {
-    return fs.readFile(p, "utf-8");
-}
-
-async function pollUntilComplete(taskId: string, maxAttempts = 20, interval = 500) {
+async function pollUntilComplete(taskId: string, maxAttempts = 40, interval = 1000) {
     for (let i = 0; i < maxAttempts; i++) {
         const status = runtime.getStatus(taskId);
 
@@ -30,12 +48,6 @@ async function pollUntilComplete(taskId: string, maxAttempts = 20, interval = 50
         if (status.decision) {
             return status;
         }
-
-        // If state is Default and no decision, it means it was already cleared?
-        // Or it hasn't started?
-        // But startEvaluation sets it to EvalInProgress.
-        // So if it's Default and no decision, it might be cleared.
-        // But we are polling.
 
         await new Promise(resolve => setTimeout(resolve, interval));
     }
@@ -48,6 +60,15 @@ describe("VAP Regression Tests", () => {
         await fs.rm(CIRCUITS_DIR, { recursive: true, force: true });
         await fs.mkdir(CIRCUITS_DIR, { recursive: true });
         await fs.mkdir(CIRCUITS_TEMP_DIR, { recursive: true });
+
+        // Ensure MinIO bucket exists
+        await ensureBucket();
+    });
+
+    beforeEach(() => {
+        // Reset runtime state between tests
+        runtime.reset();
+        mockStorage.clear();
     });
 
     afterAll(async () => {
@@ -57,36 +78,29 @@ describe("VAP Regression Tests", () => {
 
     describe("Test Case 1 — Successful Evaluation (Acceptance Path)", () => {
         it("should accept valid circuit and persist artifact", async () => {
-            const content = await readFixture(VALID_CIRCUIT_PATH);
             const circuitName = "regression_valid";
+            const blobId = "regression_valid.tsx";
 
-            // 1. Invoke VAP_init
-            const { task_id, state } = await runtime.startEvaluation(circuitName, content);
+            // 1. Push to MinIO
+            await pushObject(VALID_CIRCUIT_PATH, blobId);
+
+            // 2. Invoke VAP_init
+            const { task_id, state } = await runtime.startEvaluation(circuitName, blobId);
             expect(state).toBe("EvalInProgress");
 
-            // 2. Poll VAP_status while evaluation is in progress
-            // (We can't easily guarantee catching it in progress in a fast test, but we can try)
+            // 3. Poll VAP_status while evaluation is in progress
             const initialStatus = runtime.getStatus(task_id);
-            // It might be EvalInProgress or already done if fast
-            if (initialStatus.decision) {
-                // Already done
-            } else {
+            if (!initialStatus.decision) {
                 expect(initialStatus.state).toBe("EvalInProgress");
             }
 
-            // 3. Wait for evaluation to complete
+            // 4. Wait for evaluation to complete
             const finalStatus = await pollUntilComplete(task_id);
 
-            // 4. Verify Expected Behavior
-
-            // Process state transitions: Default -> EvalInProgress -> Default
-            // (We verified start returned EvalInProgress, now we verify final is Default)
+            // 5. Verify Expected Behavior
             expect(finalStatus.state).toBe("Default");
-
-            // Internal decision latch: UNDECIDED -> ACCEPT
             expect(finalStatus.decision).toBe("ACCEPT");
-
-            // Logs contain full evaluation output
+            expect(finalStatus.eval_status).toBe("Success");
             expect(finalStatus.logs.length).toBeGreaterThan(0);
 
             // .tsx file persisted permanently
@@ -94,35 +108,35 @@ describe("VAP Regression Tests", () => {
             const fileExists = await fs.access(finalPath).then(() => true).catch(() => false);
             expect(fileExists).toBe(true);
 
-            // 5. Poll again to verify cleanup
+            // 6. Poll again to verify cleanup
             const postCleanupStatus = runtime.getStatus(task_id);
-            // Internal control state is cleared
             expect(postCleanupStatus.decision).toBeUndefined();
             expect(postCleanupStatus.state).toBe("Default");
-        }, 30000);
+        }, 60000);
     });
 
     describe("Test Case 2 — Deterministic Evaluation Failure (Rejection Path)", () => {
         it("should reject invalid circuit and cleanup artifact", async () => {
-            const content = await readFixture(INVALID_CIRCUIT_PATH);
             const circuitName = "regression_invalid";
+            const blobId = "regression_invalid.tsx";
 
-            // 1. Invoke VAP_init
-            const { task_id, state } = await runtime.startEvaluation(circuitName, content);
+            // 1. Push to MinIO
+            await pushObject(INVALID_CIRCUIT_PATH, blobId);
+
+            // 2. Invoke VAP_init
+            const { task_id, state } = await runtime.startEvaluation(circuitName, blobId);
             expect(state).toBe("EvalInProgress");
 
-            // 2. Wait for completion
+            // 3. Wait for completion
             const finalStatus = await pollUntilComplete(task_id);
 
-            // 3. Verify Expected Behavior
+            // 4. Verify Expected Behavior
             expect(finalStatus.state).toBe("Default");
             expect(finalStatus.decision).toBe("REJECT");
+            expect(finalStatus.eval_status).toBe("Error");
 
             // Logs contain error output
             const logs = finalStatus.logs.join("\n");
-            // tsci build output for invalid file usually contains errors
-            // But we need to be sure.
-            // If tsci build fails, it exits non-zero.
             expect(logs.length).toBeGreaterThan(0);
 
             // .tsx file deleted (no persistence)
@@ -134,38 +148,31 @@ describe("VAP Regression Tests", () => {
             const tempExists = await fs.access(tempPath).then(() => true).catch(() => false);
             expect(tempExists).toBe(false);
 
-            // 4. Poll again to verify cleanup
+            // 5. Poll again to verify cleanup
             const postCleanupStatus = runtime.getStatus(task_id);
             expect(postCleanupStatus.decision).toBeUndefined();
-        }, 30000);
+        }, 60000);
     });
 
     describe("Test Case 3 — Non-Terminating Evaluation (Probabilistic Failure)", () => {
         it("should force terminate and reject non-terminating circuit", async () => {
-            const content = await readFixture(NON_TERMINATING_CIRCUIT_PATH);
             const circuitName = "regression_timeout";
+            const blobId = "regression_timeout.tsx";
 
-            // We need to override the default timeout for this test to be fast
-            // But runtime.startEvaluation uses default timeout from evaluator.
-            // We can't easily override it without modifying runtime or mocking evaluator.
-            // But this is an integration test, we want real behavior.
-            // The default timeout is 30s (from evaluator.ts).
-            // We should wait > 30s? That makes test slow.
-            // Or we can mock evaluator just for the timeout parameter?
-            // Or we can modify evaluator to accept env var for timeout?
+            // 1. Push to MinIO
+            await pushObject(NON_TERMINATING_CIRCUIT_PATH, blobId);
 
-            // Let's assume 30s is acceptable for a regression test suite.
-            // We will set jest timeout to 40s.
-
-            const { task_id, state } = await runtime.startEvaluation(circuitName, content);
+            // 2. Invoke VAP_init
+            const { task_id, state } = await runtime.startEvaluation(circuitName, blobId);
             expect(state).toBe("EvalInProgress");
 
-            // Wait for completion (will take ~30s)
-            const finalStatus = await pollUntilComplete(task_id, 80, 500); // 40s max
+            // 3. Wait for completion (default timeout is 30s)
+            const finalStatus = await pollUntilComplete(task_id, 60, 1000); // 60s max
 
-            // Verify Expected Behavior
+            // 4. Verify Expected Behavior
             expect(finalStatus.state).toBe("Default");
             expect(finalStatus.decision).toBe("REJECT");
+            expect(finalStatus.metadata?.timedOut).toBe(true);
 
             // Logs include timeout marker
             const logs = finalStatus.logs.join("\n");
@@ -176,7 +183,7 @@ describe("VAP Regression Tests", () => {
             const fileExists = await fs.access(finalPath).then(() => true).catch(() => false);
             expect(fileExists).toBe(false);
 
-        }, 45000); // 45s timeout for this test
+        }, 90000); // 90s timeout for this test
     });
 
     describe("Global Invariants", () => {

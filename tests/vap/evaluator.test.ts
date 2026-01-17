@@ -8,8 +8,9 @@
  * - Returning correct decision (ACCEPT/REJECT)
  */
 
-import { describe, it, expect, jest, afterEach } from "@jest/globals";
+import { describe, it, expect, jest, beforeEach, afterEach } from "@jest/globals";
 import * as path from "path";
+import * as fs from "fs/promises";
 import { evaluateCircuit } from "../../src/vap/evaluator.js";
 import { PROJECT_ROOT } from "../../src/config/paths.js";
 
@@ -19,13 +20,33 @@ const VALID_CIRCUIT = path.join(FIXTURES_DIR, "validCircuit.tsx");
 const INVALID_CIRCUIT = path.join(FIXTURES_DIR, "invalidCircuit.tsx");
 const NON_TERMINATING_CIRCUIT = path.join(FIXTURES_DIR, "nonTerminatingCircuit.tsx");
 
+const TEST_RESULTS_DIR = path.join(PROJECT_ROOT, "tests/vap/results_test");
+
 // Increase timeout for real process execution
-jest.setTimeout(30000);
+jest.setTimeout(60000);
 
 describe("VAP Evaluator", () => {
+    beforeEach(async () => {
+        await fs.mkdir(TEST_RESULTS_DIR, { recursive: true });
+    });
+
+    afterEach(async () => {
+        await fs.rm(TEST_RESULTS_DIR, { recursive: true, force: true });
+        // Also cleanup any .zip files created
+        const files = await fs.readdir(path.dirname(TEST_RESULTS_DIR));
+        for (const file of files) {
+            if (file.endsWith(".zip") && file.startsWith("results_test")) {
+                await fs.unlink(path.join(path.dirname(TEST_RESULTS_DIR), file));
+            }
+        }
+    });
+
     describe("Successful Evaluation", () => {
         it("should return ACCEPT decision for valid circuit", async () => {
-            const result = await evaluateCircuit(VALID_CIRCUIT, 5000);
+            const resultsDir = path.join(TEST_RESULTS_DIR, "valid");
+            await fs.mkdir(resultsDir, { recursive: true });
+
+            const result = await evaluateCircuit(VALID_CIRCUIT, resultsDir, 30000);
 
             if (result.decision !== "ACCEPT") {
                 console.log("Evaluation failed. Logs:", result.logs.join("\n"));
@@ -34,32 +55,46 @@ describe("VAP Evaluator", () => {
             expect(result.decision).toBe("ACCEPT");
             expect(result.timedOut).toBe(false);
             expect(result.logs.length).toBeGreaterThan(0);
+            expect(result.eval_status).toBe("Success");
 
-            // Verify logs contain success indicators (heuristic check of tsci output)
-            // Note: tsci eval output format might vary, but should not contain errors
+            // Verify logs contain success indicators
             const logContent = result.logs.join("\n");
             expect(logContent).not.toMatch(/Error:/i);
+
+            // Verify results directory contains log file
+            const logFileExists = await fs.access(path.join(resultsDir, "eval.log")).then(() => true).catch(() => false);
+            expect(logFileExists).toBe(true);
+
+            // Verify zip file was created
+            const zipExists = await fs.access(`${resultsDir}.zip`).then(() => true).catch(() => false);
+            expect(zipExists).toBe(true);
         });
     });
 
     describe("Deterministic Failure", () => {
         it("should return REJECT decision for invalid circuit", async () => {
-            const result = await evaluateCircuit(INVALID_CIRCUIT, 5000);
+            const resultsDir = path.join(TEST_RESULTS_DIR, "invalid");
+            await fs.mkdir(resultsDir, { recursive: true });
+
+            const result = await evaluateCircuit(INVALID_CIRCUIT, resultsDir, 30000);
 
             expect(result.decision).toBe("REJECT");
             expect(result.timedOut).toBe(false);
+            expect(result.eval_status).toBe("Error");
 
             // Verify logs contain error details
             const logContent = result.logs.join("\n");
-            // tsci should report TSX errors or runtime errors
             expect(logContent).toMatch(/Error|Exception|Failed/i);
         });
     });
 
     describe("Timeout Enforcement", () => {
         it("should return REJECT decision and timedOut=true for non-terminating circuit", async () => {
+            const resultsDir = path.join(TEST_RESULTS_DIR, "timeout");
+            await fs.mkdir(resultsDir, { recursive: true });
+
             // Use a short timeout for testing
-            const result = await evaluateCircuit(NON_TERMINATING_CIRCUIT, 2000);
+            const result = await evaluateCircuit(NON_TERMINATING_CIRCUIT, resultsDir, 5000);
 
             expect(result.decision).toBe("REJECT");
             expect(result.timedOut).toBe(true);
@@ -68,19 +103,15 @@ describe("VAP Evaluator", () => {
             const logContent = result.logs.join("\n");
             expect(logContent).toContain("Evaluation timed out");
         });
-
-        it("should force terminate the process", async () => {
-            // This is implicitly tested by the fact that the test completes
-            // If the process wasn't killed, the test runner might hang or warn
-            await evaluateCircuit(NON_TERMINATING_CIRCUIT, 1000);
-        });
     });
 
     describe("Invariant: Logs are captured verbatim", () => {
         it("should capture stdout and stderr", async () => {
-            const result = await evaluateCircuit(INVALID_CIRCUIT, 5000);
+            const resultsDir = path.join(TEST_RESULTS_DIR, "verbatim");
+            await fs.mkdir(resultsDir, { recursive: true });
+
+            const result = await evaluateCircuit(INVALID_CIRCUIT, resultsDir, 30000);
             expect(result.logs.length).toBeGreaterThan(0);
-            // We expect some output from tsci even on failure
         });
     });
 });

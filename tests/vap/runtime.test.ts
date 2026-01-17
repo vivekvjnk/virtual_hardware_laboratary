@@ -7,19 +7,21 @@
 import { describe, it, expect, jest, beforeEach, beforeAll } from "@jest/globals";
 
 // Define mocks before imports
-const mockEvaluate = jest.fn();
-const mockWrite = jest.fn();
-const mockFinalize = jest.fn();
-const mockCleanup = jest.fn();
+const mockEvaluate = jest.fn<any>();
+const mockPullAndWriteProvisional = jest.fn<any>();
+const mockFinalize = jest.fn<any>();
+const mockCleanup = jest.fn<any>();
+const mockCreateResultsFolder = jest.fn<any>();
 
 jest.unstable_mockModule("../../src/vap/evaluator.js", () => ({
     evaluateCircuit: mockEvaluate,
 }));
 
 jest.unstable_mockModule("../../src/vap/fileManager.js", () => ({
-    writeProvisionalCircuit: mockWrite,
+    pullAndWriteProvisional: mockPullAndWriteProvisional,
     finalizeCircuit: mockFinalize,
     cleanupCircuit: mockCleanup,
+    createResultsFolder: mockCreateResultsFolder,
 }));
 
 // Dynamic imports
@@ -46,25 +48,36 @@ describe("VAP Runtime", () => {
 
     describe("startEvaluation", () => {
         it("should start evaluation successfully", async () => {
-            mockWrite.mockResolvedValue("/tmp/circuit.tsx");
+            const circuitName = "test_circuit";
+            const blobId = "blob_123";
+            const provisionalPath = "/tmp/circuit.tsx";
+            const resultsDir = "/results/task_uuid";
+
+            mockPullAndWriteProvisional.mockResolvedValue(provisionalPath);
+            mockCreateResultsFolder.mockResolvedValue(resultsDir);
             mockEvaluate.mockImplementation(() => new Promise(() => { }));
 
-            const result = await runtime.startEvaluation("test_circuit", "content");
+            const result = await runtime.startEvaluation(circuitName, blobId);
 
             expect(result.task_id).toBeDefined();
             expect(result.state).toBe("EvalInProgress");
+
+            expect(mockPullAndWriteProvisional).toHaveBeenCalledWith(blobId, circuitName);
+            expect(mockCreateResultsFolder).toHaveBeenCalledWith(result.task_id);
+            expect(mockEvaluate).toHaveBeenCalledWith(provisionalPath, resultsDir);
 
             const status = runtime.getStatus(result.task_id);
             expect(status.state).toBe("EvalInProgress");
         });
 
         it("should reject if evaluation already in progress", async () => {
-            mockWrite.mockResolvedValue("/tmp/circuit.tsx");
+            mockPullAndWriteProvisional.mockResolvedValue("/tmp/circuit.tsx");
+            mockCreateResultsFolder.mockResolvedValue("/results/task1");
             mockEvaluate.mockImplementation(() => new Promise(() => { }));
 
-            await runtime.startEvaluation("test1", "content");
+            await runtime.startEvaluation("test1", "blob1");
 
-            await expect(runtime.startEvaluation("test2", "content")).rejects.toThrow(
+            await expect(runtime.startEvaluation("test2", "blob2")).rejects.toThrow(
                 "Cannot start evaluation: already in progress"
             );
         });
@@ -72,70 +85,145 @@ describe("VAP Runtime", () => {
 
     describe("Evaluation Completion (ACCEPT)", () => {
         it("should handle successful evaluation", async () => {
-            mockWrite.mockResolvedValue("/tmp/circuit.tsx");
+            const circuitName = "test_circuit";
+            const blobId = "blob_123";
+            const provisionalPath = "/tmp/circuit.tsx";
+            const resultsDir = "/results/task_uuid";
+            const logs = ["Success log"];
+            const metadata = { errorCount: 0, warningCount: 0, timeTakenMs: 100 };
+
+            mockPullAndWriteProvisional.mockResolvedValue(provisionalPath);
+            mockCreateResultsFolder.mockResolvedValue(resultsDir);
             mockEvaluate.mockResolvedValue({
                 decision: "ACCEPT",
-                logs: ["Success log"],
-                timedOut: false
+                logs: logs,
+                timedOut: false,
+                metadata: metadata,
+                eval_status: "Success"
             });
             mockFinalize.mockResolvedValue("/final/circuit.tsx");
 
-            const { task_id } = await runtime.startEvaluation("test_circuit", "content");
+            const { task_id } = await runtime.startEvaluation(circuitName, blobId);
 
-            await new Promise(resolve => setTimeout(resolve, 10));
+            // Wait for background evaluation to complete
+            await new Promise(resolve => setTimeout(resolve, 50));
 
             const status = runtime.getStatus(task_id);
 
             expect(status.state).toBe("Default");
             expect(status.decision).toBe("ACCEPT");
-            expect(status.logs).toContain("Success log");
+            expect(status.eval_status).toBe("Success");
+            expect(status.logs).toEqual(logs);
+            expect(status.metadata).toEqual(metadata);
 
-            expect(mockFinalize).toHaveBeenCalledWith("test_circuit");
+            expect(mockFinalize).toHaveBeenCalledWith(circuitName);
             expect(mockCleanup).not.toHaveBeenCalled();
         });
     });
 
     describe("Evaluation Completion (REJECT)", () => {
         it("should handle failed evaluation", async () => {
-            mockWrite.mockResolvedValue("/tmp/circuit.tsx");
+            const circuitName = "test_circuit";
+            const blobId = "blob_123";
+            const provisionalPath = "/tmp/circuit.tsx";
+            const resultsDir = "/results/task_uuid";
+            const logs = ["Error log"];
+            const metadata = { errorCount: 1, warningCount: 0, timeTakenMs: 100 };
+
+            mockPullAndWriteProvisional.mockResolvedValue(provisionalPath);
+            mockCreateResultsFolder.mockResolvedValue(resultsDir);
             mockEvaluate.mockResolvedValue({
                 decision: "REJECT",
-                logs: ["Error log"],
-                timedOut: false
+                logs: logs,
+                timedOut: false,
+                metadata: metadata,
+                eval_status: "Error"
             });
 
-            const { task_id } = await runtime.startEvaluation("test_circuit", "content");
-            await new Promise(resolve => setTimeout(resolve, 10));
+            const { task_id } = await runtime.startEvaluation(circuitName, blobId);
+
+            // Wait for background evaluation to complete
+            await new Promise(resolve => setTimeout(resolve, 50));
 
             const status = runtime.getStatus(task_id);
 
             expect(status.state).toBe("Default");
             expect(status.decision).toBe("REJECT");
-            expect(status.logs).toContain("Error log");
+            expect(status.eval_status).toBe("Error");
+            expect(status.logs).toEqual(logs);
+            expect(status.metadata).toEqual(metadata);
 
             expect(mockFinalize).not.toHaveBeenCalled();
-            expect(mockCleanup).toHaveBeenCalledWith("test_circuit");
+            expect(mockCleanup).toHaveBeenCalledWith(circuitName);
+        });
+
+        it("should handle runtime errors during evaluation", async () => {
+            const circuitName = "test_circuit";
+            const blobId = "blob_123";
+
+            mockPullAndWriteProvisional.mockResolvedValue("/tmp/path.tsx");
+            mockCreateResultsFolder.mockResolvedValue("/tmp/results");
+            mockEvaluate.mockRejectedValue(new Error("Spawn failed"));
+
+            const { task_id } = await runtime.startEvaluation(circuitName, blobId);
+
+            // Wait for background evaluation to complete
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            const status = runtime.getStatus(task_id);
+
+            expect(status.state).toBe("Default");
+            expect(status.decision).toBe("REJECT");
+            expect(status.logs.some((l: string) => l.includes("Spawn failed"))).toBe(true);
+            expect(mockCleanup).toHaveBeenCalledWith(circuitName);
         });
     });
 
-    describe("Polling Behavior", () => {
+    describe("Polling and Reset Behavior", () => {
+        it("should return live metadata while evaluation is in progress", async () => {
+            const circuitName = "test_circuit";
+            const blobId = "blob_123";
+
+            mockPullAndWriteProvisional.mockResolvedValue("/tmp/path.tsx");
+            mockCreateResultsFolder.mockResolvedValue("/tmp/results");
+            mockEvaluate.mockImplementation(() => new Promise(() => { }));
+
+            const { task_id } = await runtime.startEvaluation(circuitName, blobId);
+
+            const status = runtime.getStatus(task_id);
+            expect(status.state).toBe("EvalInProgress");
+            expect(status.metadata).toBeDefined();
+            expect(status.metadata?.errorCount).toBe(0);
+        });
+
         it("should clear internal state after final poll", async () => {
-            mockWrite.mockResolvedValue("/tmp/circuit.tsx");
+            const circuitName = "test_circuit";
+            const blobId = "blob_123";
+
+            mockPullAndWriteProvisional.mockResolvedValue("/tmp/path.tsx");
+            mockCreateResultsFolder.mockResolvedValue("/tmp/results");
             mockEvaluate.mockResolvedValue({
                 decision: "ACCEPT",
-                logs: [],
-                timedOut: false
+                logs: ["Done"],
+                timedOut: false,
+                metadata: { ok: true },
+                eval_status: "Success"
             });
 
-            const { task_id } = await runtime.startEvaluation("test_circuit", "content");
-            await new Promise(resolve => setTimeout(resolve, 10));
+            const { task_id } = await runtime.startEvaluation(circuitName, blobId);
+            await new Promise(resolve => setTimeout(resolve, 50));
 
+            // First poll - returns results
             const status1 = runtime.getStatus(task_id);
             expect(status1.decision).toBe("ACCEPT");
+            expect(status1.logs.length).toBeGreaterThan(0);
 
+            // Second poll - should be reset
             const status2 = runtime.getStatus(task_id);
             expect(status2.state).toBe("Default");
+            expect(status2.logs).toEqual([]);
             expect(status2.decision).toBeUndefined();
+            expect(status2.metadata).toBeUndefined();
         });
     });
 });

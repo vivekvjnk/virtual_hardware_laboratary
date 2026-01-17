@@ -19,6 +19,7 @@ import {
     transitionToEvalInProgress,
     transitionToDefault,
     appendLog,
+    appendLogs,
     setDecision,
     clearControlState,
 } from "../../src/vap/state.js";
@@ -78,6 +79,14 @@ describe("VAP State Management", () => {
 
             logState = appendLog(logState, "Second log entry");
             expect(logState.logs).toEqual(["First log entry", "Second log entry"]);
+        });
+
+        it("should append multiple log entries at once", () => {
+            logState = appendLogs(logState, ["Log 1", "Log 2"]);
+            expect(logState.logs).toEqual(["Log 1", "Log 2"]);
+
+            logState = appendLogs(logState, ["Log 3", "Log 4"]);
+            expect(logState.logs).toEqual(["Log 1", "Log 2", "Log 3", "Log 4"]);
         });
 
         it("should be append-only (immutable)", () => {
