@@ -54,12 +54,12 @@ export function createVapServer(): Server {
                                 type: "string",
                                 description: "Name of the circuit (without extension)",
                             },
-                            circuit_content: {
+                            blob_id: {
                                 type: "string",
-                                description: "Complete .tsx content of the circuit",
+                                description: "MinIO object name (Blob ID) of the circuit file",
                             },
                         },
-                        required: ["circuit_name", "circuit_content"],
+                        required: ["circuit_name", "blob_id"],
                     },
                 },
                 {
@@ -86,11 +86,11 @@ export function createVapServer(): Server {
 
         switch (name) {
             case "VAP_init": {
-                const { circuit_name, circuit_content } = args as {
+                const { circuit_name, blob_id } = args as {
                     circuit_name: string;
-                    circuit_content: string;
+                    blob_id: string;
                 };
-                const result = await vapInit(circuit_name, circuit_content);
+                const result = await vapInit(circuit_name, blob_id);
                 return jsonResult(result);
             }
 

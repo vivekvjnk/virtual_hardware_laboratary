@@ -12,28 +12,38 @@
 
 import { spawn } from "child_process";
 import { Decision } from "./state.js";
+import * as fs from "fs/promises";
+import * as path from "path";
+import { compressDirectory } from "../utils/archive.js";
+import { prepareMetadata } from "./metadata.js";
 
 export interface EvaluationResult {
     decision: Decision;
     logs: string[];
     timedOut: boolean;
+    metadata?: Record<string, any>;
+    resultsZipPath?: string;
+    eval_status?: "Success" | "Error";
 }
 
 /**
  * Evaluate a circuit file using tsci eval
  * 
  * @param tsxPath - Absolute path to the .tsx circuit file
+ * @param resultsDir - Directory to store evaluation results
  * @param timeoutMs - Timeout in milliseconds (default: 30000)
  * @returns EvaluationResult
  */
 export function evaluateCircuit(
     tsxPath: string,
+    resultsDir: string,
     timeoutMs: number = 30000
 ): Promise<EvaluationResult> {
     return new Promise((resolve) => {
         const logs: string[] = [];
         let timedOut = false;
         let processClosed = false;
+        const startTime = Date.now();
 
         // Spawn tsci eval process
         // We use npx to ensure we use the local installation if available
@@ -82,31 +92,43 @@ export function evaluateCircuit(
         }, timeoutMs);
 
         // Handle process exit
-        proc.on("close", (code) => {
+        proc.on("close", async (code) => {
             if (processClosed) return; // Already handled (e.g. by timeout race)
             processClosed = true;
             clearTimeout(timer);
 
-            if (timedOut) {
-                resolve({
-                    decision: "REJECT",
-                    logs,
-                    timedOut: true,
-                });
-            } else if (code === 0) {
-                resolve({
-                    decision: "ACCEPT",
-                    logs,
-                    timedOut: false,
-                });
-            } else {
-                logs.push(`[VAP] Process exited with code ${code}`);
-                resolve({
-                    decision: "REJECT",
-                    logs,
-                    timedOut: false,
-                });
+            const endTime = Date.now();
+            const timeTaken = endTime - startTime;
+
+            // Save logs to file in results directory
+            const logFilePath = path.join(resultsDir, "eval.log");
+            await fs.writeFile(logFilePath, logs.join("\n"), "utf-8");
+
+            // Check for errors in logs
+            const metadata = prepareMetadata(logs);
+            metadata.timeTakenMs = timeTaken;
+            metadata.exitCode = code;
+            metadata.timedOut = timedOut;
+
+            let decision: Decision = "REJECT";
+            let eval_status: "Success" | "Error" = "Error";
+            if (!timedOut && code === 0 && metadata.errorCount === 0) {
+                decision = "ACCEPT";
+                eval_status = "Success";
             }
+
+            // Compress results folder
+            const zipPath = `${resultsDir}.zip`;
+            await compressDirectory(resultsDir, zipPath);
+
+            resolve({
+                decision,
+                logs,
+                timedOut,
+                metadata,
+                resultsZipPath: zipPath,
+                eval_status
+            });
         });
 
         // Handle spawn errors

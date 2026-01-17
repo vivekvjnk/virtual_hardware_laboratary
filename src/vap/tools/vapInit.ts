@@ -6,6 +6,6 @@
 
 import { runtime } from "../runtime.js";
 
-export async function vapInit(circuit_name: string, circuit_content: string) {
-    return await runtime.startEvaluation(circuit_name, circuit_content);
+export async function vapInit(circuit_name: string, blob_id: string) {
+    return await runtime.startEvaluation(circuit_name, blob_id);
 }

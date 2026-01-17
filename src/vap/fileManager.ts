@@ -14,7 +14,8 @@
 
 import * as fs from "fs/promises";
 import * as path from "path";
-import { CIRCUITS_DIR, CIRCUITS_TEMP_DIR } from "../config/paths.js";
+import { CIRCUITS_DIR, CIRCUITS_TEMP_DIR, EVAL_RESULTS_DIR } from "../config/paths.js";
+import { pullObject } from "../utils/minio.js";
 
 // ============================================================================
 // Path Helpers
@@ -37,6 +38,45 @@ export function getFinalPath(circuitName: string): string {
 // ============================================================================
 // File Operations
 // ============================================================================
+
+/**
+ * Pull circuit from MinIO and save to provisional file
+ * 
+ * @param blobId - MinIO object name
+ * @param circuitName - Name of the circuit
+ * @returns Path to the provisional file
+ */
+export async function pullAndWriteProvisional(
+    blobId: string,
+    circuitName: string
+): Promise<string> {
+    // Ensure temp directory exists
+    await fs.mkdir(CIRCUITS_TEMP_DIR, { recursive: true });
+
+    const provisionalDir = path.join(CIRCUITS_TEMP_DIR, circuitName);
+    await fs.mkdir(provisionalDir, { recursive: true });
+
+    // Pull from MinIO
+    const localPath = await pullObject(blobId, provisionalDir);
+
+    // Rename to .tsx if it doesn't have it (MinIO objects might not have extensions)
+    const targetPath = getProvisionalPath(circuitName);
+    await fs.rename(localPath, targetPath);
+
+    return targetPath;
+}
+
+/**
+ * Create a dedicated folder for evaluation results
+ * 
+ * @param taskId - Task ID to use as folder name
+ * @returns Path to the results folder
+ */
+export async function createResultsFolder(taskId: string): Promise<string> {
+    const resultsPath = path.join(EVAL_RESULTS_DIR, taskId);
+    await fs.mkdir(resultsPath, { recursive: true });
+    return resultsPath;
+}
 
 /**
  * Write circuit content to provisional file

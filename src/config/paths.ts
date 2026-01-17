@@ -68,3 +68,10 @@ export const CIRCUITS_DIR = path.join(PROJECT_ROOT, "circuits");
  * Files here are either promoted to CIRCUITS_DIR (ACCEPT) or deleted (REJECT).
  */
 export const CIRCUITS_TEMP_DIR = path.join(CIRCUITS_DIR, ".tmp");
+
+/**
+ * Evaluation results directory.
+ * 
+ * Used by VAP to store evaluation logs and artifacts.
+ */
+export const EVAL_RESULTS_DIR = path.join(PROJECT_ROOT, "eval_results");

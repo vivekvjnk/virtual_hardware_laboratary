@@ -14,7 +14,10 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.25.1",
-    "express": "^5.2.1"
+    "@types/archiver": "^7.0.0",
+    "archiver": "^7.0.1",
+    "express": "^5.2.1",
+    "minio": "^8.0.6"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",

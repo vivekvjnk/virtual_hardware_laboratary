@@ -21,13 +21,16 @@ import {
     Decision,
 } from "./state.js";
 import { evaluateCircuit } from "./evaluator.js";
-import { writeProvisionalCircuit, finalizeCircuit, cleanupCircuit } from "./fileManager.js";
+import { pullAndWriteProvisional, finalizeCircuit, cleanupCircuit, createResultsFolder } from "./fileManager.js";
+import { prepareMetadata } from "./metadata.js";
 
 export interface VAPStatus {
     state: ProcessState;
     logs: string[];
     decision?: Decision;
     task_id?: string;
+    metadata?: Record<string, any>;
+    eval_status?: "Success" | "Error";
 }
 
 export class VAPRuntime {
@@ -37,6 +40,7 @@ export class VAPRuntime {
 
     private activeTaskId: string | null = null;
     private activeCircuitName: string | null = null;
+    private metadata: Record<string, any> | null = null;
 
     constructor() {
         this.processState = createProcessState();
@@ -47,7 +51,7 @@ export class VAPRuntime {
     /**
      * Start a new evaluation task
      */
-    public async startEvaluation(circuitName: string, content: string): Promise<{ task_id: string; state: ProcessState }> {
+    public async startEvaluation(circuitName: string, blobId: string): Promise<{ task_id: string; state: ProcessState }> {
         // 1. Check state and transition
         this.processState = transitionToEvalInProgress(this.processState);
 
@@ -56,12 +60,16 @@ export class VAPRuntime {
         this.activeCircuitName = circuitName;
         this.logState = createLogState();
         this.controlState = createControlState();
+        this.metadata = null;
 
-        // 3. Write provisional file
-        const provisionalPath = await writeProvisionalCircuit(circuitName, content);
+        // 3. Pull from MinIO and write provisional file
+        const provisionalPath = await pullAndWriteProvisional(blobId, circuitName);
 
-        // 4. Start background evaluation
-        this.runEvaluation(provisionalPath, circuitName);
+        // 4. Create results folder
+        const resultsDir = await createResultsFolder(this.activeTaskId);
+
+        // 5. Start background evaluation
+        this.runEvaluation(provisionalPath, circuitName, resultsDir);
 
         return {
             task_id: this.activeTaskId,
@@ -72,16 +80,19 @@ export class VAPRuntime {
     /**
      * Run evaluation in background
      */
-    private async runEvaluation(provisionalPath: string, circuitName: string) {
+    private async runEvaluation(provisionalPath: string, circuitName: string, resultsDir: string) {
         try {
             // Execute evaluation
-            const result = await evaluateCircuit(provisionalPath);
+            const result = await evaluateCircuit(provisionalPath, resultsDir);
 
             // Update logs
             this.logState = appendLogs(this.logState, result.logs);
 
             // Set decision
             this.controlState = setDecision(this.controlState, result.decision);
+
+            // Store metadata
+            this.metadata = result.metadata || null;
 
             // Execute decision (File Operations)
             if (result.decision === "ACCEPT") {
@@ -113,19 +124,27 @@ export class VAPRuntime {
                 task_id: taskId,
             };
 
+            if (this.metadata) {
+                status.metadata = this.metadata;
+            } else {
+                // Prepare live metadata from current logs
+                status.metadata = prepareMetadata(this.logState.logs);
+            }
+
             // If decision is set, include it
             if (this.controlState.decision !== "UNDECIDED") {
                 status.decision = this.controlState.decision;
+                status.eval_status = this.controlState.decision === "ACCEPT" ? "Success" : "Error";
 
                 // If we are in Default state and have a decision, this is the "final poll"
                 // Clear internal state
                 if (this.processState === "Default") {
                     this.activeTaskId = null;
                     this.activeCircuitName = null;
+                    this.metadata = null;
                     this.controlState = clearControlState(this.controlState);
-                    // We keep logs? "Logs remain as the sole epistemic memory"
-                    // But for the runtime singleton, we reset for next task.
-                    // The returned status contains the logs.
+                    // Reset VAP to initial state (logs are cleared for next run)
+                    this.logState = createLogState();
                 }
             }
 
