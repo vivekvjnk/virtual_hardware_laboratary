@@ -16,7 +16,7 @@ from openhands.tools.gemini import GEMINI_FILE_TOOLS
 from openhands.tools.terminal import TerminalTool
 
 from .prompts import SYSTEM_PROMPT
-from .object_store import MinioObjectStore
+from .utils.object_store import MinioObjectStore
 
 logger = get_logger(__name__)
 

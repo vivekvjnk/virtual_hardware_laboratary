@@ -6,7 +6,7 @@ import sys
 # Add the parent directory to sys.path to allow importing ana_worker_2
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from ana_worker_2.object_store import MinioObjectStore
+from ana_worker_2.utils.object_store import MinioObjectStore
 
 class TestMinioObjectStore(unittest.TestCase):
     @patch('boto3.client')
