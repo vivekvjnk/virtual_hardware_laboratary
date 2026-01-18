@@ -53,7 +53,9 @@ export class VAPRuntime {
      */
     public async startEvaluation(circuitName: string, blobId: string): Promise<{ task_id: string; state: ProcessState }> {
         // 1. Check state and transition
+        console.log(`[VAP] Starting evaluation for circuit: ${circuitName}`);
         this.processState = transitionToEvalInProgress(this.processState);
+        console.log(`[VAP] State transitioned to: ${this.processState}`);
 
         // 2. Initialize new task
         this.activeTaskId = randomUUID();
@@ -61,16 +63,23 @@ export class VAPRuntime {
         this.logState = createLogState();
         this.controlState = createControlState();
         this.metadata = null;
+        console.log(`[VAP] New task initialized with ID: ${this.activeTaskId}`);
 
         // 3. Pull from MinIO and write provisional file
+        console.log(`[VAP] Pulling blob ${blobId} and writing provisional file`);
         const provisionalPath = await pullAndWriteProvisional(blobId, circuitName);
+        console.log(`[VAP] Provisional file written to: ${provisionalPath}`);
 
         // 4. Create results folder
+        console.log(`[VAP] Creating results folder for task: ${this.activeTaskId}`);
         const resultsDir = await createResultsFolder(this.activeTaskId);
+        console.log(`[VAP] Results folder created at: ${resultsDir}`);
 
         // 5. Start background evaluation
+        console.log(`[VAP] Spawning background evaluation task`);
         this.runEvaluation(provisionalPath, circuitName, resultsDir);
 
+        console.log(`[VAP] Evaluation task started, returning task ID: ${this.activeTaskId}`);
         return {
             task_id: this.activeTaskId,
             state: this.processState,
@@ -83,32 +92,45 @@ export class VAPRuntime {
     private async runEvaluation(provisionalPath: string, circuitName: string, resultsDir: string) {
         try {
             // Execute evaluation
+            console.log(`[VAP] Starting evaluation for circuit: ${circuitName}`);
             const result = await evaluateCircuit(provisionalPath, resultsDir);
+            console.log(`[VAP] Evaluation completed with decision: ${result.decision}`);
 
             // Update logs
             this.logState = appendLogs(this.logState, result.logs);
+            console.log(`[VAP] Logs updated, total entries: ${this.logState.logs.length}`);
 
             // Set decision
             this.controlState = setDecision(this.controlState, result.decision);
+            console.log(`[VAP] Control state updated with decision: ${result.decision}`);
 
             // Store metadata
             this.metadata = result.metadata || null;
+            console.log(`[VAP] Metadata stored`);
 
             // Execute decision (File Operations)
             if (result.decision === "ACCEPT") {
+                console.log(`[VAP] Finalizing circuit: ${circuitName}`);
                 await finalizeCircuit(circuitName);
+                console.log(`[VAP] Circuit finalized successfully`);
             } else {
+                console.log(`[VAP] Cleaning up circuit: ${circuitName}`);
                 await cleanupCircuit(circuitName);
+                console.log(`[VAP] Circuit cleaned up successfully`);
             }
 
         } catch (err: any) {
             // Handle unexpected runtime errors
+            console.error(`[VAP] Runtime error caught: ${err.message}`);
             this.logState = appendLogs(this.logState, [`[VAP] Runtime Error: ${err.message}`]);
             this.controlState = setDecision(this.controlState, "REJECT");
+            console.log(`[VAP] Initiating cleanup due to error`);
             await cleanupCircuit(circuitName);
+            console.log(`[VAP] Cleanup completed after error`);
         } finally {
             // Transition back to Default (wait-for-poll)
             this.processState = transitionToDefault(this.processState);
+            console.log(`[VAP] Evaluation task completed, state transitioned to: ${this.processState}`);
         }
     }
 

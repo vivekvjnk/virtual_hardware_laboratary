@@ -57,11 +57,19 @@ export async function pullAndWriteProvisional(
     await fs.mkdir(provisionalDir, { recursive: true });
 
     // Pull from MinIO
-    const localPath = await pullObject(blobId, provisionalDir);
+    console.log(`Pulling circuit ${circuitName} from MinIO (${blobId})`);
+    let localPath: string;
+    try {
+        localPath = await pullObject(blobId, provisionalDir);
+    } catch (err: any) {
+        console.error(`Failed to pull circuit ${circuitName} from MinIO (${blobId}):`, err);
+        throw err;
+    }
 
     // Rename to .tsx if it doesn't have it (MinIO objects might not have extensions)
     const targetPath = getProvisionalPath(circuitName);
     await fs.rename(localPath, targetPath);
+    console.log(`Circuit provisioned at ${targetPath}`);
 
     return targetPath;
 }

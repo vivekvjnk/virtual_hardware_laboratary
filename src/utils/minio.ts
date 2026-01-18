@@ -8,7 +8,7 @@ const minioClient = new Minio.Client({
     port: parseInt(process.env.MINIO_PORT || "9000"),
     useSSL: process.env.MINIO_USE_SSL === "true",
     accessKey: process.env.MINIO_ACCESS_KEY || "minioadmin",
-    secretKey: process.env.MINIO_SECRET_KEY || "minioadmin",
+    secretKey: process.env.MINIO_SECRET_KEY || "supersecretpassword",
 });
 
 const BUCKET_NAME = process.env.MINIO_BUCKET || "vhl";

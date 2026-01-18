@@ -91,12 +91,14 @@ export function createVapServer(): Server {
                     blob_id: string;
                 };
                 const result = await vapInit(circuit_name, blob_id);
+                console.log(`[VAP] VAP_init result:`, result);
                 return jsonResult(result);
             }
 
             case "VAP_status": {
                 const { task_id } = args as { task_id: string };
                 const result = await vapStatus(task_id);
+                console.log(`[VAP] VAP_status result:`, result);
                 return jsonResult(result);
             }
 

@@ -7,6 +7,8 @@ services:
     ports:
       - "8080:8080"
       - "8081:8081"
+    networks:
+      - vhl-network
     volumes:
       - vhl-lib:/app/lib
       - vhl-circuits:/app/circuits
@@ -15,7 +17,13 @@ services:
       - PORT=8080
       - VAP_PORT=8081
       - VHL_LIBRARY_DIR=/app/lib
+      # Add your MinIO connection details here for your code to use
+      - MINIO_ENDPOINT=minio
     restart: unless-stopped
+
+networks:
+  vhl-network:
+    external: true
 
 volumes:
   vhl-lib:
