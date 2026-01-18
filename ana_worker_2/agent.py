@@ -1,118 +1,165 @@
 import os
+import json
+import time
+import zipfile
+import logging
+from typing import Dict, Any, Optional
 
-from pydantic import SecretStr
+from openhands.sdk import get_logger
+from ana_worker_2.utils.object_store import MinioObjectStore
+from ana_worker_2.utils.mcp_utils import MCPInvoker
 
-from openhands.sdk import (
-    LLM,
-    Agent,
-    LLMSummarizingCondenser,
-    Conversation,
-    Event,
-    LLMConvertibleEvent,
-    get_logger,
-)
-from openhands.sdk.tool import Tool
-from openhands.tools.gemini import GEMINI_FILE_TOOLS
-from openhands.tools.terminal import TerminalTool
-
-from .prompts import SYSTEM_PROMPT
-from .utils.object_store import MinioObjectStore
-
+# Configure logger
 logger = get_logger(__name__)
 
 class ANA_validation_agent:
-    def __init__(self, mcp_url: str = "http://localhost:8081/vap", minio_url: str = "http://127.0.0.1:9000"):
+    """
+    ANA-W2 Agent: Deterministic workflow for circuit evaluation using VHL-VAP.
+    
+    Responsibilities:
+    1. Upload circuit file to MinIO object store.
+    2. Invoke VAP process via MCP.
+    3. Poll for evaluation status.
+    4. Collect and extract evaluation results.
+    """
+    def __init__(self, mcp_url: str = "http://localhost:8081/mcp", minio_url: str = "http://127.0.0.1:9000"):
         self.mcp_url = mcp_url
         self.minio_url = minio_url
         self.object_store = MinioObjectStore(endpoint_url=minio_url)
-        self.tsx_mapping = {}
-        self.llm = self._setup_llm()
-        self.agent = self._setup_agent()
-        self.llm_messages = []
+        self.invoker = MCPInvoker(mcp_url)
 
-    def _setup_llm(self,usage_id="ana_validation_agent") -> LLM:
-        api_key = os.getenv("LLM_API_KEY")
-        if not api_key:
-            raise ValueError("LLM_API_KEY environment variable is not set.")
-        
-        model = os.getenv("LLM_MODEL", "anthropic/claude-3-5-sonnet-20241022")
-        base_url = os.getenv("LLM_BASE_URL")
-        
-        return LLM(
-            usage_id=usage_id,
-            model=model,
-            base_url=base_url,
-            api_key=SecretStr(api_key),
-        )
-
-    def _setup_agent(self) -> Agent:
-        tools = [
-            Tool(name=TerminalTool.name), 
-            # Terminal tool might be useful for debugging or file ops, but FileEditor is primary
-            *GEMINI_FILE_TOOLS,
-        ]
-
-        mcp_config = {
-            "mcpServers": {
-                "vhl-library": {
-                    "url": self.mcp_url,
-                    # Assuming the SDK handles the transport details based on URL
-                }
-            }
-        }
-        
-        llm_condenser = self._setup_llm(usage_id="librarian_condenser")
-        condenser = LLMSummarizingCondenser(llm=llm_condenser, max_size=80, keep_first=8)
-
-        return Agent(
-            llm=self.llm,
-            tools=tools,
-            mcp_config=mcp_config,
-            system_prompt=SYSTEM_PROMPT,
-            condenser=condenser,
-        )
-
-    def _conversation_callback(self, event: Event):
-        if isinstance(event, LLMConvertibleEvent):
-            self.llm_messages.append(event.to_llm_message())
-
-    def sync_workspace_to_minio(self, workspace_path: str):
+    def validate_circuit(self, circuit_path: str) -> Dict[str, Any]:
         """
-        Uploads all .tsx files from workspace to Minio and updates the mapping.
-        """
-        logger.info(f"Syncing .tsx files from {workspace_path} to Minio.")
-        self.tsx_mapping = self.object_store.upload_tsx_files(workspace_path)
-        logger.info(f"Sync complete. Mapping: {self.tsx_mapping}")
-
-    def validate_circuit(self, circuit_path: str) -> None:
-        """
-        Process the SCUD file: read it, check components, and update it.
+        Process the circuit file: upload to object store, invoke VAP, poll for status, and collect results.
         """
         if not os.path.exists(circuit_path):
-            raise FileNotFoundError(f"SCUD file not found at: {circuit_path}")
+            raise FileNotFoundError(f"Circuit file not found at: {circuit_path}")
 
-        # Sync workspace to Minio before starting
-        # Assuming the workspace is the directory containing the circuit file or a specific path
-        workspace_dir = os.path.dirname(os.path.abspath(circuit_path))
-        self.sync_workspace_to_minio(workspace_dir)
+        circuit_name = os.path.splitext(os.path.basename(circuit_path))[0]
+        
+        # 1. Upload the circuit tsx file to Object store
+        logger.info(f"Step 1: Uploading {circuit_path} to object store...")
+        blob_id = self.object_store.upload_file(circuit_path)
+        logger.info(f"Uploaded as blob_id: {blob_id}")
 
-        cwd = os.getcwd()
+        # 2. Invoke VAP with the circuit object id
+        logger.info(f"Step 2: Invoking VAP for circuit: {circuit_name}")
+        init_result = self.invoker.call_tool("VAP_init", {
+            "circuit_name": circuit_name,
+            "blob_id": blob_id
+        })
         
-        conversation = Conversation(
-            agent=self.agent,
-            callbacks=[self._conversation_callback],
-            workspace=cwd,
-        )
+        try:
+            init_data = json.loads(init_result)
+        except json.JSONDecodeError:
+            raise RuntimeError(f"Failed to parse VAP_init response: {init_result}")
+            
+        task_id = init_data.get("task_id")
+        if not task_id:
+            raise RuntimeError(f"Failed to initialize VAP: {init_result}")
+        
+        logger.info(f"VAP initialized with task_id: {task_id}")
 
-        logger.info(f"Starting Librarian Agent for SCUD: {circuit_path}")
+        # 3. Poll for status of the evaluation
+        logger.info(f"Step 3: Polling for status of task: {task_id}")
+        results = None
+        evaluation_metadata = {}
+        status = "unknown"
         
-        # We send a message to kick off the process
-        # The system prompt already tells the agent what to do, but we need to point it to the file.
-        user_message = (
-            f"Please validate the circuit file located at '{circuit_path}' using VHL-VAP process. "
-        )
+        while True:
+            status_result = self.invoker.call_tool("VAP_status", {"task_id": task_id})
+            try:
+                status_data = json.loads(status_result)
+            except json.JSONDecodeError:
+                logger.warning(f"Failed to parse VAP_status response: {status_result}")
+                time.sleep(2)
+                continue
+                
+            status = status_data.get("status", "unknown")
+            logger.info(f"VAP status for {task_id}: {status}")
+            
+            if status == "completed":
+                logger.info("VAP evaluation completed successfully.")
+                results = status_data.get("results")
+                evaluation_metadata = status_data
+                break
+            elif status == "failed":
+                error_msg = status_data.get("error", "Unknown error")
+                logger.error(f"VAP evaluation failed: {error_msg}")
+                evaluation_metadata = status_data
+                break
+            
+            time.sleep(2)
+
+        # 4. Once evaluation is complete, collect evaluation results
+        logger.info("Step 4: Collecting evaluation results...")
+        output_dir = os.path.join(os.getcwd(), "ana_worker_2", "results", task_id)
+        os.makedirs(output_dir, exist_ok=True)
         
-        conversation.send_message(user_message)
-        conversation.run()
+        downloaded_files = []
+        if results and isinstance(results, dict):
+            for key, blob_id in results.items():
+                if isinstance(blob_id, str):
+                    # Use the key as filename if possible
+                    filename = f"{key}_{blob_id}"
+                    download_path = os.path.join(output_dir, filename)
+                    try:
+                        self.object_store.download_file(blob_id, download_path)
+                        downloaded_files.append(download_path)
+                        logger.info(f"Downloaded result {key} to {download_path}")
+                        
+                        # Extract if it's a zip file
+                        if download_path.endswith(".zip") or zipfile.is_zipfile(download_path):
+                            extract_dir = os.path.join(output_dir, key)
+                            os.makedirs(extract_dir, exist_ok=True)
+                            with zipfile.ZipFile(download_path, 'r') as zip_ref:
+                                zip_ref.extractall(extract_dir)
+                            logger.info(f"Extracted {download_path} to {extract_dir}")
+                    except Exception as e:
+                        logger.warning(f"Failed to download/extract result {key} ({blob_id}): {e}")
+
+        # 5. Delegate back to ANA-D
+        # The return value provides all necessary info for ANA-D to continue.
+        logger.info("Step 5: Process complete. Returning results to orchestrator.")
+        return {
+            "task_id": task_id,
+            "status": status,
+            "results": results,
+            "output_dir": output_dir,
+            "downloaded_files": downloaded_files,
+            "metadata": evaluation_metadata
+        }
+
+    def close(self):
+        """Cleanup resources."""
+        if hasattr(self, 'invoker'):
+            self.invoker.close()
+
+if __name__ == "__main__":
+    # Simple CLI for testing
+    import sys
+    
+    # Set logging to INFO for CLI usage
+    logging.basicConfig(level=logging.INFO)
+    
+    if len(sys.argv) > 1:
+        circuit_file = sys.argv[1]
+    else:
+        # Default test file
+        circuit_file = os.path.join(os.getcwd(), "ana_workspace", "bq79616_circuit.tsx")
+    
+    if not os.path.exists(circuit_file):
+        print(f"Error: Circuit file not found at {circuit_file}")
+        sys.exit(1)
         
-        logger.info("Librarian Agent finished processing.")
+    agent = ANA_validation_agent()
+    try:
+        result = agent.validate_circuit(circuit_file)
+        print("\n--- Evaluation Results ---")
+        print(json.dumps(result, indent=2))
+    except Exception as e:
+        print(f"Error during validation: {e}")
+        logger.exception("Full stack trace:")
+        sys.exit(1)
+    finally:
+        agent.close()

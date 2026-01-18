@@ -1,5 +1,5 @@
-import asyncio
-import logging
+import json
+import re
 from typing import Any, Dict, List, Optional, Union
 from fastmcp.mcp_config import MCPConfig
 from openhands.sdk.mcp import MCPClient, MCPToolObservation
@@ -80,12 +80,15 @@ class MCPInvoker:
         """
         Synchronously call a specific tool on the MCP server.
         """
-        return self.client.call_async_from_sync(
-            self._call_tool_async, 
-            tool_name=tool_name, 
-            arguments=arguments, 
-            timeout=timeout
+        json_results = sanitize_mcp_tool_observation(
+            self.client.call_async_from_sync(
+                self._call_tool_async, 
+                tool_name=tool_name, 
+                arguments=arguments, 
+                timeout=timeout
+            )
         )
+        return json_results
 
     def close(self):
         """
@@ -116,3 +119,20 @@ def list_mcp_tools(url: str, timeout: float = 30.0) -> List[Dict[str, Any]]:
         return invoker.list_tools(timeout)
     finally:
         invoker.close()
+
+def sanitize_mcp_tool_observation(mcp_observation: MCPToolObservation) -> str:
+    """
+    Extracts and parses JSON from a string that may contain 
+    extra text, logs, or tool execution headers.
+    """
+    if not mcp_observation:
+        return None
+
+    # 2. If it fails, use Regex to find the JSON block
+    # re.DOTALL allows '.' to match newlines
+    match = re.search(r'(\{.*\}|\[.*\])', mcp_observation.text, re.DOTALL)
+    logger.debug(f"Sanitized MCP observation: {match.group(0) if match else 'No match found'}")
+    if match:
+        sanitized_json = mcp_observation.text.replace(match.group(0), '').strip()   
+        return sanitized_json
+    raise ValueError(f"No JSON object or array found in the input string: {mcp_observation.text}...")
