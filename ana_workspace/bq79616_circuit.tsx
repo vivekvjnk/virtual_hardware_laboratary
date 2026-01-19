@@ -1,12 +1,12 @@
-import { BQ79616PAPR } from "./components/BQ79616PAPR";
-import { ISO7342FCQDWRQ1 } from "./components/ISO7342FCQDWRQ1";
-import { MMBT3904LT1G } from "./components/MMBT3904LT1G";
-import { NCP18XH103F03RB } from "./components/NCP18XH103F03RB";
-import { BZX84C24 } from "./components/BZX84C24";
+import { BQ79616PAPR } from "/app/lib/imports/BQ79616PAPR";
+import { ISO7342FCQDWRQ1 } from "/app/lib/imports/ISO7342FCQDWRQ1";
+import { MMBT3904LT1G } from "/app/lib/imports/MMBT3904LT1G";
+import { NCP18XH103F03RB } from "/app/lib/imports/NCP18XH103F03RB";
+import { BZX84C24 } from "/app/lib/imports/BZX84C24";
 
 export default () => {
   return (
-    <board width="100mm" height="80mm">
+    <board width="100mm" height="80mm" routingDisabled={true}>
       {/* Nets */}
       <net name="VCC" />
       <net name="GND" />

@@ -74,8 +74,9 @@ class ANA_validation_agent:
                 logger.warning(f"Failed to parse VAP_status response: {status_result}")
                 time.sleep(2)
                 continue
-                
-            status = status_data.get("status", "unknown")
+            
+            logger.info(f"Polled status: {status_data}")
+            status = status_data.get("eval_status", "unknown")
             logger.info(f"VAP status for {task_id}: {status}")
             
             if status == "completed":
@@ -83,7 +84,7 @@ class ANA_validation_agent:
                 results = status_data.get("results")
                 evaluation_metadata = status_data
                 break
-            elif status == "failed":
+            elif (status == "failed") or (status == "Error"):
                 error_msg = status_data.get("error", "Unknown error")
                 logger.error(f"VAP evaluation failed: {error_msg}")
                 evaluation_metadata = status_data

@@ -8,6 +8,8 @@ from openhands.sdk.logger import get_logger
 
 # Configure logger
 logger = get_logger(__name__)
+import os
+print(f"DEBUG: mcp_utils.py loaded from {os.path.abspath(__file__)}")
 
 class MCPInvoker:
     """
@@ -128,11 +130,47 @@ def sanitize_mcp_tool_observation(mcp_observation: MCPToolObservation) -> str:
     if not mcp_observation:
         return None
 
-    # 2. If it fails, use Regex to find the JSON block
-    # re.DOTALL allows '.' to match newlines
-    match = re.search(r'(\{.*\}|\[.*\])', mcp_observation.text, re.DOTALL)
-    logger.debug(f"Sanitized MCP observation: {match.group(0) if match else 'No match found'}")
-    if match:
-        sanitized_json = mcp_observation.text.replace(match.group(0), '').strip()   
-        return sanitized_json
-    raise ValueError(f"No JSON object or array found in the input string: {mcp_observation.text}...")
+    text = mcp_observation.text.strip()
+    
+    # 1. Try to parse directly
+    try:
+        json.loads(text)
+        return text
+    except json.JSONDecodeError:
+        pass
+
+    # 2. Remove common MCP execution prefixes
+    # Example: "[Tool 'VAP_init' executed.]"
+    text = re.sub(r'^\[Tool \'.*?\' executed\.\]', '', text).strip()
+    
+    try:
+        json.loads(text)
+        return text
+    except json.JSONDecodeError:
+        pass
+
+    # 3. Use Regex to find the largest JSON-like block (object or array)
+    # We look for the first '{' or '[' and the last '}' or ']'
+    obj_start = text.find('{')
+    obj_end = text.rfind('}')
+    arr_start = text.find('[')
+    arr_end = text.rfind(']')
+    
+    candidates = []
+    if obj_start != -1 and obj_end != -1 and obj_end > obj_start:
+        candidates.append(text[obj_start:obj_end+1])
+    if arr_start != -1 and arr_end != -1 and arr_end > arr_start:
+        candidates.append(text[arr_start:arr_end+1])
+        
+    # Sort by length descending to find the most complete block
+    candidates.sort(key=len, reverse=True)
+    
+    for cand in candidates:
+        try:
+            json.loads(cand)
+            logger.debug(f"Sanitized MCP observation: {cand}")
+            return cand
+        except json.JSONDecodeError:
+            continue
+    
+    raise ValueError(f"No valid JSON object or array found in the input string: {mcp_observation.text[:100]}...")
