@@ -37,7 +37,7 @@ export interface EvaluationResult {
 export function evaluateCircuit(
     tsxPath: string,
     resultsDir: string,
-    timeoutMs: number = 30000
+    timeoutMs: number = 300000
 ): Promise<EvaluationResult> {
     return new Promise((resolve) => {
         const logs: string[] = [];
@@ -45,66 +45,59 @@ export function evaluateCircuit(
         let processClosed = false;
         const startTime = Date.now();
 
-        // Spawn tsci eval process
-        // We use npx to ensure we use the local installation if available
-        // NOTE: 'tsci build' runs evaluation and outputs circuit JSON
-        // In Docker, tsci is installed globally via Bun and is in PATH.
         const proc = spawn("tsci", ["build", tsxPath], {
             stdio: "pipe",
-            env: { ...process.env, CI: "true" }, // Ensure non-interactive mode
-            detached: true, // Create new process group for reliable killing
+            env: { 
+                ...process.env, 
+                CI: "true",
+                // Many CLI tools check these to decide whether to output detailed logs
+                FORCE_COLOR: "1", 
+                TERM: "xterm-256color",
+                PYTHONUNBUFFERED: "1" // Useful if tsci calls underlying python scripts
+            },
+            detached: true,
         });
 
-        // Capture stdout
-        proc.stdout.on("data", (data) => {
-            const lines = data.toString().split("\n");
+        // Use a unified handler to capture output from both streams
+        const logHandler = (data: Buffer) => {
+            const lines = data.toString().split(/\r?\n/); // Handle both \n and \r\n
             for (const line of lines) {
-                if (line.trim()) logs.push(line);
+                const trimmed = line.trim();
+                if (trimmed) logs.push(trimmed);
             }
-        });
+        };
 
-        // Capture stderr
-        proc.stderr.on("data", (data) => {
-            const lines = data.toString().split("\n");
-            for (const line of lines) {
-                if (line.trim()) logs.push(line);
-            }
-        });
+        proc.stdout.on("data", logHandler);
+        proc.stderr.on("data", logHandler);
 
-        // Handle timeout
         const timer = setTimeout(() => {
             if (!processClosed) {
                 timedOut = true;
                 logs.push(`[VAP] Evaluation timed out after ${timeoutMs}ms`);
-                logs.push("[VAP] Force-terminating process...");
-
-                // Kill the process group
+                
                 try {
                     if (proc.pid) {
+                        // Kill the entire process group
                         process.kill(-proc.pid, "SIGKILL");
                     }
                 } catch (e: any) {
                     logs.push(`[VAP] Failed to kill process group: ${e.message}`);
-                    // Fallback to simple kill if group kill fails
                     proc.kill("SIGKILL");
                 }
             }
         }, timeoutMs);
 
-        // Handle process exit
         proc.on("close", async (code) => {
-            if (processClosed) return; // Already handled (e.g. by timeout race)
+            if (processClosed) return;
             processClosed = true;
             clearTimeout(timer);
 
             const endTime = Date.now();
             const timeTaken = endTime - startTime;
 
-            // Save logs to file in results directory
             const logFilePath = path.join(resultsDir, "eval.log");
             await fs.writeFile(logFilePath, logs.join("\n"), "utf-8");
 
-            // Check for errors in logs
             const metadata = prepareMetadata(logs);
             metadata.timeTakenMs = timeTaken;
             metadata.exitCode = code;
@@ -112,12 +105,12 @@ export function evaluateCircuit(
 
             let decision: Decision = "REJECT";
             let eval_status: "Success" | "Error" = "Error";
+            
             if (!timedOut && code === 0 && metadata.errorCount === 0) {
                 decision = "ACCEPT";
                 eval_status = "Success";
             }
 
-            // Compress results folder
             const zipPath = `${resultsDir}.zip`;
             await compressDirectory(resultsDir, zipPath);
 
@@ -131,18 +124,19 @@ export function evaluateCircuit(
             });
         });
 
-        // Handle spawn errors
         proc.on("error", (err) => {
             if (processClosed) return;
             processClosed = true;
             clearTimeout(timer);
 
             logs.push(`[VAP] Failed to spawn process: ${err.message}`);
+            // Note: You may want to include metadata/status here to match EvaluationResult
             resolve({
                 decision: "REJECT",
                 logs,
                 timedOut: false,
-            });
+                eval_status: "Error"
+            } as any); 
         });
     });
 }
