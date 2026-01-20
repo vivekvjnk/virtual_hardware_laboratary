@@ -190,6 +190,9 @@ export class VAPRuntime {
                 if (this.processState === "Default") {
                     this.activeTaskId = null;
                     this.activeCircuitName = null;
+                    this.resultsBlobId = null;
+                    this.activeBlobId = null;
+                    this.activeDatetime = null;
                     this.metadata = null;
                     this.controlState = clearControlState(this.controlState);
                     // Reset VAP to initial state (logs are cleared for next run)
