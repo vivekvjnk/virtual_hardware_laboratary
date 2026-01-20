@@ -79,15 +79,15 @@ class ANA_validation_agent:
             status = status_data.get("eval_status", "unknown")
             logger.info(f"VAP status for {task_id}: {status}")
             
-            if status == "completed":
+            if status == "Success":
                 logger.info("VAP evaluation completed successfully.")
                 results = status_data.get("results")
-                evaluation_metadata = status_data
+                evaluation_metadata = status_data.get("metadata", {})
                 break
             elif (status == "failed") or (status == "Error"):
                 error_msg = status_data.get("error", "Unknown error")
                 logger.error(f"VAP evaluation failed: {error_msg}")
-                evaluation_metadata = status_data
+                evaluation_metadata = status_data.get("metadata", {})
                 break
             
             time.sleep(2)
@@ -98,26 +98,28 @@ class ANA_validation_agent:
         os.makedirs(output_dir, exist_ok=True)
         
         downloaded_files = []
-        if results and isinstance(results, dict):
-            for key, blob_id in results.items():
-                if isinstance(blob_id, str):
-                    # Use the key as filename if possible
-                    filename = f"{key}_{blob_id}"
-                    download_path = os.path.join(output_dir, filename)
-                    try:
-                        self.object_store.download_file(blob_id, download_path)
-                        downloaded_files.append(download_path)
-                        logger.info(f"Downloaded result {key} to {download_path}")
-                        
-                        # Extract if it's a zip file
-                        if download_path.endswith(".zip") or zipfile.is_zipfile(download_path):
-                            extract_dir = os.path.join(output_dir, key)
-                            os.makedirs(extract_dir, exist_ok=True)
-                            with zipfile.ZipFile(download_path, 'r') as zip_ref:
-                                zip_ref.extractall(extract_dir)
-                            logger.info(f"Extracted {download_path} to {extract_dir}")
-                    except Exception as e:
-                        logger.warning(f"Failed to download/extract result {key} ({blob_id}): {e}")
+        # Download and extract results from the blob_id in metadata
+        results_blob_id = evaluation_metadata.get("results_blob_id")
+        if results_blob_id:
+            logger.info(f"Downloading results from blob_id: {results_blob_id}")
+            zip_path = os.path.join(output_dir, "results.zip")
+            try:
+                self.object_store.download_file(results_blob_id, zip_path)
+                logger.info(f"Downloaded results to {zip_path}")
+                
+                # Extract the zip file
+                extract_dir = os.path.join(output_dir, "results")
+                os.makedirs(extract_dir, exist_ok=True)
+                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                    zip_ref.extractall(extract_dir)
+                    logger.info(f"Extracted results to {extract_dir}")
+                
+                downloaded_files.append(zip_path)
+                downloaded_files.extend([os.path.join(extract_dir, f) for f in os.listdir(extract_dir)])
+            except Exception as e:
+                logger.error(f"Failed to download/extract results ({results_blob_id}): {e}")
+        else:
+            logger.warning("No results_blob_id found in evaluation metadata")
 
         # 5. Delegate back to ANA-D
         # The return value provides all necessary info for ANA-D to continue.
@@ -147,7 +149,7 @@ if __name__ == "__main__":
         circuit_file = sys.argv[1]
     else:
         # Default test file
-        circuit_file = os.path.join(os.getcwd(), "ana_workspace", "bq79616_circuit.tsx")
+        circuit_file = os.path.join(os.getcwd(), "ana_workspace", "bq79616_only_warnings.tsx")
     
     if not os.path.exists(circuit_file):
         print(f"Error: Circuit file not found at {circuit_file}")
