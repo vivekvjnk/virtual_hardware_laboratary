@@ -12,6 +12,8 @@ const mockPullAndWriteProvisional = jest.fn<any>();
 const mockFinalize = jest.fn<any>();
 const mockCleanup = jest.fn<any>();
 const mockCreateResultsFolder = jest.fn<any>();
+const mockCompressDirectory = jest.fn<any>();
+const mockPushObject = jest.fn<any>();
 
 jest.unstable_mockModule("../../src/vap/evaluator.js", () => ({
     evaluateCircuit: mockEvaluate,
@@ -22,6 +24,12 @@ jest.unstable_mockModule("../../src/vap/fileManager.js", () => ({
     finalizeCircuit: mockFinalize,
     cleanupCircuit: mockCleanup,
     createResultsFolder: mockCreateResultsFolder,
+    compressDirectory: mockCompressDirectory,
+}));
+
+jest.unstable_mockModule("../../src/utils/minio.js", () => ({
+    pullObject: jest.fn(),
+    pushObject: mockPushObject,
 }));
 
 // Dynamic imports
@@ -63,7 +71,7 @@ describe("VAP Runtime", () => {
             expect(result.state).toBe("EvalInProgress");
 
             expect(mockPullAndWriteProvisional).toHaveBeenCalledWith(blobId, circuitName);
-            expect(mockCreateResultsFolder).toHaveBeenCalledWith(result.task_id);
+            expect(mockCreateResultsFolder).toHaveBeenCalledWith(blobId, expect.any(String));
             expect(mockEvaluate).toHaveBeenCalledWith(provisionalPath, resultsDir);
 
             const status = runtime.getStatus(result.task_id);
@@ -113,11 +121,19 @@ describe("VAP Runtime", () => {
             expect(status.state).toBe("Default");
             expect(status.decision).toBe("ACCEPT");
             expect(status.eval_status).toBe("Success");
-            expect(status.logs).toEqual(logs);
-            expect(status.metadata).toEqual(metadata);
+            expect(status.logs).toContain(logs[0]);
+            expect(status.metadata).toMatchObject({
+                ...metadata,
+                results_blob_id: expect.stringContaining(`${blobId}_`)
+            });
 
             expect(mockFinalize).toHaveBeenCalledWith(circuitName);
             expect(mockCleanup).not.toHaveBeenCalled();
+
+            // Verify compression and upload
+            expect(mockCompressDirectory).toHaveBeenCalledWith(resultsDir, `${resultsDir}.zip`);
+            expect(mockPushObject).toHaveBeenCalledWith(`${resultsDir}.zip`, expect.stringContaining(`${blobId}_`));
+            expect(mockPushObject).toHaveBeenCalledWith(`${resultsDir}.zip`, expect.stringContaining(`_eval_results.zip`));
         });
     });
 
@@ -150,8 +166,11 @@ describe("VAP Runtime", () => {
             expect(status.state).toBe("Default");
             expect(status.decision).toBe("REJECT");
             expect(status.eval_status).toBe("Error");
-            expect(status.logs).toEqual(logs);
-            expect(status.metadata).toEqual(metadata);
+            expect(status.logs).toContain(logs[0]);
+            expect(status.metadata).toMatchObject({
+                ...metadata,
+                results_blob_id: expect.stringContaining(`${blobId}_`)
+            });
 
             expect(mockFinalize).not.toHaveBeenCalled();
             expect(mockCleanup).toHaveBeenCalledWith(circuitName);

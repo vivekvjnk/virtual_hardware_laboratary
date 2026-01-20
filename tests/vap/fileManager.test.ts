@@ -115,18 +115,38 @@ describe("VAP File Manager", () => {
     });
 
     describe("Results Folder", () => {
-        it("should create a results folder for a task", async () => {
-            const taskId = "task_uuid";
-            const resultsPath = await fileManager.createResultsFolder(taskId);
+        it("should create a results folder for a blob and datetime", async () => {
+            const blobId = "blob_123";
+            const datetime = "2024-01-01T00-00-00";
+            const resultsPath = await fileManager.createResultsFolder(blobId, datetime);
 
             expect(resultsPath).toContain(paths.EVAL_RESULTS_DIR);
-            expect(resultsPath).toContain(taskId);
+            expect(resultsPath).toContain(blobId);
+            expect(resultsPath).toContain(datetime);
 
             const exists = await fs.access(resultsPath).then(() => true).catch(() => false);
             expect(exists).toBe(true);
 
             // Cleanup
             await fs.rm(resultsPath, { recursive: true, force: true });
+        });
+    });
+
+    describe("Compression", () => {
+        it("should compress a directory into a zip file", async () => {
+            const testDir = path.join(paths.EVAL_RESULTS_DIR, "test_compress");
+            await fs.mkdir(testDir, { recursive: true });
+            await fs.writeFile(path.join(testDir, "test.txt"), "hello");
+
+            const zipPath = `${testDir}.zip`;
+            await fileManager.compressDirectory(testDir, zipPath);
+
+            const exists = await fs.access(zipPath).then(() => true).catch(() => false);
+            expect(exists).toBe(true);
+
+            // Cleanup
+            await fs.rm(testDir, { recursive: true, force: true });
+            await fs.unlink(zipPath);
         });
     });
 

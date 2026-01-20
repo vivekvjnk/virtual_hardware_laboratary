@@ -21,7 +21,8 @@ import {
     Decision,
 } from "./state.js";
 import { evaluateCircuit } from "./evaluator.js";
-import { pullAndWriteProvisional, finalizeCircuit, cleanupCircuit, createResultsFolder } from "./fileManager.js";
+import { pullAndWriteProvisional, finalizeCircuit, cleanupCircuit, createResultsFolder, compressDirectory } from "./fileManager.js";
+import { pushObject } from "../utils/minio.js";
 import { prepareMetadata } from "./metadata.js";
 
 export interface VAPStatus {
@@ -40,6 +41,9 @@ export class VAPRuntime {
 
     private activeTaskId: string | null = null;
     private activeCircuitName: string | null = null;
+    private activeBlobId: string | null = null;
+    private activeDatetime: string | null = null;
+    private resultsBlobId: string | null = null;
     private metadata: Record<string, any> | null = null;
 
     constructor() {
@@ -71,13 +75,15 @@ export class VAPRuntime {
         console.log(`[VAP] Provisional file written to: ${provisionalPath}`);
 
         // 4. Create results folder
-        console.log(`[VAP] Creating results folder for task: ${this.activeTaskId}`);
-        const resultsDir = await createResultsFolder(this.activeTaskId);
+        this.activeBlobId = blobId;
+        this.activeDatetime = new Date().toISOString().replace(/[:.]/g, "-");
+        console.log(`[VAP] Creating results folder for blob: ${blobId} at ${this.activeDatetime}`);
+        const resultsDir = await createResultsFolder(this.activeBlobId, this.activeDatetime);
         console.log(`[VAP] Results folder created at: ${resultsDir}`);
 
         // 5. Start background evaluation
         console.log(`[VAP] Spawning background evaluation task`);
-        this.runEvaluation(provisionalPath, circuitName, resultsDir);
+        this.runEvaluation(provisionalPath, circuitName, resultsDir, this.activeBlobId, this.activeDatetime);
 
         console.log(`[VAP] Evaluation task started, returning task ID: ${this.activeTaskId}`);
         return {
@@ -89,7 +95,7 @@ export class VAPRuntime {
     /**
      * Run evaluation in background
      */
-    private async runEvaluation(provisionalPath: string, circuitName: string, resultsDir: string) {
+    private async runEvaluation(provisionalPath: string, circuitName: string, resultsDir: string, blobId: string, datetime: string) {
         try {
             // Execute evaluation
             console.log(`[VAP] Starting evaluation for circuit: ${circuitName}`);
@@ -128,6 +134,23 @@ export class VAPRuntime {
             await cleanupCircuit(circuitName);
             console.log(`[VAP] Cleanup completed after error`);
         } finally {
+            // Compress and upload results
+            try {
+                const zipPath = `${resultsDir}.zip`;
+                console.log(`[VAP] Compressing results directory: ${resultsDir} to ${zipPath}`);
+                await compressDirectory(resultsDir, zipPath);
+
+                const objectName = `${blobId}_${datetime}_eval_results.zip`;
+                console.log(`[VAP] Uploading results to MinIO as: ${objectName}`);
+                await pushObject(zipPath, objectName);
+                this.resultsBlobId = objectName;
+                this.logState = appendLogs(this.logState, [`[VAP] Succesfully uploaded results to the object store. Blob id: '${objectName}'`]);
+                console.log(`[VAP] Results uploaded successfully`);
+            } catch (uploadErr: any) {
+                console.error(`[VAP] Failed to compress/upload results: ${uploadErr.message}`);
+                this.logState = appendLogs(this.logState, [`[VAP] Error uploading results: ${uploadErr.message}`]);
+            }
+
             // Transition back to Default (wait-for-poll)
             this.processState = transitionToDefault(this.processState);
             console.log(`[VAP] Evaluation task completed, state transitioned to: ${this.processState}`);
@@ -147,10 +170,14 @@ export class VAPRuntime {
             };
 
             if (this.metadata) {
-                status.metadata = this.metadata;
+                status.metadata = { ...this.metadata };
             } else {
                 // Prepare live metadata from current logs
                 status.metadata = prepareMetadata(this.logState.logs);
+            }
+
+            if (this.resultsBlobId) {
+                status.metadata.results_blob_id = this.resultsBlobId;
             }
 
             // If decision is set, include it
@@ -189,6 +216,9 @@ export class VAPRuntime {
         this.controlState = createControlState();
         this.activeTaskId = null;
         this.activeCircuitName = null;
+        this.activeBlobId = null;
+        this.activeDatetime = null;
+        this.resultsBlobId = null;
         this.metadata = null;
     }
 }

@@ -16,6 +16,8 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import { CIRCUITS_DIR, CIRCUITS_TEMP_DIR, EVAL_RESULTS_DIR } from "../config/paths.js";
 import { pullObject } from "../utils/minio.js";
+import archiver from "archiver";
+import { createWriteStream } from "fs";
 
 // ============================================================================
 // Path Helpers
@@ -77,13 +79,43 @@ export async function pullAndWriteProvisional(
 /**
  * Create a dedicated folder for evaluation results
  * 
- * @param taskId - Task ID to use as folder name
+ * @param blobId - Circuit blob ID
+ * @param datetime - Datetime string for uniqueness
  * @returns Path to the results folder
  */
-export async function createResultsFolder(taskId: string): Promise<string> {
-    const resultsPath = path.join(EVAL_RESULTS_DIR, taskId);
+export async function createResultsFolder(blobId: string, datetime: string): Promise<string> {
+    const folderName = `${blobId}_${datetime}`;
+    const resultsPath = path.join(EVAL_RESULTS_DIR, folderName);
     await fs.mkdir(resultsPath, { recursive: true });
     return resultsPath;
+}
+
+/**
+ * Compress a directory into a zip file
+ * 
+ * @param sourceDir - Directory to compress
+ * @param outPath - Path to the output zip file
+ */
+export async function compressDirectory(sourceDir: string, outPath: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+        const output = createWriteStream(outPath);
+        const archive = archiver("zip", {
+            zlib: { level: 9 } // Sets the compression level.
+        });
+
+        output.on("close", () => {
+            console.log(`Archive created: ${archive.pointer()} total bytes`);
+            resolve();
+        });
+
+        archive.on("error", (err) => {
+            reject(err);
+        });
+
+        archive.pipe(output);
+        archive.directory(sourceDir, false);
+        archive.finalize();
+    });
 }
 
 /**
