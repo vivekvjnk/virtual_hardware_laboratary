@@ -47,11 +47,11 @@ export function evaluateCircuit(
 
         const proc = spawn("tsci", ["build", tsxPath], {
             stdio: "pipe",
-            env: { 
-                ...process.env, 
+            env: {
+                ...process.env,
                 CI: "true",
                 // Many CLI tools check these to decide whether to output detailed logs
-                FORCE_COLOR: "1", 
+                FORCE_COLOR: "1",
                 TERM: "xterm-256color",
                 PYTHONUNBUFFERED: "1" // Useful if tsci calls underlying python scripts
             },
@@ -74,7 +74,7 @@ export function evaluateCircuit(
             if (!processClosed) {
                 timedOut = true;
                 logs.push(`[VAP] Evaluation timed out after ${timeoutMs}ms`);
-                
+
                 try {
                     if (proc.pid) {
                         // Kill the entire process group
@@ -105,8 +105,8 @@ export function evaluateCircuit(
 
             let decision: Decision = "REJECT";
             let eval_status: "Success" | "Error" = "Error";
-            
-            if (!timedOut && code === 0 && metadata.errorCount === 0) {
+
+            if (!timedOut && metadata.isSuccess) {
                 decision = "ACCEPT";
                 eval_status = "Success";
             }
@@ -136,7 +136,7 @@ export function evaluateCircuit(
                 logs,
                 timedOut: false,
                 eval_status: "Error"
-            } as any); 
+            } as any);
         });
     });
 }
