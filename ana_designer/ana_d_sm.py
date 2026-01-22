@@ -1,6 +1,11 @@
 from enum import Enum, auto
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import logging
+import subprocess
+import time
+import os
+import socket
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +36,11 @@ class ANADStateMachine:
         
         # Context/Data
         self.context: Dict[str, Any] = {}
+
+        # MCP Integration
+        self.mcp_process: Optional[subprocess.Popen] = None
+        self.mcp_endpoint = "http://localhost:8000"
+        self.last_commit_id: int = -1
 
     def step(self, event: Optional[str] = None, data: Optional[Dict[str, Any]] = None):
         """
@@ -70,15 +80,115 @@ class ANADStateMachine:
 
     def _handle_observe(self):
         # S1 -> S2
-        print("[ANA-D SM] State: OBSERVE. Running LLM classifier...")
-        # Placeholder for LLM classifier output
-        # For now, we'll assume some defaults or wait for modular attachment
-        if self.error_class is None:
-            self.error_class = "ambiguous"
-        if self.intent_status is None:
-            self.intent_status = "ambiguous"
+        print("[ANA-D SM] State: OBSERVE. Ensuring MCP Server is running...")
+        self._ensure_mcp_server_running()
+
+        print("[ANA-D SM] Triggering Observer Agent...")
+        # TODO: Implement actual agent trigger here
+        # For now, we assume the agent is triggered externally or will be implemented soon.
+        print("[ANA-D SM] Awaiting commit from Observer Agent via MCP...")
+
+        # Poll for the observation commit
+        observation = self._poll_for_observation()
+
+        if observation:
+            payload = observation["message"]["payload"]
+            verdict = payload.get("verdict")
+            issue_kind = payload.get("issue_kind", "UNKNOWN")
+
+            # Update SM internal state based on observation
+            self.error_class = issue_kind.lower().replace("local_", "").replace("_structural", "").replace("_centric", "")
             
-        self.state = State.AUTHORIZE
+            if verdict == "NO_ISSUE":
+                self.intent_status = "satisfied"
+            elif verdict == "ISSUE_DETECTED":
+                self.intent_status = "violated"
+            else:
+                self.intent_status = "ambiguous"
+
+            print(f"[ANA-D SM] Observation received: verdict={verdict}, error_class={self.error_class}, intent_status={self.intent_status}")
+            self.state = State.AUTHORIZE
+        else:
+            print("[ANA-D SM] No observation received. Staying in OBSERVE.")
+
+    def _ensure_mcp_server_running(self):
+        """Starts the MCP server if it's not already running on port 8000."""
+        try:
+            # Check if something is already listening on port 8000
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(1)
+                s.connect(("127.0.0.1", 8000))
+            print("[ANA-D SM] MCP Server already running on port 8000.")
+            return
+        except (ConnectionRefusedError, socket.timeout):
+            pass
+
+        print("[ANA-D SM] Starting MCP Server process...")
+        # Find project root (assuming we are in ana_designer/)
+        cwd = os.getcwd()
+        
+        # Use uv run to ensure all dependencies are available
+        cmd = [
+            "uv", "run",
+            "--with", "fastapi",
+            "--with", "uvicorn",
+            "--with", "pydantic",
+            "uvicorn", "mcp_server.main:app",
+            "--port", "8000",
+            "--log-level", "warning"
+        ]
+        
+        self.mcp_process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env={**os.environ, "PYTHONPATH": cwd},
+            cwd=cwd,
+            start_new_session=True
+        )
+        # Wait for server to start
+        max_retries = 15
+        for i in range(max_retries):
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.settimeout(1)
+                    s.connect(("127.0.0.1", 8000))
+                print(f"[ANA-D SM] MCP Server started on attempt {i+1}")
+                return
+            except (ConnectionRefusedError, socket.timeout):
+                time.sleep(1)
+        
+        print("[ANA-D SM] ERROR: Failed to start MCP Server.")
+
+    def _poll_for_observation(self) -> Optional[Dict[str, Any]]:
+        """Polls MCP for an observation commit since last_commit_id."""
+        url = f"{self.mcp_endpoint}/mcp/commits"
+        params = {
+            "since": self.last_commit_id,
+            "endpoint": "/mcp/observe"
+        }
+
+        print(f"[ANA-D SM] Polling {url} with since={self.last_commit_id}...")
+        
+        # In a real scenario, this would have a timeout and potentially be non-blocking
+        # For this implementation, we poll until we find a matching commit
+        while True:
+            try:
+                with httpx.Client() as client:
+                    response = client.get(url, params=params)
+                    if response.status_code == 200:
+                        commits = response.json().get("commits", [])
+                        for commit in commits:
+                            if commit["tool_name"] == "commit_observation":
+                                # Found our commit
+                                self.last_commit_id = commit["commit_id"]
+                                return commit
+                
+                # If no commit yet, wait and try again
+                time.sleep(2)
+            except Exception as e:
+                print(f"[ANA-D SM] Polling error: {e}")
+                time.sleep(2)
 
     def _handle_authorize(self):
         # S2 -> S3, S8, or S10
@@ -151,6 +261,19 @@ class ANADStateMachine:
 
     def is_terminal(self) -> bool:
         return self.state in [State.EXIT_SUCCESS, State.EXIT_ABORT]
+
+    def cleanup(self):
+        """Cleanup resources, including MCP server process."""
+        if self.mcp_process:
+            print("[ANA-D SM] Shutting down MCP Server...")
+            self.mcp_process.terminate()
+            try:
+                self.mcp_process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                print("[ANA-D SM] MCP Server did not terminate, killing...")
+                self.mcp_process.kill()
+            self.mcp_process = None
+            print("[ANA-D SM] MCP Server shut down.")
 
 if __name__ == "__main__":
     # Simple test run
