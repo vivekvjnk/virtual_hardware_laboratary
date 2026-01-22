@@ -28,6 +28,19 @@ class ErrorResponse(BaseModel):
     detail: str = Field(..., description="A description of the error.")
 
 
+@app.get("/mcp/commits", summary="Query the commit log.")
+async def get_commits(
+    since: int | None = None,
+    endpoint: str | None = None
+):
+    """
+    Retrieves committed messages from the MCP commit log.
+    Supports filtering by 'since' (commit_id) and 'endpoint'.
+    """
+    commits = mcp_server.get_commits(since=since, endpoint=endpoint)
+    return {"commits": commits}
+
+
 @app.post("/mcp/{scope_endpoint:path}", summary="Commit structured messages via a typed commit tool.")
 async def commit_message(scope_endpoint: str, request: CommitRequest):
     """

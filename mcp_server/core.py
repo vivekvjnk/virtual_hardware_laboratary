@@ -10,6 +10,7 @@ from .exceptions import (
     ToolNotFound,
     ToolNotInScope,
     SchemaValidationError,
+    MCPException,
 )
 from .tool import CommitTool
 from .tool_code.registry import ToolRegistry
@@ -18,6 +19,8 @@ from .tool_code.registry import ToolRegistry
 class MCPServer:
     def __init__(self, tool_registry: ToolRegistry):
         self.tool_registry = tool_registry
+        self.commit_log: List[Dict[str, Any]] = []
+        self.commit_counter: int = 0
 
     def _validate_tool_call(
         self, endpoint: str, tool_name: str, payload: Dict[str, Any]
@@ -51,6 +54,20 @@ class MCPServer:
                     "tool": tool.name,
                 },
             }
+
+            # New behavior: Record to commit log
+            commit_id = self.commit_counter
+            self.commit_counter += 1
+
+            commit_entry = {
+                "commit_id": commit_id,
+                "timestamp": datetime.now().isoformat(),
+                "endpoint": endpoint,
+                "tool_name": tool.name,
+                "message": message,
+            }
+            self.commit_log.append(commit_entry)
+
             return {"status": "ACK", "message": message}
         except (ToolNotFound, ToolNotInScope, SchemaValidationError) as e:
             raise InvalidToolCall(str(e))
@@ -60,4 +77,12 @@ class MCPServer:
     def get_available_tools(self, endpoint: str) -> List[Dict[str, Any]]:
         tools = self.tool_registry.get_tools_for_scope(endpoint)
         return [tool.to_dict() for tool in tools]
+
+    def get_commits(self, since: int | None = None, endpoint: str | None = None) -> List[Dict[str, Any]]:
+        commits = self.commit_log
+        if since is not None:
+            commits = [c for c in commits if c["commit_id"] > since]
+        if endpoint is not None:
+            commits = [c for c in commits if c["endpoint"] == endpoint]
+        return commits
 

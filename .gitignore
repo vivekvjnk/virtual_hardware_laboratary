@@ -6,3 +6,5 @@
 runs/
 tests/
 logs/
+*/results/*
+utils/data/*
