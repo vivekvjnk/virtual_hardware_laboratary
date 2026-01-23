@@ -5,11 +5,6 @@ from pydantic import BaseModel, Field, conint, confloat
 
 
 class ObservationCommit(BaseModel):
-    verdict: Literal[
-        "NO_ISSUE",
-        "ISSUE_DETECTED",
-        "AMBIGUOUS"
-    ] = Field(..., description="Conclusion about the observation.")
     issue_kind: Literal[
         "NONE",
         "LOCAL_MECHANICAL",

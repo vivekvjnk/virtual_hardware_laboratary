@@ -129,6 +129,10 @@ def test_commit_and_query():
         print("\n" + "="*60)
         print("All tests passed!")
         print("="*60)
+        while(True):
+            print("Server is running... Press Ctrl+C to stop.")
+            time.sleep(60)
+
         return True
         
     except AssertionError as e:

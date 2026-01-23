@@ -14,7 +14,7 @@ import os
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ana_designer.ana_d_sm import ANADStateMachine, State
+from ana_designer.ana_sm import ANADStateMachine, State
 
 
 def simulate_observer_commit(delay_seconds: int = 3):
