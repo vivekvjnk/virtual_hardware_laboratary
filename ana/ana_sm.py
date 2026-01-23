@@ -6,6 +6,7 @@ import time
 import os
 import socket
 import httpx
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,7 @@ class ANADStateMachine:
         self.mcp_process: Optional[subprocess.Popen] = None
         self.mcp_endpoint = "http://localhost:8000"
         self.last_commit_id: int = -1
+        self.iteration_hash: Optional[str] = None
 
     def step(self, event: Optional[str] = None, data: Optional[Dict[str, Any]] = None):
         """
@@ -74,13 +76,22 @@ class ANADStateMachine:
 
     def _handle_init(self):
         # S0 -> S1
-        print("[ANA-D SM] State: INIT. Received VAP output.")
+        # Generate Iteration Hash (Start of new Loop)
+        self.iteration_hash = uuid.uuid4().hex
+        print(f"[ANA-D SM] State: INIT. Started Iteration: {self.iteration_hash}")
+        
+        # Create iteration folder
+        iteration_dir = os.path.join(os.getcwd(), "iterations", self.iteration_hash)
+        os.makedirs(iteration_dir, exist_ok=True)
+        print(f"[ANA-D SM] Created iteration directory: {iteration_dir}")
+
+        print("[ANA-D SM] Received VAP output.")
         # In a real scenario, we would load VAP output here.
         self.state = State.OBSERVE
 
     def _handle_observe(self):
         # S1 -> S2
-        print("[ANA-D SM] State: OBSERVE. Ensuring MCP Server is running...")
+        print(f"[ANA-D SM] State: OBSERVE. Hash={self.iteration_hash}. Ensuring MCP Server is running...")
         self._ensure_mcp_server_running()
 
         print("[ANA-D SM] Triggering Observer Agent...")
@@ -220,7 +231,7 @@ class ANADStateMachine:
 
     def _handle_trigger_w1(self):
         # S4 -> S5
-        print("[ANA-D SM] State: TRIGGER_W1. Invoking ANA-W1...")
+        print(f"[ANA-D SM] State: TRIGGER_W1. Invoking ANA-W1 for iteration {self.iteration_hash}...")
         self.auto_fix_count += 1
         self.state = State.WAIT_W1
 
@@ -232,7 +243,7 @@ class ANADStateMachine:
 
     def _handle_trigger_w2(self):
         # S6 -> S7
-        print("[ANA-D SM] State: TRIGGER_W2. Invoking VHL-VAP...")
+        print(f"[ANA-D SM] State: TRIGGER_W2. Invoking VHL-VAP for iteration {self.iteration_hash}...")
         self.state = State.WAIT_VAP
 
     def _handle_wait_vap(self):
