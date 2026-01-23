@@ -5,15 +5,15 @@ from datetime import datetime
 from typing import Any, Dict, List
 from pydantic import ValidationError
 
-from .exceptions import (
+from mcp_server.exceptions import (
     InvalidToolCall,
     ToolNotFound,
     ToolNotInScope,
     SchemaValidationError,
     MCPException,
 )
-from .tool import CommitTool
-from .tool_code.registry import ToolRegistry
+from mcp_server.tool import CommitTool
+from mcp_server.tool_code.registry import ToolRegistry
 
 
 class MCPServer:

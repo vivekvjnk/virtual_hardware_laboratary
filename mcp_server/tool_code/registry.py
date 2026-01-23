@@ -1,8 +1,8 @@
 
 
 from typing import Dict, List
-from ..tool import CommitTool
-from .schemas import ObservationCommit, FixProposalCommit
+from mcp_server.tool import CommitTool
+from mcp_server.tool_code.schemas import ObservationCommit, FixProposalCommit
 
 
 class ToolRegistry:

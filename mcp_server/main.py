@@ -5,9 +5,9 @@ from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel, Field
 from typing import Dict, Any, List
 
-from .core import MCPServer
-from .tool_code.registry import tool_registry
-from .exceptions import InvalidToolCall, ToolNotFound, ToolNotInScope, SchemaValidationError
+from mcp_server.core import MCPServer
+from mcp_server.tool_code.registry import tool_registry
+from mcp_server.exceptions import InvalidToolCall, ToolNotFound, ToolNotInScope, SchemaValidationError
 
 
 app = FastAPI(

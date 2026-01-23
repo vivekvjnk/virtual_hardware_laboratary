@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "boto3>=1.42.21",
+    "fastapi==0.110.0",
     "openhands-sdk",
     "openhands-tools",
     "python-dotenv>=1.2.1",
@@ -15,8 +16,10 @@ dependencies = [
 members = [
     "agent-sdk/openhands-sdk",
     "agent-sdk/openhands-tools",
+    "mcp_server",
 ]
 
 [tool.uv.sources]
 openhands-sdk = { workspace = true }
 openhands-tools = { workspace = true }
+mcp-server = { workspace = true }
