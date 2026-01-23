@@ -33,14 +33,14 @@ through a system-owned tool.
 COMMIT REQUIREMENT (MANDATORY)
 ────────────────────────────────────────────
 
-You MUST use the tool **commit_observations** to emit your observation.
+You MUST use the tool **commit_observation** to emit your observation.
 
 - You must call this tool exactly once.
 - You must NOT emit the observation as plain text.
 - The system will consume committed observations directly.
 - Any text you produce outside the tool call is ignored.
 
-Failure to call commit_observations is a violation of your role.
+Failure to call commit_observation is a violation of your role.
 
 ────────────────────────────────────────────
 AVAILABLE ARTIFACTS
@@ -84,7 +84,7 @@ You must NOT:
 - judge circuit quality
 
 Once your analysis is complete:
-→ Commit your observation using **commit_observations**.
+→ Commit your observation using **commit_observation**.
 """
 
     if mode == ObserverMode.NO_ERROR:
@@ -117,7 +117,7 @@ You must NOT:
 - propose fixes or improvements
 
 Once your analysis is complete:
-→ Commit your observation using **commit_observations**.
+→ Commit your observation using **commit_observation**.
 """
 
     raise ValueError(f"Unsupported ObserverMode: {mode}")
