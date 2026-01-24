@@ -1,88 +1,64 @@
 
-
-import json
+from typing import Any, Dict, List, Optional
 from datetime import datetime
-from typing import Any, Dict, List
-from pydantic import ValidationError
+from mcp.server.fastmcp import FastMCP
+from server.tool_code.schemas import ObservationCommit, FixProposalCommit
 
-from server.exceptions import (
-    InvalidToolCall,
-    ToolNotFound,
-    ToolNotInScope,
-    SchemaValidationError,
-    MCPException,
-)
-from server.tool import CommitTool
-from server.tool_code.registry import ToolRegistry
+# Initialize FastMCP Server
+# This object handles MCP protocol details automatically (initialization, tool listing, etc.)
+mcp = FastMCP("ANA Process Server")
 
+# Internal storage for the commit log
+_commit_log: List[Dict[str, Any]] = []
+_commit_counter: int = 0
 
-class MCPServer:
-    def __init__(self, tool_registry: ToolRegistry):
-        self.tool_registry = tool_registry
-        self.commit_log: List[Dict[str, Any]] = []
-        self.commit_counter: int = 0
+def _add_commit(endpoint: str, tool_name: str, payload: Dict[str, Any], target_channel: str) -> Dict[str, Any]:
+    """Internal helper to append to the commit log."""
+    global _commit_counter
+    
+    message = {
+        "type": target_channel,
+        "payload": payload,
+        "metadata": {
+            "timestamp": datetime.now().isoformat(),
+            "tool": tool_name,
+        },
+    }
 
-    def _validate_tool_call(
-        self, endpoint: str, tool_name: str, payload: Dict[str, Any]
-    ) -> CommitTool:
-        tool = self.tool_registry.get_tool(tool_name)
-        if not tool:
-            raise ToolNotFound(f"Tool '{tool_name}' not found.")
+    commit_entry = {
+        "commit_id": _commit_counter,
+        "timestamp": datetime.now().isoformat(),
+        "endpoint": endpoint,
+        "tool_name": tool_name,
+        "message": message,
+    }
+    
+    _commit_log.append(commit_entry)
+    _commit_counter += 1
+    
+    return {"status": "ACK", "message": message}
 
-        if tool.visibility_scope != endpoint:
-            raise ToolNotInScope(
-                f"Tool '{tool_name}' is not visible in endpoint '{endpoint}'."
-            )
+@mcp.tool()
+def commit_observation(payload: ObservationCommit) -> Dict[str, Any]:
+    """
+    Commit an observation found during analysis.
+    The payload corresponds to an observation of an issue or a confirmation of correctness.
+    """
+    # FastMCP automatically validates 'payload' against the Pydantic model
+    return _add_commit("/mcp/observe", "commit_observation", payload.model_dump(), "OBSERVATION_MESSAGE")
 
-        try:
-            tool.schema(**payload)  # Validate payload against the tool's schema
-        except ValidationError as e:
-            raise SchemaValidationError(f"Schema validation failed for tool '{tool_name}': {e}")
+@mcp.tool()
+def commit_fix_proposal(payload: FixProposalCommit) -> Dict[str, Any]:
+    """
+    Commit a proposal for a fix to a detected issue.
+    """
+    return _add_commit("/mcp/prepare_fix", "commit_fix_proposal", payload.model_dump(), "FIX_PROPOSAL_MESSAGE")
 
-        return tool
-
-    def commit(self, endpoint: str, tool_name: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-        try:
-            tool = self._validate_tool_call(endpoint, tool_name, payload)
-            
-            # Emit immutable message
-            message = {
-                "type": tool.target_channel,
-                "payload": payload,
-                "metadata": {
-                    "timestamp": datetime.now().isoformat(),
-                    "tool": tool.name,
-                },
-            }
-
-            # New behavior: Record to commit log
-            commit_id = self.commit_counter
-            self.commit_counter += 1
-
-            commit_entry = {
-                "commit_id": commit_id,
-                "timestamp": datetime.now().isoformat(),
-                "endpoint": endpoint,
-                "tool_name": tool.name,
-                "message": message,
-            }
-            self.commit_log.append(commit_entry)
-
-            return {"status": "ACK", "message": message}
-        except (ToolNotFound, ToolNotInScope, SchemaValidationError) as e:
-            raise InvalidToolCall(str(e))
-        except Exception as e:
-            raise MCPException(f"An unexpected error occurred: {e}")
-
-    def get_available_tools(self, endpoint: str) -> List[Dict[str, Any]]:
-        tools = self.tool_registry.get_tools_for_scope(endpoint)
-        return [tool.to_dict() for tool in tools]
-
-    def get_commits(self, since: int | None = None, endpoint: str | None = None) -> List[Dict[str, Any]]:
-        commits = self.commit_log
-        if since is not None:
-            commits = [c for c in commits if c["commit_id"] > since]
-        if endpoint is not None:
-            commits = [c for c in commits if c["endpoint"] == endpoint]
-        return commits
-
+def get_commits(since: int | None = None, endpoint: str | None = None) -> List[Dict[str, Any]]:
+    """Retrieve commits from the log with optional filtering."""
+    commits = _commit_log
+    if since is not None:
+        commits = [c for c in commits if c["commit_id"] > since]
+    if endpoint is not None:
+        commits = [c for c in commits if c["endpoint"] == endpoint]
+    return commits

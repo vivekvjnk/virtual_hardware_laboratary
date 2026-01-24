@@ -26,7 +26,7 @@ def test_commit_and_query():
     print("Starting MCP server...")
     cwd = os.getcwd()
     server_process = subprocess.Popen(
-        ["uv", "run", "uvicorn", "mcp_server.main:app", "--port", "8000"],
+        ["uv", "run", "uvicorn", "server.main:app", "--port", "8000"],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         cwd=cwd
@@ -137,6 +137,8 @@ def test_commit_and_query():
         
     except AssertionError as e:
         print(f"\n✗ Test FAILED: {e}")
+        import traceback
+        traceback.print_exc()
         return False
     except Exception as e:
         print(f"\n✗ ERROR: {e}")

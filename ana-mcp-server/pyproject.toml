@@ -6,6 +6,7 @@ dependencies = [
     "fastapi==0.110.0",
     "uvicorn",
     "pydantic",
+    "mcp",
 ]
 
 [build-system]

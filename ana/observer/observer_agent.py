@@ -12,7 +12,7 @@ from openhands.sdk import (
 )
 from openhands.sdk.tool import Tool
 from openhands.tools.file_editor import FileEditorTool
-from openhands.tools.terminal import TerminalTool
+# from openhands.tools.terminal import TerminalTool
 
 from ana.observer.observer_system_prompt import build_observer_system_prompt, ObserverMode
 
@@ -118,7 +118,7 @@ class ObserverAgent:
         # Configure tools for the agent
         tools = [
             Tool(name=FileEditorTool.name),  # For reading artifacts
-            Tool(name=TerminalTool.name),    # For executing terminal commands
+            # Tool(name=TerminalTool.name),    # For executing terminal commands
         ]
         
         # Create agent with the appropriate system prompt
