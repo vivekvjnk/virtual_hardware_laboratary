@@ -7,15 +7,12 @@ from pydantic import BaseModel, Field, conint, confloat
 class ObservationCommit(BaseModel):
     issue_kind: Literal[
         "NONE",
+        "GENERIC",
         "LOCAL_MECHANICAL",
-        "HUB_CENTRIC",
-        "RIPPLE_STRUCTURAL",
-        "AMBIGUITY_INDUCED",
         "INTENT_MISMATCH",
-        "UNKNOWN"
     ] = Field(..., description="Kind of issue detected, if any.")
     confidence: confloat(ge=0.0, le=1.0) = Field(..., description="Confidence level of the observation (0.0 to 1.0).")
-    evidence_refs: List[Dict[str, Any]] = Field(default_factory=list, description="Opaque references to evidence.")
+    evidence_refs: Optional[List[Dict[str, Any]]] = Field(default_factory=list, description="Opaque references to evidence.")
     notes: Optional[str] = Field(None, description="Additional notes for the observation.")
 
 

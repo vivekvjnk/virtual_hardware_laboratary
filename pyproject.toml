@@ -16,10 +16,10 @@ dependencies = [
 members = [
     "agent-sdk/openhands-sdk",
     "agent-sdk/openhands-tools",
-    "mcp_server",
+    "ana-mcp-server",
 ]
 
 [tool.uv.sources]
 openhands-sdk = { workspace = true }
 openhands-tools = { workspace = true }
-mcp-server = { workspace = true }
+ana-mcp-server = { workspace = true }

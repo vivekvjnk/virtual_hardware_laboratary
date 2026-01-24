@@ -1,13 +1,17 @@
 
 
 
+from asyncio import subprocess
+import os
+import socket
+import time
 from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel, Field
 from typing import Dict, Any, List
 
-from mcp_server.core import MCPServer
-from mcp_server.tool_code.registry import tool_registry
-from mcp_server.exceptions import InvalidToolCall, ToolNotFound, ToolNotInScope, SchemaValidationError
+from server.core import MCPServer
+from server.tool_code.registry import tool_registry
+from server.exceptions import InvalidToolCall, ToolNotFound, ToolNotInScope, SchemaValidationError
 
 
 app = FastAPI(
@@ -73,3 +77,40 @@ async def health_check():
     return {"status": "ok"}
 
 
+def wait_for_server(port=8001, timeout=15):
+    """Wait for server to be ready."""
+    start = time.time()
+    while time.time() - start < timeout:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(1)
+                s.connect(("127.0.0.1", port))
+            return True
+        except (ConnectionRefusedError, socket.timeout):
+            time.sleep(0.5)
+    return False
+
+
+# if __name__ == "__main__":
+#     print("Starting MCP server...")
+#     cwd = os.getcwd()
+#     server_process = subprocess.Popen(
+#         ["uv", "run", "uvicorn", "mcp_server.main:app", "--port", "8000"],
+#         stdout=subprocess.PIPE,
+#         stderr=subprocess.PIPE,
+#         cwd=cwd
+#     )
+    
+#     try:
+#         # Wait for server to start
+#         if not wait_for_server():
+#             print("ERROR: Server failed to start")
+#             # Print stderr for debugging
+#             stderr_output = server_process.stderr.read().decode('utf-8')
+#             print(f"Server stderr:\n{stderr_output}")
+        
+#         print("Server started successfully")
+#     except Exception as e:
+#         print(f"Error while starting server: {e}")
+#     # Keep the server running
+#     server_process.wait()

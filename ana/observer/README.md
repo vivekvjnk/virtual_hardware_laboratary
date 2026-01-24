@@ -1,241 +1,318 @@
+Great, this README definitely needs a **hard realignment**.
+What you pasted still reflects an *older, richer Observer* than the one you’ve now very deliberately designed.
+
+Below is a **fully updated README**, rewritten to match:
+
+* the **reduced taxonomy**
+* the **final `ObservationCommit` schema**
+* strict **phase purity**
+* the **minimal user-message / strong system-prompt split**
+* the clarified **scope boundaries** you explicitly asked for
+
+I’ve also **removed all obsolete concepts** (verdicts, locality/nature axes, ambiguous schemas, etc.).
+
+---
+
 # Observer Agent
 
-The Observer Agent is a strictly observational component in the VHL ANA-D control architecture. It analyzes validation results and design intent compliance, then commits structured observations to the MCP server.
+The **Observer Agent** is a strictly observational component in the **VHL ANA-D control architecture**.
+Its sole responsibility is to **collect observations from iteration artifacts and commit them to the MCP server** in a structured, machine-consumable form.
+
+The Observer **does not participate in decision-making, fixing, or control flow**.
+
+---
 
 ## Overview
 
-The Observer agent **does NOT**:
-- Decide next actions
-- Choose retries
-- Escalate to humans
-- Fix errors
-- Suggest solutions
-- Optimize designs
-- Infer missing intent
+The Observer Agent **does NOT**:
 
-It **ONLY**:
-- Observes artifacts (SCUD, validation logs, circuit code, schematics)
-- Classifies errors and compliance status
-- Reports findings via the `commit_observation` tool
+* Decide next actions
+* Choose retries
+* Escalate to humans
+* Fix errors
+* Suggest solutions
+* Optimize designs
+* Infer intent beyond explicit artifacts
+* Reason about `tscircuit` semantics or documentation
+* Care how artifacts were generated
+* Care what happens after the observation is committed
+* Interact with MCP server internals
 
-## Architecture
+The Observer Agent **ONLY**:
 
+* Discovers iteration artifacts
+* Observes validation outcomes and design intent compliance
+* Classifies observations conservatively
+* Commits exactly **one structured observation** via `commit_observation`
+
+---
+
+## Scope and Responsibility
+
+### What the Observer Cares About
+
+* Validation logs (ground truth)
+* SCUD (only for explicit intent guarantees)
+* Evidence necessary to justify an observation
+
+### What the Observer Explicitly Does **Not** Care About
+
+* How artifacts were produced
+* How ANA-W agents operate
+* How ANA-D makes decisions
+* What fixes are possible
+* What fixes will be applied
+* MCP server internals
+* System state beyond the iteration folder
+
+> **The Observer is blind to the rest of the system by design.**
+
+---
+
+## Execution Sequence (How to Run the Observer)
+
+To run the Observer Agent correctly, the following sequence **must** be satisfied:
+
+### 1. MCP Server Must Be Running
+
+The Observer commits observations to MCP and cannot function without it.
+
+- MCP server implementation can be foud under mcp_server/ directory
+- Run MCP server using following command from project root:
+```bash
+# Example
+uv run --package ana-mcp-server uvicorn server.main:app --port 8001
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     Observer Agent                          │
-│                                                              │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │  System Prompt (Mode-Dependent)                      │  │
-│  │  - VALIDATION_ERROR: Error classification            │  │
-│  │  - NO_ERROR: Contract compliance check               │  │
-│  └──────────────────────────────────────────────────────┘  │
-│                                                              │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │  Tools                                                │  │
-│  │  - CommitObservationTool (MCP endpoint)              │  │
-│  │  - FileEditorTool (for reading artifacts)            │  │
-│  └──────────────────────────────────────────────────────┘  │
-│                                                              │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │  Agent SDK (openhands)                               │  │
-│  │  - LLM integration                                    │  │
-│  │  - Conversation management                            │  │
-│  │  - Tool orchestration                                 │  │
-│  └──────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
-                            │
-                            │ HTTP POST
-                            ▼
-            ┌───────────────────────────────┐
-            │   MCP Server                  │
-            │   /mcp/observe endpoint       │
-            │   - commit_observation tool   │
-            └───────────────────────────────┘
-```
+---
 
-## Components
+### 2. Iteration Artifacts Must Exist
 
-### 1. `observer_agent.py`
-Main agent implementation using the openhands agent-sdk framework.
+All artifacts for a single iteration **must be present in one directory**.
 
-**Key Features:**
-- Mode-based operation (VALIDATION_ERROR or NO_ERROR)
-- Artifact-driven analysis
-- Automatic observation commitment
-- Error handling and validation
+Typical contents include:
 
-**Usage:**
+* `validation.log` or `*.log`
+* `scud.md` or `*.scud`
+* `circuit.tsx` or `*.tsx`
+* `schematic_images/` (optional)
+
+The Observer **discovers artifacts dynamically**.
+Paths are not hard-coded beyond the iteration directory.
+
+---
+
+### 3. Observer Agent Is Invoked
+
+The ANA-D state machine invokes the Observer in the `OBSERVE` state.
+
 ```python
 from ana.observer import ObserverAgent, ObserverMode
 
 observer = ObserverAgent(mcp_url="http://localhost:8000/mcp/observe")
 
-result = observer.observe(
+observer.observe(
     mode=ObserverMode.VALIDATION_ERROR,
-    scud_path="/path/to/design.scud",
-    validation_logs_path="/path/to/validation.log",
-    circuit_code_path="/path/to/circuit.tsx",
-    workspace="/path/to/workspace"
+    workspace="/path/to/iteration_dir"
 )
 
-print(result["observation"])
 observer.close()
 ```
 
-### 2. `observer_system_prompt.py`
-System prompt builder that generates mode-specific instructions.
+---
 
-**Modes:**
-- `VALIDATION_ERROR`: Analyzes validation logs to classify errors
-  - Error locality: local / hub-centric / ripple
-  - Error nature: mechanical / structural / ambiguity-induced
-  - Confidence level
+### 4. Observation Is Committed
 
-- `NO_ERROR`: Performs contract compliance check against SCUD
-  - Respects all explicit SCUD guarantees
-  - Contradicts any explicit SCUD guarantee
-  - Cannot be judged due to SCUD ambiguity
+* The Observer **must** call `commit_observation` exactly once
+* The MCP server acknowledges receipt
+* ANA-D later consumes the committed observation
 
-### 3. `observer_tool.py`
-Custom tool wrapper for the MCP `commit_observation` endpoint.
+The Observer **does not wait** for downstream decisions.
 
-**Schema:**
-```python
-{
-    # For VALIDATION_ERROR mode
-    "verdict": "ISSUE_DETECTED" | "NO_ISSUE" | "UNCERTAIN",
-    "issue_kind": "LOCAL_MECHANICAL" | "HUB_CENTRIC" | "RIPPLE" | "STRUCTURAL" | "AMBIGUITY_INDUCED",
-    
-    # For NO_ERROR mode
-    "contract_status": "COMPLIANT" | "VIOLATED" | "AMBIGUOUS",
-    
-    # Common fields
-    "confidence": 0.0 to 1.0,
-    "evidence_refs": [
-        {
-            "type": "log_line" | "image" | "code_snippet",
-            "id": "identifier",
-            "excerpt": "optional excerpt"
-        }
-    ],
-    "notes": "Detailed explanation"
-}
+---
+
+## Architecture
+
+```
+┌────────────────────────────────────────────┐
+│                Observer Agent              │
+│                                            │
+│  ┌──────────────────────────────────────┐  │
+│  │ System Prompt (Authoritative Rules)  │  │
+│  │ - Mode-specific constraints          │  │
+│  │ - Classification boundaries          │  │
+│  └──────────────────────────────────────┘  │
+│                                            │
+│  ┌──────────────────────────────────────┐  │
+│  │ User Message (Context Only)          │  │
+│  │ - Iteration hash                     │  │
+│  │ - Artifact directory                 │  │
+│  └──────────────────────────────────────┘  │
+│                                            │
+│  ┌──────────────────────────────────────┐  │
+│  │ Tools                                │  │
+│  │ - commit_observation                 │  │
+│  │ - file access utilities              │  │
+│  └──────────────────────────────────────┘  │
+└────────────────────────────────────────────┘
+                     │
+                     │ HTTP POST
+                     ▼
+          ┌───────────────────────────┐
+          │        MCP Server         │
+          │   /mcp/observe endpoint   │
+          └───────────────────────────┘
 ```
 
-### 4. `test_observer.py`
-Comprehensive test suite covering:
-- Standalone tool testing
-- VALIDATION_ERROR mode
-- NO_ERROR mode
-- Artifact creation and handling
+---
 
-## Integration with ANA-D State Machine
+## Observer Modes
 
-The Observer agent is invoked by the ANA-D state machine in the `OBSERVE` state:
+The Observer operates in exactly **two modes**, selected **deterministically** by ANA-D.
+
+### 1. `VALIDATION_ERROR`
+
+Used when validation results indicate **REJECT**.
+
+The Observer classifies the failure using **one issue kind only**:
+
+* `LOCAL_MECHANICAL`
+  Deterministic, isolated, unambiguous failures
+  (e.g., import errors, footprint misuse, pin hallucinations)
+
+* `GENERIC`
+  Everything else:
+
+  * structural or ripple failures
+  * hub-centric errors
+  * ambiguity
+  * low-confidence cases
+
+If uncertain → **GENERIC**
+
+---
+
+### 2. `NO_ERROR`
+
+Used when validation results indicate **ACCEPT**.
+
+The Observer checks **explicit SCUD guarantees only** and commits:
+
+* `NONE`
+  All explicit SCUD guarantees satisfied
+
+* `INTENT_MISMATCH`
+  Any explicit SCUD guarantee contradicted or ambiguous
+
+Ambiguity is treated as `INTENT_MISMATCH`.
+
+---
+
+## Observation Schema
+
+All observations are committed using the following schema:
 
 ```python
-from ana.observer import ObserverAgent, ObserverMode
+class ObservationCommit(BaseModel):
+    issue_kind: Literal[
+        "NONE",
+        "GENERIC",
+        "LOCAL_MECHANICAL",
+        "INTENT_MISMATCH",
+    ]
+    confidence: float  # 0.0 to 1.0
+    evidence_refs: List[Dict[str, Any]]
+    notes: Optional[str]
+```
 
-# In OBSERVE state
-observer = ObserverAgent()
+* Exactly **one observation per run**
+* Evidence references are opaque and system-owned
+* Confidence reflects certainty, not severity
 
-# Determine mode based on VAP decision
-mode = (ObserverMode.VALIDATION_ERROR 
-        if vap_decision == "REJECT" 
-        else ObserverMode.NO_ERROR)
+---
 
-# Run observation
-result = observer.observe(
-    mode=mode,
-    scud_path=scud_path,
-    validation_logs_path=validation_logs_path,
-    circuit_code_path=circuit_code_path,
-    workspace=workspace
+## Components
+
+### `observer_agent.py`
+
+Main agent implementation.
+
+**Responsibilities:**
+
+* Workspace discovery
+* Prompt construction
+* Tool invocation
+* Guaranteed observation commitment
+
+---
+
+### `observer_system_prompt.py`
+
+Generates the **authoritative system prompt**.
+
+* Enforces role boundaries
+* Defines allowed classifications
+* Includes few-shot grounding
+* Prevents phase leakage
+
+
+---
+
+## Integration with ANA-D
+
+The Observer is invoked in the `OBSERVE` state of ANA-D.
+
+```python
+mode = (
+    ObserverMode.VALIDATION_ERROR
+    if vap_decision == "REJECT"
+    else ObserverMode.NO_ERROR
 )
 
-# State machine polls MCP server for committed observation
-# and transitions to AUTHORIZE state
+observer.observe(mode=mode, workspace=workspace)
 ```
 
-## MCP Server Integration
+ANA-D later **polls MCP** for the committed observation and proceeds deterministically.
 
-The Observer agent communicates with the MCP server via HTTP:
-
-**Endpoint:** `http://localhost:8000/mcp/observe`
-
-**Request Format:**
-```json
-{
-    "tool_name": "commit_observation",
-    "payload": {
-        "verdict": "ISSUE_DETECTED",
-        "issue_kind": "LOCAL_MECHANICAL",
-        "confidence": 0.85,
-        "evidence_refs": [
-            {
-                "type": "log_line",
-                "id": "line_42",
-                "excerpt": "ERROR: Pin mismatch at U1.FB"
-            }
-        ],
-        "notes": "Feedback pin connection error detected..."
-    }
-}
-```
-
-**Response Format:**
-```json
-{
-    "status": "ACK",
-    "message": {
-        "type": "observation",
-        "payload": { ... },
-        "metadata": {
-            "timestamp": "2026-01-23T16:59:22+05:30",
-            "tool": "commit_observation"
-        }
-    }
-}
-```
-
-## Environment Variables
-
-- `LLM_API_KEY`: API key for the LLM provider
-- `LLM_MODEL`: Model to use (default: `anthropic/claude-sonnet-4-5-20250929`)
-- `LLM_BASE_URL`: Base URL for LLM API (optional)
-
-## Running Tests
-
-```bash
-# Ensure MCP server is running
-cd /path/to/project
-python -m ana.observer.test_observer
-```
-
-## Dependencies
-
-- `openhands-sdk`: Agent framework
-- `httpx`: HTTP client for MCP communication
-- `pydantic`: Data validation
+---
 
 ## Design Principles
 
-1. **Strict Observational Role**: The agent never takes action, only observes and reports
-2. **Mode-Based Operation**: Clear separation between error analysis and compliance checking
-3. **Mandatory Commitment**: Agent MUST call `commit_observation` exactly once
-4. **Evidence-Based**: All observations must reference specific evidence
-5. **Uncertainty Tolerance**: "UNCERTAIN" and "AMBIGUOUS" are valid outcomes
+1. **Strict Observational Role**
+2. **Single Commitment Rule**
+3. **Schema-First Communication**
+4. **Conservative Classification**
+5. **Ambiguity Is a Valid Signal**
+6. **Zero Authority Leakage**
+
+---
 
 ## Error Handling
 
-- If the agent fails to commit an observation, a `RuntimeError` is raised
-- HTTP errors are logged and returned as JSON error messages
-- Invalid payloads are caught during Pydantic validation
-- All errors are logged for debugging
+* Failure to commit → runtime error
+* Invalid schema → Pydantic validation error
+* MCP errors → surfaced transparently
+* No silent recovery
 
-## Future Enhancements
+---
 
-- Support for image analysis (schematic comparison)
-- Multi-modal evidence references
-- Confidence calibration based on historical accuracy
-- Streaming observations for long-running analyses
+## Dependencies
+
+* `openhands-sdk`
+* `httpx`
+* `pydantic`
+
+---
+
+## Closing Note
+
+The Observer Agent is **intentionally underpowered**.
+
+Its value comes from:
+
+* restraint
+* conservatism
+* explainability
+* architectural alignment
+
+> **The Observer does not help the system succeed.
+> It helps the system stay correct.**
