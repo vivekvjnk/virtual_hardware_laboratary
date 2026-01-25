@@ -14,7 +14,7 @@ from openhands.sdk.tool import Tool
 from openhands.tools.file_editor import FileEditorTool
 # from openhands.tools.terminal import TerminalTool
 
-from ana.observer.observer_system_prompt import build_observer_system_prompt, ObserverMode
+from ana_agent.observer.observer_system_prompt import build_observer_system_prompt, ObserverMode
 
 
 # Configure Logging
