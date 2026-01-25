@@ -118,6 +118,7 @@ version = "0.1.0"
 source = { editable = "ana-mcp-server" }
 dependencies = [
     { name = "fastapi" },
+    { name = "mcp" },
     { name = "pydantic" },
     { name = "uvicorn" },
 ]
@@ -125,6 +126,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = "==0.110.0" },
+    { name = "mcp" },
     { name = "pydantic" },
     { name = "uvicorn" },
 ]

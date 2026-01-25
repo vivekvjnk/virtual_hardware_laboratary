@@ -61,26 +61,13 @@ async def process_mcp_request(request: JSONRPCRequest) -> JSONRPCResponse:
         tools = [
             {
                 "name": "commit_observation",
-                "description": "Commit an observation found during analysis. The payload corresponds to an observation of an issue or a confirmation of correctness.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        # We specifically nest the payload here to match existing practice
-                        "payload": ObservationCommit.model_json_schema()
-                    },
-                    "required": ["payload"]
-                }
+                "description": "Commit an observation found during analysis. An observation can be about an issue or a confirmation of correctness.",
+                "inputSchema": ObservationCommit.model_json_schema()
             },
             {
                 "name": "commit_fix_proposal",
                 "description": "Commit a proposal for a fix to a detected issue.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "payload": FixProposalCommit.model_json_schema()
-                    },
-                    "required": ["payload"]
-                }
+                "inputSchema": FixProposalCommit.model_json_schema()
             }
         ]
         return JSONRPCResponse(
@@ -99,11 +86,7 @@ async def process_mcp_request(request: JSONRPCRequest) -> JSONRPCResponse:
 
         try:
             if tool_name == "commit_observation":
-                if "payload" in arguments:
-                     raw_payload = arguments["payload"]
-                else:
-                     raw_payload = arguments
-                
+                raw_payload = arguments.get("payload", arguments) if isinstance(arguments, dict) else arguments
                 payload_obj = ObservationCommit(**raw_payload)
                 result = commit_observation(payload_obj)
                 
@@ -115,11 +98,7 @@ async def process_mcp_request(request: JSONRPCRequest) -> JSONRPCResponse:
                 )
 
             elif tool_name == "commit_fix_proposal":
-                if "payload" in arguments:
-                     raw_payload = arguments["payload"]
-                else:
-                     raw_payload = arguments
-
+                raw_payload = arguments.get("payload", arguments) if isinstance(arguments, dict) else arguments
                 payload_obj = FixProposalCommit(**raw_payload)
                 result = commit_fix_proposal(payload_obj)
 
@@ -165,7 +144,9 @@ async def mcp_handler(request: JSONRPCRequest):
 
 class CommitRequest(BaseModel):
     tool_name: str = Field(..., description="The name of the commit tool to use.")
-    payload: Dict[str, Any] = Field(..., description="The payload for the commit.")
+    # Allow extra fields or a nested "payload" field for backward compatibility
+    class Config:
+        extra = "allow"
 
 @app.get("/mcp/commits", summary="Query the commit log.")
 async def get_commits_endpoint(
@@ -180,7 +161,7 @@ async def dynamic_mcp_or_commit(scope_endpoint: str, raw_request: Request):
     """
     Hybrid endpoint that accepts either:
     1. A JSON-RPC 2.0 request (acting as an MCP endpoint/transport).
-    2. A legacy CommitRequest (tool_name, payload).
+    2. A legacy CommitRequest (tool_name, and either flattened fields or a 'payload' object).
     """
     try:
         body = await raw_request.json()
@@ -207,18 +188,23 @@ async def dynamic_mcp_or_commit(scope_endpoint: str, raw_request: Request):
         # If it matches neither, we return 422 explaining both failed
         raise HTTPException(
             status_code=422, 
-            detail="Unprocessable Content. Expected either a JSON-RPC 2.0 request OR a legacy CommitRequest (tool_name, payload)."
+            detail="Unprocessable Content. Expected either a JSON-RPC 2.0 request OR a legacy CommitRequest (tool_name, plus data)."
         )
 
     # Legacy Logic
     full_endpoint = f"/mcp/{scope_endpoint}"
     
     try:
+        # Determine payload data: prioritize "payload" key, otherwise use the rest of the body
+        payload_data = body.get("payload")
+        if payload_data is None:
+            payload_data = {k: v for k, v in body.items() if k != "tool_name"}
+
         if request.tool_name == "commit_observation":
             if full_endpoint != "/mcp/observe":
                 raise HTTPException(status_code=400, detail=f"Tool '{request.tool_name}' is not visible in endpoint '{full_endpoint}'.")
             try:
-                data = ObservationCommit(**request.payload)
+                data = ObservationCommit(**payload_data)
             except Exception as e:
                  raise HTTPException(status_code=400, detail=f"Schema validation failed: {e}")
             return commit_observation(data)
@@ -227,7 +213,7 @@ async def dynamic_mcp_or_commit(scope_endpoint: str, raw_request: Request):
             if full_endpoint != "/mcp/prepare_fix":
                 raise HTTPException(status_code=400, detail=f"Tool '{request.tool_name}' is not visible in endpoint '{full_endpoint}'.")
             try:
-                data = FixProposalCommit(**request.payload)
+                data = FixProposalCommit(**payload_data)
             except Exception as e:
                  raise HTTPException(status_code=400, detail=f"Schema validation failed: {e}")
             return commit_fix_proposal(data)

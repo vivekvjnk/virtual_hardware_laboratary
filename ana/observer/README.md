@@ -179,7 +179,7 @@ The Observer classifies the failure using **one issue kind only**:
   Deterministic, isolated, unambiguous failures
   (e.g., import errors, footprint misuse, pin hallucinations)
 
-* `GENERIC`
+* `NON-LOCAL`
   Everything else:
 
   * structural or ripple failures
@@ -187,7 +187,7 @@ The Observer classifies the failure using **one issue kind only**:
   * ambiguity
   * low-confidence cases
 
-If uncertain → **GENERIC**
+If uncertain → **NON-LOCAL**
 
 ---
 
@@ -215,8 +215,8 @@ All observations are committed using the following schema:
 class ObservationCommit(BaseModel):
     issue_kind: Literal[
         "NONE",
-        "GENERIC",
-        "LOCAL_MECHANICAL",
+        "NON_LOCAL",
+        "LOCAL",
         "INTENT_MISMATCH",
     ]
     confidence: float  # 0.0 to 1.0

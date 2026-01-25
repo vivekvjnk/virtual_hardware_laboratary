@@ -50,7 +50,7 @@ OBSERVATION SCHEMA (STRICT)
 
 Your committed observation MUST conform to this schema:
 
-- issue_kind ∈ {"NONE", "LOCAL_MECHANICAL", "GENERIC", "INTENT_MISMATCH"}
+- issue_kind ∈ {"NONE", "LOCAL", "NON_LOCAL", "INTENT_MISMATCH"}
 - confidence ∈ [0.0, 1.0]
 - evidence_refs: list of opaque evidence references
 - notes: optional clarification
@@ -77,9 +77,9 @@ Uncertainty is a valid and desirable outcome.
 
     if mode == ObserverMode.VALIDATION_ERROR:
         return base_prompt + """
-────────────────────────────────────────────
-OBSERVATION MODE: VALIDATION ERRORS PRESENT
-────────────────────────────────────────────
+──────────────────────────────────────────────────────────
+OBSERVATION MODE: VALIDATION ERRORS PRESENT(BUILD FAILURE)
+──────────────────────────────────────────────────────────
 
 Validation logs indicate one or more errors.
 **Validation logs are the primary ground truth.**
@@ -88,23 +88,21 @@ Your task is to classify the error set.
 
 You must commit exactly ONE `issue_kind`:
 
-1. **LOCAL_MECHANICAL**
+1. **LOCAL**
    Use ONLY if the failure is:
    - deterministic
    - isolated
    - unambiguous
    - confined to imports, footprints, pin names, or syntax
+   - Multiple errors may be classified as LOCAL if they share all these properties.
 
-2. **GENERIC**
+2. **NON_LOCAL**
    Use for ALL other cases, including:
    - hub-centric failures
    - ripple or structural errors
    - ambiguity from SCUD or schematics
    - low-confidence classification
-   - anything not strictly LOCAL_MECHANICAL
 
-If you are uncertain at any point:
-→ choose **GENERIC**
 
 ────────────────────────────────────────────
 FEW-SHOT CLASSIFICATION EXAMPLES
@@ -118,7 +116,7 @@ Cannot find module './lib/BQ79616PAPR'
 
 ```
 Committed observation:
-- issue_kind: LOCAL_MECHANICAL
+- issue_kind: LOCAL
 - confidence: 0.95
 - evidence_refs:
   - {"source": "validation.log", "excerpt": "Cannot find module"}
@@ -135,7 +133,7 @@ Invalid footprint function, got "pinheader"
 
 ```
 Committed observation:
-- issue_kind: LOCAL_MECHANICAL
+- issue_kind: LOCAL
 - confidence: 0.9
 - evidence_refs:
   - {"source": "validation.log", "excerpt": "Invalid footprint function"}
@@ -151,7 +149,7 @@ Could not find port for selector ".J21 > .pin2"
 
 ```
 Committed observation:
-- issue_kind: LOCAL_MECHANICAL
+- issue_kind: LOCAL
 - confidence: 0.9
 - evidence_refs:
   - {"source": "validation.log", "excerpt": "Could not find port"}
@@ -168,7 +166,7 @@ Downstream components report missing connections.
 
 ```
 Committed observation:
-- issue_kind: GENERIC
+- issue_kind: NON_LOCAL
 - confidence: 0.6
 - evidence_refs:
   - {"source": "validation.log", "excerpt": "Multiple nets unresolved"}
