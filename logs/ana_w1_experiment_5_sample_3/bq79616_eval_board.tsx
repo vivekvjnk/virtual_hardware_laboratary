@@ -7,7 +7,7 @@ import { NCP18XH103F03RB } from "./lib/NCP18XH103F03RB"
 
 export default () => {
   return (
-    <board width="150mm" height="100mm">
+    <board width="150mm" height="100mm" routingDisabled={true}>
       {/* --------------------------------------------------------- */}
       {/* NETS */}
       {/* --------------------------------------------------------- */}

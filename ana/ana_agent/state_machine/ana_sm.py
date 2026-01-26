@@ -7,8 +7,8 @@ import os
 import socket
 import httpx
 import uuid
-import json 
-import sys
+
+from pathlib import Path
 
 from ana_agent.observer import ObserverAgent
 from ana_agent.observer import ObserverMode
@@ -36,18 +36,22 @@ class ANADStateMachine:
         self.auto_fix_count = 0
         
         # Inputs/Observations
-        self.vap_decision: Optional[str] = None # ACCEPT / REJECT
+        self.vap_decision: Optional[str] = "UNDECIDED" # ACCEPT / REJECT ; Default to UNDECIDED
         self.error_class: Optional[str] = None # mechanical, hub, ripple, ambiguous, none
         self.intent_status: Optional[str] = None # satisfied, violated, ambiguous
-        
+        self.observation = None
+
         # Context/Data
         self.context: Dict[str, Any] = {}
+
+        # Workspace
+        self.workspace = Path(os.getcwd()) / "ana_workspace"
 
         # MCP Integration
         self.mcp_process: Optional[subprocess.Popen] = None
         self.mcp_endpoint = "http://localhost:8001"
         self.last_commit_id: int = -1
-        self.iteration_hash: Optional[str] = None
+        self.iteration_id: Optional[str] = None
 
     def step(self, event: Optional[str] = None, data: Optional[Dict[str, Any]] = None):
         """
@@ -80,12 +84,12 @@ class ANADStateMachine:
 
     def _handle_init(self):
         # S0 -> S1
-        # Generate Iteration Hash (Start of new Loop)
-        self.iteration_hash = uuid.uuid4().hex
-        logger.info(f"[ANA-D SM] State: INIT. Started Iteration: {self.iteration_hash}")
+        # Generate Iteration id (Start of new Loop)
+        self.iteration_id = hex(int(time.time()))[2:]
+        logger.info(f"[ANA-D SM] State: INIT. Started Iteration: {self.iteration_id}")
         
         # Create iteration folder
-        iteration_dir = os.path.join(os.getcwd(), "iterations", self.iteration_hash)
+        iteration_dir = os.path.join(self.workspace, "iterations", self.iteration_id)
         os.makedirs(iteration_dir, exist_ok=True)
         logger.info(f"[ANA-D SM] Created iteration directory: {iteration_dir}")
 
@@ -95,7 +99,7 @@ class ANADStateMachine:
 
     def _handle_observe(self):
         # S1 -> S2
-        logger.info(f"[ANA-D SM] State: OBSERVE. Hash={self.iteration_hash}. Ensuring MCP Server is running...")
+        logger.info(f"[ANA-D SM] State: OBSERVE. Hash={self.iteration_id}. Ensuring MCP Server is running...")
         self._ensure_mcp_server_running()
 
         logger.info("[ANA-D SM] Triggering Observer Agent...")
@@ -143,9 +147,99 @@ class ANADStateMachine:
                 self.intent_status = "ambiguous"
 
             logger.info(f"[ANA-D SM] Observation received: error_class={self.error_class}, intent_status={self.intent_status}")
+            self.observation = observation
             self.state = State.AUTHORIZE
         else:
             logger.info("[ANA-D SM] No observation received. Staying in OBSERVE.")
+
+    def _handle_authorize(self):
+        # S2 -> S3, S8, or S10
+        logger.info(f"[ANA-D SM] State: AUTHORIZE. VAP={self.vap_decision}, Error={self.error_class}, Intent={self.intent_status}, FixCount={self.auto_fix_count}")
+        
+        if self.vap_decision == "REJECT":
+            if self.error_class == "mechanical" and self.auto_fix_count < self.max_auto_fixes:
+                logger.info("[ANA-D SM] Transitioning to PREPARE_FIX")
+                self.state = State.PREPARE_FIX
+            else:
+                logger.info("[ANA-D SM] Transitioning to PREPARE_HIL")
+                self.state = State.PREPARE_HIL
+        elif self.vap_decision == "ACCEPT":
+            if self.intent_status == "satisfied":
+                logger.info("[ANA-D SM] Transitioning to EXIT_SUCCESS")
+                self.state = State.EXIT_SUCCESS
+            else:
+                logger.info("[ANA-D SM] Transitioning to PREPARE_HIL")
+                self.state = State.PREPARE_HIL
+        elif self.vap_decision == "UNDECIDED":
+            logger.info("[ANA-D SM] VAP decision UNDECIDED. Very first iteration. Transitioning to TRIGGER_W1")
+            self.state = State.TRIGGER_W1
+        else:
+            # Default to HIL if VAP decision is unknown or missing
+            logger.info("[ANA-D SM] Unknown VAP decision. Transitioning to PREPARE_HIL")
+            self.state = State.PREPARE_HIL
+
+
+    def _handle_prepare_fix(self):
+        # S3 -> S4
+        logger.info("[ANA-D SM] State: PREPARE_FIX. Constructing fix instruction...")
+        self.state = State.TRIGGER_W1
+
+    def _handle_trigger_w1(self):
+        # S4 -> S5
+        logger.info(f"[ANA-D SM] State: TRIGGER_W1. Invoking ANA-W1 for iteration {self.iteration_id}...")
+        self.auto_fix_count += 1
+        self.state = State.WAIT_W1
+
+    def _handle_wait_w1(self):
+        # S5 -> S6
+        logger.info("[ANA-D SM] State: WAIT_W1. Awaiting ANA-W1 output...")
+        # In a real scenario, this might be async or polled.
+        self.state = State.TRIGGER_W2
+
+    def _handle_trigger_w2(self):
+        # S6 -> S7
+        logger.info(f"[ANA-D SM] State: TRIGGER_W2. Invoking VHL-VAP for iteration {self.iteration_id}...")
+        self.state = State.WAIT_VAP
+
+    def _handle_wait_vap(self):
+        # S7 -> S0
+        logger.info("[ANA-D SM] State: WAIT_VAP. Awaiting VAP results...")
+        # Loop back to INIT with new VAP output
+        self.state = State.INIT
+
+    def _handle_prepare_hil(self):
+        # S8 -> S9
+        logger.info("[ANA-D SM] State: PREPARE_HIL. Escalating to human...")
+        self.state = State.HIL_WAIT
+
+    def _handle_hil_wait(self, event: Optional[str], data: Optional[Dict[str, Any]]):
+        # S9 -> S0 or S11
+        logger.info("[ANA-D SM] State: HIL_WAIT. Awaiting human authority...")
+        if event == "human_response":
+            logger.info("[ANA-D SM] Human responded. Transitioning to INIT.")
+            # Update observations based on human input if needed
+            self.state = State.INIT
+        elif event == "abort":
+            logger.info("[ANA-D SM] Process aborted by human. Transitioning to EXIT_ABORT.")
+            self.state = State.EXIT_ABORT
+        else:
+            logger.info("[ANA-D SM] Still waiting for human input...")
+
+    def is_terminal(self) -> bool:
+        return self.state in [State.EXIT_SUCCESS, State.EXIT_ABORT]
+
+    def cleanup(self):
+        """Cleanup resources, including MCP server process."""
+        if self.mcp_process:
+            logger.info("[ANA-D SM] Shutting down MCP Server...")
+            self.mcp_process.terminate()
+            try:
+                self.mcp_process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                logger.info("[ANA-D SM] MCP Server did not terminate, killing...")
+                self.mcp_process.kill()
+            self.mcp_process = None
+            logger.info("[ANA-D SM] MCP Server shut down.")
 
     def _ensure_mcp_server_running(self):
         """Starts the MCP server if it's not already running on port 8000."""
@@ -222,91 +316,6 @@ class ANADStateMachine:
             except Exception as e:
                 logger.info(f"[ANA-D SM] Polling error: {e}")
                 time.sleep(2)
-
-    def _handle_authorize(self):
-        # S2 -> S3, S8, or S10
-        logger.info(f"[ANA-D SM] State: AUTHORIZE. VAP={self.vap_decision}, Error={self.error_class}, Intent={self.intent_status}, FixCount={self.auto_fix_count}")
-        
-        if self.vap_decision == "REJECT":
-            if self.error_class == "mechanical" and self.auto_fix_count < self.max_auto_fixes:
-                logger.info("[ANA-D SM] Transitioning to PREPARE_FIX")
-                self.state = State.PREPARE_FIX
-            else:
-                logger.info("[ANA-D SM] Transitioning to PREPARE_HIL")
-                self.state = State.PREPARE_HIL
-        elif self.vap_decision == "ACCEPT":
-            if self.intent_status == "satisfied":
-                logger.info("[ANA-D SM] Transitioning to EXIT_SUCCESS")
-                self.state = State.EXIT_SUCCESS
-            else:
-                logger.info("[ANA-D SM] Transitioning to PREPARE_HIL")
-                self.state = State.PREPARE_HIL
-        else:
-            # Default to HIL if VAP decision is unknown or missing
-            logger.info("[ANA-D SM] Unknown VAP decision. Transitioning to PREPARE_HIL")
-            self.state = State.PREPARE_HIL
-
-    def _handle_prepare_fix(self):
-        # S3 -> S4
-        logger.info("[ANA-D SM] State: PREPARE_FIX. Constructing fix instruction...")
-        self.state = State.TRIGGER_W1
-
-    def _handle_trigger_w1(self):
-        # S4 -> S5
-        logger.info(f"[ANA-D SM] State: TRIGGER_W1. Invoking ANA-W1 for iteration {self.iteration_hash}...")
-        self.auto_fix_count += 1
-        self.state = State.WAIT_W1
-
-    def _handle_wait_w1(self):
-        # S5 -> S6
-        logger.info("[ANA-D SM] State: WAIT_W1. Awaiting ANA-W1 output...")
-        # In a real scenario, this might be async or polled.
-        self.state = State.TRIGGER_W2
-
-    def _handle_trigger_w2(self):
-        # S6 -> S7
-        logger.info(f"[ANA-D SM] State: TRIGGER_W2. Invoking VHL-VAP for iteration {self.iteration_hash}...")
-        self.state = State.WAIT_VAP
-
-    def _handle_wait_vap(self):
-        # S7 -> S0
-        logger.info("[ANA-D SM] State: WAIT_VAP. Awaiting VAP results...")
-        # Loop back to INIT with new VAP output
-        self.state = State.INIT
-
-    def _handle_prepare_hil(self):
-        # S8 -> S9
-        logger.info("[ANA-D SM] State: PREPARE_HIL. Escalating to human...")
-        self.state = State.HIL_WAIT
-
-    def _handle_hil_wait(self, event: Optional[str], data: Optional[Dict[str, Any]]):
-        # S9 -> S0 or S11
-        logger.info("[ANA-D SM] State: HIL_WAIT. Awaiting human authority...")
-        if event == "human_response":
-            logger.info("[ANA-D SM] Human responded. Transitioning to INIT.")
-            # Update observations based on human input if needed
-            self.state = State.INIT
-        elif event == "abort":
-            logger.info("[ANA-D SM] Process aborted by human. Transitioning to EXIT_ABORT.")
-            self.state = State.EXIT_ABORT
-        else:
-            logger.info("[ANA-D SM] Still waiting for human input...")
-
-    def is_terminal(self) -> bool:
-        return self.state in [State.EXIT_SUCCESS, State.EXIT_ABORT]
-
-    def cleanup(self):
-        """Cleanup resources, including MCP server process."""
-        if self.mcp_process:
-            logger.info("[ANA-D SM] Shutting down MCP Server...")
-            self.mcp_process.terminate()
-            try:
-                self.mcp_process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                logger.info("[ANA-D SM] MCP Server did not terminate, killing...")
-                self.mcp_process.kill()
-            self.mcp_process = None
-            logger.info("[ANA-D SM] MCP Server shut down.")
 
 if __name__ == "__main__":
     # Simple test run

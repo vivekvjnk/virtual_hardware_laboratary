@@ -260,32 +260,32 @@ export default () => {
 
 | Element                           | Description               |
 | --------------------------------- | ------------------------- |
-| [`<battery />`](ana/skills/tsci_built_in_elements/tsci_built_in_elements/battery.md) | A power source that provides electrical energy through electrochemical reactions. |
-| [`<breakout />`](ana/skills/tsci_built_in_elements/tsci_built_in_elements/breakout.md) | A container used to guide the autorouter on where connections should exit a group. |
-| [`<breakoutpoint />`](ana/skills/tsci_built_in_elements/tsci_built_in_elements/breakoutpoint.md) | Marks the XY coordinate that the autorouter should use when connecting a net or pin inside a breakout. |
-| [`<cadassembly />`](ana/skills/tsci_built_in_elements/tsci_built_in_elements/cadassembly.md) | Used to put together the 3D models of a component when multiple models are used. |
-| [`<cadmodel />`](ana/skills/tsci_built_in_elements/tsci_built_in_elements/cadmodel.md) | Used to display a 3D model of a component. |
-| [`<capacitor />`](ana/skills/tsci_built_in_elements/tsci_built_in_elements/capacitor.md) | Stores electrical energy in an electric field, used for filtering, energy storage, and timing. |
-| [`<copperpour />`](ana/skills/tsci_built_in_elements/tsci_built_in_elements/copperpour.md) | Creates a copper pour (groundplane) connected to a specific net to improve signal integrity. |
-| [`<crystal />`](ana/skills/tsci_built_in_elements/tsci_built_in_elements/crystal.md) | Provides a stable clock signal essential for timing applications and microcontroller operations. |
-| [`<cutout />`](ana/skills/tsci_built_in_elements/tsci_built_in_elements/cutout.md) | Removes material from a board outline to add interior slots, mounting reliefs, or custom shapes. |
-| [`<diode />`](ana/skills/tsci_built_in_elements/tsci_built_in_elements/diode.md) | Semiconductor device that allows current to flow primarily in one direction. |
-| [`<footprint />`](ana/skills/tsci_built_in_elements/tsci_built_in_elements/footprint.md) | Defines PCB elements like plated holes or SMT pads for a component. |
-| [`<fuse />`](ana/skills/tsci_built_in_elements/tsci_built_in_elements/fuse.md) | A safety device that protects electrical circuits by interrupting current flow when it exceeds a threshold. |
-| [`<group />`](ana/skills/tsci_built_in_elements/tsci_built_in_elements/group.md) | Basic container element used for structural organization and layout of other elements. |
-| [`<hole />`](ana/skills/tsci_built_in_elements/tsci_built_in_elements/hole.md) | Used for mechanical mounting on the PCB; does not have conductive properties. |
-| [`<inductor />`](ana/skills/tsci_built_in_elements/tsci_built_in_elements/inductor.md) | Stores electrical energy in a magnetic field, used in filters, oscillators, and power supplies. |
-| [`<jumper />`](ana/skills/tsci_built_in_elements/tsci_built_in_elements/jumper.md) | Represents a small multi-pin connector, commonly a male or female header. Use `footprint` property to select the right number of pins(eg: `footprint="pinrow4"`) |
-| [`<led />`](ana/skills/tsci_built_in_elements/tsci_built_in_elements/led.md) | Light-emitting diode that emits light when forward current flows through it. |
-| [`<mosfet />`](ana/skills/tsci_built_in_elements/tsci_built_in_elements/mosfet.md) | A type of transistor used to control the flow of current in a circuit. |
-| [`<net />`](ana/skills/tsci_built_in_elements/tsci_built_in_elements/net.md) | Represents a group of connected traces, typically used for power buses and ground. |
-| [`<resistor />`](ana/skills/tsci_built_in_elements/tsci_built_in_elements/resistor.md) | A two-pin non-polar component that resists the flow of electricity. |
-| [`<solderjumper />`](ana/skills/tsci_built_in_elements/tsci_built_in_elements/solderjumper.md) | A tiny jumper made from exposed pads on the PCB that can be bridged or cut. |
-| [`<switch />`](ana/skills/tsci_built_in_elements/tsci_built_in_elements/switch.md) | A mechanical component used to connect or disconnect parts of a circuit. |
-| [`<testpoint />`](ana/skills/tsci_built_in_elements/tsci_built_in_elements/testpoint.md) | A designated location on a PCB for testing, debugging, and measuring electrical signals. |
-| [`<trace />`](ana/skills/tsci_built_in_elements/tsci_built_in_elements/trace.md) | Represents an electrical connection between two or more points in a circuit. |
-| [`<transistor />`](ana/skills/tsci_built_in_elements/tsci_built_in_elements/transistor.md) | A three-terminal semiconductor device used to amplify or switch electronic signals. |
-| [`<via />`](ana/skills/tsci_built_in_elements/tsci_built_in_elements/via.md) | A plated hole that electrically connects different layers of a PCB. |
+| [`<battery />`](skills/tsci_built_in_elements/tsci_built_in_elements/battery.md) | A power source that provides electrical energy through electrochemical reactions. |
+| [`<breakout />`](skills/tsci_built_in_elements/tsci_built_in_elements/breakout.md) | A container used to guide the autorouter on where connections should exit a group. |
+| [`<breakoutpoint />`](skills/tsci_built_in_elements/tsci_built_in_elements/breakoutpoint.md) | Marks the XY coordinate that the autorouter should use when connecting a net or pin inside a breakout. |
+| [`<cadassembly />`](skills/tsci_built_in_elements/tsci_built_in_elements/cadassembly.md) | Used to put together the 3D models of a component when multiple models are used. |
+| [`<cadmodel />`](skills/tsci_built_in_elements/tsci_built_in_elements/cadmodel.md) | Used to display a 3D model of a component. |
+| [`<capacitor />`](skills/tsci_built_in_elements/tsci_built_in_elements/capacitor.md) | Stores electrical energy in an electric field, used for filtering, energy storage, and timing. |
+| [`<copperpour />`](skills/tsci_built_in_elements/tsci_built_in_elements/copperpour.md) | Creates a copper pour (groundplane) connected to a specific net to improve signal integrity. |
+| [`<crystal />`](skills/tsci_built_in_elements/tsci_built_in_elements/crystal.md) | Provides a stable clock signal essential for timing applications and microcontroller operations. |
+| [`<cutout />`](skills/tsci_built_in_elements/tsci_built_in_elements/cutout.md) | Removes material from a board outline to add interior slots, mounting reliefs, or custom shapes. |
+| [`<diode />`](skills/tsci_built_in_elements/tsci_built_in_elements/diode.md) | Semiconductor device that allows current to flow primarily in one direction. |
+| [`<footprint />`](skills/tsci_built_in_elements/tsci_built_in_elements/footprint.md) | Defines PCB elements like plated holes or SMT pads for a component. |
+| [`<fuse />`](skills/tsci_built_in_elements/tsci_built_in_elements/fuse.md) | A safety device that protects electrical circuits by interrupting current flow when it exceeds a threshold. |
+| [`<group />`](skills/tsci_built_in_elements/tsci_built_in_elements/group.md) | Basic container element used for structural organization and layout of other elements. |
+| [`<hole />`](skills/tsci_built_in_elements/tsci_built_in_elements/hole.md) | Used for mechanical mounting on the PCB; does not have conductive properties. |
+| [`<inductor />`](skills/tsci_built_in_elements/tsci_built_in_elements/inductor.md) | Stores electrical energy in a magnetic field, used in filters, oscillators, and power supplies. |
+| [`<jumper />`](skills/tsci_built_in_elements/tsci_built_in_elements/jumper.md) | Represents a small multi-pin connector, commonly a male or female header. Use `footprint` property to select the right number of pins(eg: `footprint="pinrow4"`) |
+| [`<led />`](skills/tsci_built_in_elements/tsci_built_in_elements/led.md) | Light-emitting diode that emits light when forward current flows through it. |
+| [`<mosfet />`](skills/tsci_built_in_elements/tsci_built_in_elements/mosfet.md) | A type of transistor used to control the flow of current in a circuit. |
+| [`<net />`](skills/tsci_built_in_elements/tsci_built_in_elements/net.md) | Represents a group of connected traces, typically used for power buses and ground. |
+| [`<resistor />`](skills/tsci_built_in_elements/tsci_built_in_elements/resistor.md) | A two-pin non-polar component that resists the flow of electricity. |
+| [`<solderjumper />`](skills/tsci_built_in_elements/tsci_built_in_elements/solderjumper.md) | A tiny jumper made from exposed pads on the PCB that can be bridged or cut. |
+| [`<switch />`](skills/tsci_built_in_elements/tsci_built_in_elements/switch.md) | A mechanical component used to connect or disconnect parts of a circuit. |
+| [`<testpoint />`](skills/tsci_built_in_elements/tsci_built_in_elements/testpoint.md) | A designated location on a PCB for testing, debugging, and measuring electrical signals. |
+| [`<trace />`](skills/tsci_built_in_elements/tsci_built_in_elements/trace.md) | Represents an electrical connection between two or more points in a circuit. |
+| [`<transistor />`](skills/tsci_built_in_elements/tsci_built_in_elements/transistor.md) | A three-terminal semiconductor device used to amplify or switch electronic signals. |
+| [`<via />`](skills/tsci_built_in_elements/tsci_built_in_elements/via.md) | A plated hole that electrically connects different layers of a PCB. |
 
 Please refer to the individual markdown files for more details on each component.
 

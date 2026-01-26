@@ -1,5 +1,4 @@
 import os
-import sys
 from pydantic import SecretStr
 from openhands.sdk import (
     LLM,
@@ -16,6 +15,8 @@ from openhands.sdk.security.llm_analyzer import LLMSecurityAnalyzer
 from openhands.sdk.tool import Tool
 from openhands.tools.file_editor import FileEditorTool
 from openhands.tools.terminal import TerminalTool
+
+from pathlib import Path
 
 # Configure Logging
 logger = get_logger(__name__)
@@ -43,29 +44,28 @@ llm_condenser = LLM(
     api_key=SecretStr(api_key),
 )
 
-# Configure Tools
+# Configure paths
 cwd = os.getcwd()
+submodule_root = Path(__file__).resolve().parent
+logger.info(f"Current working directory: {cwd}")
+logger.info(f"Submodule root directory: {submodule_root}")
+
+# Configure Tools
 tools = [
     Tool(name=TerminalTool.name),
     Tool(name=FileEditorTool.name),
 ]
 
-# Configure MCP
-mcp_config = {
-    "mcpServers": {
-        "VHL_Library": {"url": "http://localhost:8080/mcp"},
-        "VAP": {"url": "http://localhost:8081/vap"},
-    }
-}
 
 condenser = LLMSummarizingCondenser(llm=llm_condenser, max_size=80, keep_first=8)
 
 
 # load skill from file
-with open(os.path.join(cwd, "ana/skills/bfs-dc.md"), "r") as f:
+with open(os.path.join(submodule_root, "skills/bfs-dc.md"), "r") as f:
     bfs_dc_skill_content = f.read()
-with open(os.path.join(cwd, "ana/skills/tscircuit_operation_manual.md"), "r") as f:
+with open(os.path.join(submodule_root, "skills/tscircuit_operation_manual.md"), "r") as f:
     tscircuit_operation_manual_skill_content = f.read()
+
 agent_context = AgentContext(
     skills=[
         Skill(
@@ -94,11 +94,10 @@ agent_context = AgentContext(
 
 # Initialize Agent
 # system_prompt_path = os.path.join(cwd, "ana/ana_system_prompt.j2")
-system_prompt_path = os.path.join(cwd, "ana/ana_w1_system_prompt.j2")
+system_prompt_path = os.path.join(submodule_root, "ana_w1_system_prompt.j2")
 agent = Agent(
     llm=llm,
     tools=tools,
-    # mcp_config=mcp_config,
     system_prompt_filename=system_prompt_path,
     condenser=condenser,
     agent_context=agent_context,
@@ -136,7 +135,7 @@ def process_scud(scud_path: str, schematic_images_path: str = None, tsckt_op_man
         user_message += f"You can refer to schematic images located at '{schematic_images_path}' for visual clarification. You can use file_editor tool to view these images as needed."
 
     
-    user_message += "Refer pin ana/resources/component_pin_mapping.md for component pin mapping information if needed."
+    user_message += "Refer ana/resources/component_pin_mapping.md for component pin mapping information if needed."
     
     user_message += "You can use ana/output directory to store any output files you generate during the task."
     conversation.send_message(user_message)
@@ -147,7 +146,7 @@ def process_scud(scud_path: str, schematic_images_path: str = None, tsckt_op_man
 
 
 if __name__ == "__main__":
-    scud_path = os.path.join(cwd, "ana/resources/bq79616_eval_board.scud")
-    schematic_images_path = os.path.join(cwd, "ana/resources/schematic_images")
-    tsckt_op_manual_path = os.path.join(cwd, "ana/resources/tscircuit_operation_manual.md")
-    process_scud(scud_path, schematic_images_path, tsckt_op_manual_path)
+    scud_path = os.path.join(submodule_root, "resources/bq79616_eval_board.scud")
+    schematic_images_path = os.path.join(submodule_root, "resources/schematic_images")
+    tsckt_op_manual_path = os.path.join(submodule_root, "resources/tscircuit_operation_manual.md")
+    # process_scud(scud_path, schematic_images_path, tsckt_op_manual_path)

@@ -8,3 +8,6 @@ tests/
 logs/
 */results/*
 utils/data/*
+iterations/*
+logs/*
+**.egg-info**

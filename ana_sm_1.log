@@ -1,0 +1,46 @@
+[01/25/26 20:45:48] INFO     --- Starting Simulation: Mechanical Fix ---                                                                                            ana_sm.py:319
+[01/25/26 20:45:48] INFO     Stepping from state: State.INIT                                                                                                         ana_sm.py:57
+[01/25/26 20:45:48] INFO     [ANA-D SM] State: INIT. Started Iteration: 7c61eba85397410caf32a900c77b5f54                                                             ana_sm.py:85
+[01/25/26 20:45:48] INFO     [ANA-D SM] Created iteration directory:                                                                                                 ana_sm.py:90
+                             /home/pst/Documents/vhl/vhl_ana/virtual_hardware_laboratary/iterations/7c61eba85397410caf32a900c77b5f54                                             
+[01/25/26 20:45:48] INFO     [ANA-D SM] Received VAP output.                                                                                                         ana_sm.py:92
+[01/25/26 20:45:48] INFO     New state: State.OBSERVE                                                                                                                ana_sm.py:79
+[01/25/26 20:45:48] INFO     Stepping from state: State.OBSERVE                                                                                                      ana_sm.py:57
+[01/25/26 20:45:48] INFO     [ANA-D SM] State: OBSERVE. Hash=7c61eba85397410caf32a900c77b5f54. Ensuring MCP Server is running...                                     ana_sm.py:98
+[01/25/26 20:45:48] INFO     [ANA-D SM] MCP Server already running on port 8000.                                                                                    ana_sm.py:157
+[01/25/26 20:45:48] INFO     [ANA-D SM] Triggering Observer Agent...                                                                                                ana_sm.py:101
+[01/25/26 20:45:48] INFO     [ANA-D SM] Awaiting commit from Observer Agent via MCP...                                                                              ana_sm.py:123
+[01/25/26 20:45:48] INFO     [ANA-D SM] Polling http://localhost:8001/mcp/commits with since=-1...                                                                  ana_sm.py:204
+[01/25/26 20:45:48] INFO     [ANA-D SM] Observation received: error_class=mechanical, intent_status=violated                                                        ana_sm.py:145
+[01/25/26 20:45:48] INFO     New state: State.AUTHORIZE                                                                                                              ana_sm.py:79
+[01/25/26 20:45:48] INFO     Stepping from state: State.AUTHORIZE                                                                                                    ana_sm.py:57
+[01/25/26 20:45:48] INFO     [ANA-D SM] State: AUTHORIZE. VAP=REJECT, Error=mechanical, Intent=violated, FixCount=0                                                 ana_sm.py:228
+[01/25/26 20:45:48] INFO     [ANA-D SM] Transitioning to PREPARE_FIX                                                                                                ana_sm.py:232
+[01/25/26 20:45:48] INFO     New state: State.PREPARE_FIX                                                                                                            ana_sm.py:79
+[01/25/26 20:45:48] INFO     Stepping from state: State.PREPARE_FIX                                                                                                  ana_sm.py:57
+[01/25/26 20:45:48] INFO     [ANA-D SM] State: PREPARE_FIX. Constructing fix instruction...                                                                         ana_sm.py:251
+[01/25/26 20:45:48] INFO     New state: State.TRIGGER_W1                                                                                                             ana_sm.py:79
+[01/25/26 20:45:48] INFO     Stepping from state: State.TRIGGER_W1                                                                                                   ana_sm.py:57
+[01/25/26 20:45:48] INFO     [ANA-D SM] State: TRIGGER_W1. Invoking ANA-W1 for iteration 7c61eba85397410caf32a900c77b5f54...                                        ana_sm.py:256
+[01/25/26 20:45:48] INFO     New state: State.WAIT_W1                                                                                                                ana_sm.py:79
+[01/25/26 20:45:48] INFO     Stepping from state: State.WAIT_W1                                                                                                      ana_sm.py:57
+[01/25/26 20:45:48] INFO     [ANA-D SM] State: WAIT_W1. Awaiting ANA-W1 output...                                                                                   ana_sm.py:262
+[01/25/26 20:45:48] INFO     New state: State.TRIGGER_W2                                                                                                             ana_sm.py:79
+[01/25/26 20:45:48] INFO     Stepping from state: State.TRIGGER_W2                                                                                                   ana_sm.py:57
+[01/25/26 20:45:48] INFO     [ANA-D SM] State: TRIGGER_W2. Invoking VHL-VAP for iteration 7c61eba85397410caf32a900c77b5f54...                                       ana_sm.py:268
+[01/25/26 20:45:48] INFO     New state: State.WAIT_VAP                                                                                                               ana_sm.py:79
+[01/25/26 20:45:48] INFO     Stepping from state: State.WAIT_VAP                                                                                                     ana_sm.py:57
+[01/25/26 20:45:48] INFO     [ANA-D SM] State: WAIT_VAP. Awaiting VAP results...                                                                                    ana_sm.py:273
+[01/25/26 20:45:48] INFO     New state: State.INIT                                                                                                                   ana_sm.py:79
+[01/25/26 20:45:48] INFO     Stepping from state: State.INIT                                                                                                         ana_sm.py:57
+[01/25/26 20:45:48] INFO     [ANA-D SM] State: INIT. Started Iteration: 8cdfb67dcfeb464da29e3569bf3d9eaf                                                             ana_sm.py:85
+[01/25/26 20:45:48] INFO     [ANA-D SM] Created iteration directory:                                                                                                 ana_sm.py:90
+                             /home/pst/Documents/vhl/vhl_ana/virtual_hardware_laboratary/iterations/8cdfb67dcfeb464da29e3569bf3d9eaf                                             
+[01/25/26 20:45:48] INFO     [ANA-D SM] Received VAP output.                                                                                                         ana_sm.py:92
+[01/25/26 20:45:48] INFO     New state: State.OBSERVE                                                                                                                ana_sm.py:79
+[01/25/26 20:45:48] INFO     Stepping from state: State.OBSERVE                                                                                                      ana_sm.py:57
+[01/25/26 20:45:48] INFO     [ANA-D SM] State: OBSERVE. Hash=8cdfb67dcfeb464da29e3569bf3d9eaf. Ensuring MCP Server is running...                                     ana_sm.py:98
+[01/25/26 20:45:48] INFO     [ANA-D SM] MCP Server already running on port 8000.                                                                                    ana_sm.py:157
+[01/25/26 20:45:48] INFO     [ANA-D SM] Triggering Observer Agent...                                                                                                ana_sm.py:101
+[01/25/26 20:45:48] INFO     [ANA-D SM] Awaiting commit from Observer Agent via MCP...                                                                              ana_sm.py:123
+[01/25/26 20:45:48] INFO     [ANA-D SM] Polling http://localhost:8001/mcp/commits with since=0...                                                                   ana_sm.py:204

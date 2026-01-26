@@ -3,7 +3,7 @@ import json
 import time
 import zipfile
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
 from openhands.sdk import get_logger
 from ana_worker_2.utils.object_store import MinioObjectStore
@@ -53,7 +53,8 @@ class ANA_validation_agent:
             init_data = json.loads(init_result)
         except json.JSONDecodeError:
             raise RuntimeError(f"Failed to parse VAP_init response: {init_result}")
-            
+        
+        #TODO: task id should be input to mcp server
         task_id = init_data.get("task_id")
         if not task_id:
             raise RuntimeError(f"Failed to initialize VAP: {init_result}")
@@ -94,6 +95,8 @@ class ANA_validation_agent:
 
         # 4. Once evaluation is complete, collect evaluation results
         logger.info("Step 4: Collecting evaluation results...")
+
+        #TODO: path refinement
         output_dir = os.path.join(os.getcwd(), "ana_worker_2", "results", task_id)
         os.makedirs(output_dir, exist_ok=True)
         
