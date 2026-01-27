@@ -91,7 +91,7 @@ class ObserverAgent:
     def observe(
         self,
         mode: ObserverMode,
-        iteration_hash: str,
+        iteration_dir: str,
         root_workspace: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
@@ -108,10 +108,6 @@ class ObserverAgent:
         if root_workspace is None:
             root_workspace = os.getcwd()
             
-        iteration_dir = os.path.join(root_workspace, "iterations", iteration_hash)
-        if not os.path.exists(iteration_dir):
-            raise FileNotFoundError(f"Iteration directory not found: {iteration_dir}")
-        
         # Build system prompt based on mode
         system_prompt = build_observer_system_prompt(mode)
         
@@ -138,7 +134,7 @@ class ObserverAgent:
         
         # Build user message with context
         user_message = self._build_user_message(
-            iteration_hash=iteration_hash,
+            iteration_hash=iteration_dir,
             iteration_dir=iteration_dir,
         )
         
@@ -153,7 +149,6 @@ class ObserverAgent:
         
         return {
             "mode": mode.value,
-            "iteration_hash": iteration_hash,
             "iteration_dir": iteration_dir,
         }
 
@@ -171,7 +166,6 @@ class ObserverAgent:
             "You are in observation mode.",
             "",
             "ITERATION CONTEXT:",
-            f"- Iteration Hash: {iteration_hash}",
             f"- Directory: {iteration_dir}",
             "",
             "TASK:",

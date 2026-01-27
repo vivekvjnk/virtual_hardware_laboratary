@@ -7,6 +7,7 @@ import os
 import socket
 import httpx
 import uuid
+import json
 
 from pathlib import Path
 
@@ -43,15 +44,19 @@ class ANADStateMachine:
 
         # Context/Data
         self.context: Dict[str, Any] = {}
+        self.iteration_ids: List[str] = [] # List of all iteration ids
 
         # Workspace
-        self.workspace = Path(os.getcwd()) / "ana_workspace"
+        self.workspace = Path(os.getcwd()) / "ana_workspace" / "bq79616_project"
 
         # MCP Integration
         self.mcp_process: Optional[subprocess.Popen] = None
         self.mcp_endpoint = "http://localhost:8001"
         self.last_commit_id: int = -1
         self.iteration_id: Optional[str] = None
+
+        # Setup mcp server for observer agent
+        self._ensure_mcp_server_running()
 
     def step(self, event: Optional[str] = None, data: Optional[Dict[str, Any]] = None):
         """
@@ -87,41 +92,82 @@ class ANADStateMachine:
         # Generate Iteration id (Start of new Loop)
         self.iteration_id = hex(int(time.time()))[2:]
         logger.info(f"[ANA-D SM] State: INIT. Started Iteration: {self.iteration_id}")
-        
+        # Append to iteration list
+        self.iteration_ids.append(self.iteration_id)
+
         # Create iteration folder
         iteration_dir = os.path.join(self.workspace, "iterations", self.iteration_id)
         os.makedirs(iteration_dir, exist_ok=True)
         logger.info(f"[ANA-D SM] Created iteration directory: {iteration_dir}")
-
-        logger.info("[ANA-D SM] Received VAP output.")
+        
+        # Prepare symbolic links to schematic_images/, .scud file and pin_mapping.md file
+        # These files/folders are available under self.workspace. Just create a symbolic link inside iteration directory
+        schematic_images_src = os.path.join(self.workspace, "schematic_images")
+        scud_files = [f for f in os.listdir(self.workspace) if f.endswith(".scud")]
+        pin_mapping_src = os.path.join(self.workspace, "component_pin_mapping.md")
+        if os.path.exists(schematic_images_src):
+            schematic_images_link = os.path.join(iteration_dir, "schematic_images")
+            if not os.path.exists(schematic_images_link):
+                os.symlink(schematic_images_src, schematic_images_link)
+                logger.info(f"[ANA-D SM] Created symlink for schematic_images at: {schematic_images_link}")
+        if scud_files:
+            scud_src = os.path.join(self.workspace, scud_files[0])
+            scud_link = os.path.join(iteration_dir, scud_files[0])
+            if not os.path.exists(scud_link):
+                os.symlink(scud_src, scud_link)
+                logger.info(f"[ANA-D SM] Created symlink for SCUD file at: {scud_link}")
+        if os.path.exists(pin_mapping_src):
+            pin_mapping_link = os.path.join(iteration_dir, "component_pin_mapping.md")
+            if not os.path.exists(pin_mapping_link):
+                os.symlink(pin_mapping_src, pin_mapping_link)
+                logger.info(f"[ANA-D SM] Created symlink for pin mapping at: {pin_mapping_link}")
+        
         # In a real scenario, we would load VAP output here.
         self.state = State.OBSERVE
 
     def _handle_observe(self):
         # S1 -> S2
         logger.info(f"[ANA-D SM] State: OBSERVE. Hash={self.iteration_id}. Ensuring MCP Server is running...")
-        self._ensure_mcp_server_running()
+        
 
         logger.info("[ANA-D SM] Triggering Observer Agent...")
 
-        # TODO: Implement actual agent trigger here
-        # observer_mode = ObserverMode("validation_error")
-        # iteration_hash = "dd0b27eb7ae34748b23181080a1733b8"
-        # # Create and run observer
-        # observer = ObserverAgent()
-        # try:
-        #     result = observer.observe(
-        #         mode=observer_mode,
-        #         iteration_hash=iteration_hash,
-        #     )
-        #     print("\n--- Observation Result ---")
-        #     print(json.dumps(result, indent=2))
-        # except Exception as e:
-        #     print(f"Error during observation: {e}")
-        #     logger.exception("Full stack trace:")
-        #     sys.exit(1)
-        # finally:
-        #     observer.close()
+        # Step 1: Logic to check if this is iteration 0 or not
+        #         If len of iteration_ids state variable < 2, first iteration
+        # Step 1-A: If iteration 0, go to authorize node
+        if len(self.iteration_ids) < 2:
+            logger.info("[ANA-D SM] First iteration detected. Skipping observation of previous iteration.")
+            # Directly move to AUTHORIZE
+            self.state = State.AUTHORIZE
+            return
+
+        # Step 1-B: If not iteration 0, proceed to step 2
+
+        # Step 2: Set current working directory to previous iteration directory
+        #         Get the second last element of iteration_ids state variable list,
+        #         this is the iteration id of previous iteration. iteration id is the folder name.
+        # Proceed observe logic as usual
+        previous_iteration_id = self.iteration_ids[-2]
+        previous_iteration_dir = os.path.join(self.workspace, "iterations", previous_iteration_id)
+        logger.info(f"[ANA-D SM] Changed working directory to previous iteration: {previous_iteration_dir}")
+        
+        # Agent setup
+        observer_mode = ObserverMode("validation_error")
+        # Create and run observer
+        observer = ObserverAgent()
+        try:
+            result = observer.observe(
+                mode=observer_mode,
+                iteration_dir=self.iteration_id,
+            )
+            print("\n--- Observation Result ---")
+            print(json.dumps(result, indent=2))
+        except Exception as e:
+            print(f"Error during observation: {e}")
+            logger.exception("Full stack trace:")
+            sys.exit(1)
+        finally:
+            observer.close()
 
         # For now, we assume the agent is triggered externally or will be implemented soon.
         logger.info("[ANA-D SM] Awaiting commit from Observer Agent via MCP...")
@@ -183,12 +229,14 @@ class ANADStateMachine:
         # S3 -> S4
         logger.info("[ANA-D SM] State: PREPARE_FIX. Constructing fix instruction...")
         self.state = State.TRIGGER_W1
+        return 
 
     def _handle_trigger_w1(self):
         # S4 -> S5
         logger.info(f"[ANA-D SM] State: TRIGGER_W1. Invoking ANA-W1 for iteration {self.iteration_id}...")
         self.auto_fix_count += 1
         self.state = State.WAIT_W1
+        
 
     def _handle_wait_w1(self):
         # S5 -> S6
