@@ -98,18 +98,28 @@ class ANA_validation_agent:
             
             logger.info(f"Polled status: {status_data}")
             status = status_data.get("eval_status", "unknown")
+            decision = status_data.get("decision", "N/A")
+            
+            logger.info(f"VAP decision for {task_id}: {decision}")
             logger.info(f"VAP status for {task_id}: {status}")
             
-            if status == "Success":
+            evaluation_metadata = status_data.get("metadata", {})
+
+            
+            if decision == "ACCEPT":
                 logger.info("VAP evaluation completed successfully.")
                 results = status_data.get("results")
-                evaluation_metadata = status_data.get("metadata", {})
                 break
-            elif (status == "failed") or (status == "Error"):
+            elif decision == "REJECT":
                 error_msg = status_data.get("error", "Unknown error")
-                logger.error(f"VAP evaluation failed: {error_msg}")
-                evaluation_metadata = status_data.get("metadata", {})
+                logger.warning(f"VAP evaluation failed: {error_msg}")
                 break
+            elif decision == "UNDECIDED":
+                logger.info("VAP evaluation still in progress. Continuing to poll...")
+                # Continue polling; this is the only expected case to continue polling
+            else:
+                logger.error(f"Unknown decision '{decision}' received. Continuing to poll...")
+                raise RuntimeError(f"Unknown decision '{decision}' received from VAP.")
             
             time.sleep(2)
 
@@ -152,7 +162,7 @@ class ANA_validation_agent:
         logger.info("Step 5: Process complete. Returning results to orchestrator.")
         return {
             "task_id": task_id,
-            "status": status,
+            "decision": decision,
             "results": results,
             "output_dir": output_dir,
             "downloaded_files": downloaded_files,

@@ -49,9 +49,10 @@ class ANADStateMachine:
         # Context/Data
         self.context: Dict[str, Any] = {}
         self.iteration_ids: List[str] = [] # List of all iteration ids
+        self.circuit_name: str = "bq79616_eval_board"  # Default circuit name
 
         # Workspace
-        self.workspace = Path(os.getcwd()) / "ana_workspace" / "bq79616_project"
+        self.workspace = Path(os.getcwd()) / "ana_workspace" / f"{self.circuit_name}_project"
         self.iteration_dir: str = None
 
         # MCP Integration
@@ -107,25 +108,37 @@ class ANADStateMachine:
         
         # Prepare symbolic links to schematic_images/, .scud file and pin_mapping.md file
         # These files/folders are available under self.workspace. Just create a symbolic link inside iteration directory
-        schematic_images_src = os.path.join(self.workspace, "schematic_images")
-        scud_files = [f for f in os.listdir(self.workspace) if f.endswith(".scud")]
+        schematic_images_path = os.path.join(self.workspace, "schematic_images")
+        scud_file_path = f"{self.circuit_name}.scud"
         pin_mapping_src = os.path.join(self.workspace, "component_pin_mapping.md")
-        if os.path.exists(schematic_images_src):
+        
+        
+        # This step ensures that the iteration directory has access to all necessary resources
+        # No further checks on resource availability are required anywhere else in the SM
+        # We keep this as the single source of truth for resource linking
+        if os.path.exists(schematic_images_path):
             schematic_images_link = os.path.join(self.iteration_dir, "schematic_images")
             if not os.path.exists(schematic_images_link):
-                os.symlink(schematic_images_src, schematic_images_link)
+                os.symlink(schematic_images_path, schematic_images_link)
                 logger.info(f"[ANA-D SM] Created symlink for schematic_images at: {schematic_images_link}")
-        if scud_files:
-            scud_src = os.path.join(self.workspace, scud_files[0])
-            scud_link = os.path.join(iteration_dir, scud_files[0])
-            if not os.path.exists(scud_link):
-                os.symlink(scud_src, scud_link)
-                logger.info(f"[ANA-D SM] Created symlink for SCUD file at: {scud_link}")
+        else:
+            raise FileNotFoundError(f"[ANA-D SM] Schematic images directory not found at expected location: {schematic_images_path}")
+        
+        scud_src = os.path.join(self.workspace, scud_file_path)
+        scud_link = os.path.join(self.iteration_dir, scud_file_path)
+        if not os.path.exists(scud_link):
+            os.symlink(scud_src, scud_link)
+            logger.info(f"[ANA-D SM] Created symlink for SCUD file at: {scud_link}")
+        else:
+            raise FileNotFoundError(f"[ANA-D SM] SCUD file not found at expected location: {scud_src}")
+        
         if os.path.exists(pin_mapping_src):
-            pin_mapping_link = os.path.join(iteration_dir, "component_pin_mapping.md")
+            pin_mapping_link = os.path.join(self.iteration_dir, "component_pin_mapping.md")
             if not os.path.exists(pin_mapping_link):
                 os.symlink(pin_mapping_src, pin_mapping_link)
                 logger.info(f"[ANA-D SM] Created symlink for pin mapping at: {pin_mapping_link}")
+        else:
+            raise FileNotFoundError(f"[ANA-D SM] Pin mapping file not found at expected location: {pin_mapping_src}")
         
         # In a real scenario, we would load VAP output here.
         self.state = State.OBSERVE
@@ -157,6 +170,9 @@ class ANADStateMachine:
         logger.info(f"[ANA-D SM] Changed working directory to previous iteration: {previous_iteration_dir}")
         
         # Agent setup
+        # TODO: Observer mode parameter has to travel from ANA_W2 to here
+        # For now, hardcoding to "validation_error". After validating iteration 0, design the logic to
+        # choose appropriate observer mode based on VAP decision and error class.
         observer_mode = ObserverMode("validation_error")
         # Create and run observer
         observer = ObserverAgent()
@@ -207,13 +223,28 @@ class ANADStateMachine:
         # S2 -> S3, S8, or S10
         logger.info(f"[ANA-D SM] State: AUTHORIZE. VAP={self.vap_decision}, Error={self.error_class}, Intent={self.intent_status}, FixCount={self.auto_fix_count}")
         
+        # NOTE: Source of truth for vap_decision is the output from VAP agent
+        # Source of truth for error_class and intent_status is the observation from Observer agent
+        # Priority of transitions:
+        # 1. vap_decision is high priority than observations
+        # 2. intent_status is only relevant when vap_decision is ACCEPT, error_class is only relevant when vap_decision is REJECT
+        # 3. auto_fix_count is high priority than error_class when vap_decision is REJECT. This is a fallback to avoid infinite loops.
+        # NOTE: Above priority rules are designed to reduce reliance on observation accuracy. Observer agent may mis-classify error_class or intent_status.
+        #       Hence vap_decision is given highest priority as it is directly from VAP agent
+        #       Further, auto_fix_count is given higher priority than error_class to avoid infinite loops
+        # HIL state is the safe fallback for any ambiguous or unknown situations
         if self.vap_decision == "REJECT":
+            # Error class other than mechanical goes to HIL directly
             if self.error_class == "mechanical" and self.auto_fix_count < self.max_auto_fixes:
                 logger.info("[ANA-D SM] Transitioning to PREPARE_FIX")
                 self.state = State.PREPARE_FIX
             else:
                 logger.info("[ANA-D SM] Transitioning to PREPARE_HIL")
                 self.state = State.PREPARE_HIL
+            
+            # NOTE : Temporary re-routing for testing purpose
+            self.state = State.PREPARE_FIX
+
         elif self.vap_decision == "ACCEPT":
             if self.intent_status == "satisfied":
                 logger.info("[ANA-D SM] Transitioning to EXIT_SUCCESS")
@@ -268,9 +299,9 @@ class ANADStateMachine:
             return
 
         logger.info(f"[ANA-D SM] ANA-W1 produced circuit file: {circuit_path}")
-        # NOTE: For now we don't enter into WAIT_W1 state, directly move to TRIGGER_W2
+        # NOTE: For now we don't enter into WAIT_W1 state, instead directly move to TRIGGER_W2
         # run_ana_w1_agent is blocking and will complete before moving to next state
-        # Don't find any use case for WAIT_W1 state currently.
+        # Don't find any use case for WAIT_W1 state currently
 
         # self.state = State.WAIT_W1
         self.state = State.TRIGGER_W2
@@ -297,10 +328,12 @@ class ANADStateMachine:
         except Exception as e:
             print(f"Error during validation: {e}")
             logger.exception("Full stack trace:")
-            sys.exit(1)
+            raise e
         finally:
             agent.close()
-
+        # `decision` key from result dictionary indicates VAP decision. "ACCEPT" | "REJECT" are the two possible values
+        self.vap_decision = result.get("decision")
+        logger.info(f"[ANA-D SM] VAP decision received: {self.vap_decision}")
         self.state = State.INIT
 
     # NOTE: Currently unused state
@@ -424,33 +457,13 @@ if __name__ == "__main__":
     # Simple test run
     sm = ANADStateMachine()
     
-    # Simulate a mechanical failure that gets fixed
-    sm.vap_decision = "REJECT"
-    sm.error_class = "mechanical"
     
-    logger.info("--- Starting Simulation: Mechanical Fix ---")
+    logger.info("--- Starting State Machine ---")
     while not sm.is_terminal() and sm.state != State.HIL_WAIT:
         sm.step()
-        if sm.state == State.WAIT_VAP:
-            # Simulate VAP success after fix
-            sm.step() # Move to INIT
-            sm.vap_decision = "ACCEPT"
-            sm.intent_status = "satisfied"
-            sm.error_class = "none"
+
+
     
     if sm.state == State.EXIT_SUCCESS:
         logger.info("Simulation Finished: SUCCESS")
     
-    # Simulate an ambiguous failure that goes to HIL
-    logger.info("\n--- Starting Simulation: Ambiguous HIL ---")
-    sm = ANADStateMachine()
-    sm.vap_decision = "REJECT"
-    sm.error_class = "ambiguous"
-    
-    while not sm.is_terminal() and sm.state != State.HIL_WAIT:
-        sm.step()
-    
-    if sm.state == State.HIL_WAIT:
-        logger.info("Simulation Paused: HIL_WAIT")
-        sm.step(event="human_response")
-        logger.info(f"After human response, state is: {sm.state}")

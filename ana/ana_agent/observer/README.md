@@ -108,7 +108,7 @@ The ANA-D state machine invokes the Observer in the `OBSERVE` state.
 ```python
 from ana.observer import ObserverAgent, ObserverMode
 
-observer = ObserverAgent(mcp_url="http://localhost:8000/mcp/observe")
+observer = ObserverAgent(mcp_url="http://localhost:8001/mcp/observe")
 
 observer.observe(
     mode=ObserverMode.VALIDATION_ERROR,
