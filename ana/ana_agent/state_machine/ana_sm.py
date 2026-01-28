@@ -8,11 +8,15 @@ import socket
 import httpx
 import uuid
 import json
+import sys
 
 from pathlib import Path
 
 from ana_agent.observer import ObserverAgent
 from ana_agent.observer import ObserverMode
+
+from ana_agent.ana_worker_1 import run_ana_w1_agent
+from ana_agent.ana_worker_2.agent import ANA_validation_agent
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +52,7 @@ class ANADStateMachine:
 
         # Workspace
         self.workspace = Path(os.getcwd()) / "ana_workspace" / "bq79616_project"
+        self.iteration_dir: str = None
 
         # MCP Integration
         self.mcp_process: Optional[subprocess.Popen] = None
@@ -96,9 +101,9 @@ class ANADStateMachine:
         self.iteration_ids.append(self.iteration_id)
 
         # Create iteration folder
-        iteration_dir = os.path.join(self.workspace, "iterations", self.iteration_id)
-        os.makedirs(iteration_dir, exist_ok=True)
-        logger.info(f"[ANA-D SM] Created iteration directory: {iteration_dir}")
+        self.iteration_dir = os.path.join(self.workspace, "iterations", self.iteration_id)
+        os.makedirs(self.iteration_dir, exist_ok=True)
+        logger.info(f"[ANA-D SM] Created iteration directory: {self.iteration_dir}")
         
         # Prepare symbolic links to schematic_images/, .scud file and pin_mapping.md file
         # These files/folders are available under self.workspace. Just create a symbolic link inside iteration directory
@@ -106,7 +111,7 @@ class ANADStateMachine:
         scud_files = [f for f in os.listdir(self.workspace) if f.endswith(".scud")]
         pin_mapping_src = os.path.join(self.workspace, "component_pin_mapping.md")
         if os.path.exists(schematic_images_src):
-            schematic_images_link = os.path.join(iteration_dir, "schematic_images")
+            schematic_images_link = os.path.join(self.iteration_dir, "schematic_images")
             if not os.path.exists(schematic_images_link):
                 os.symlink(schematic_images_src, schematic_images_link)
                 logger.info(f"[ANA-D SM] Created symlink for schematic_images at: {schematic_images_link}")
@@ -216,12 +221,16 @@ class ANADStateMachine:
             else:
                 logger.info("[ANA-D SM] Transitioning to PREPARE_HIL")
                 self.state = State.PREPARE_HIL
+        # Branch for the iteration 0 case
+        # Instead of checking the length of iteration_ids, we can check if vap_decision is UNDECIDED
+        # because in iteration 0, there is no prior VAP decision. 
         elif self.vap_decision == "UNDECIDED":
             logger.info("[ANA-D SM] VAP decision UNDECIDED. Very first iteration. Transitioning to TRIGGER_W1")
             self.state = State.TRIGGER_W1
+        # Default fallback
         else:
             # Default to HIL if VAP decision is unknown or missing
-            logger.info("[ANA-D SM] Unknown VAP decision. Transitioning to PREPARE_HIL")
+            logger.info(f"[ANA-D SM] Unknown VAP decision:{self.vap_decision}. Transitioning to PREPARE_HIL")
             self.state = State.PREPARE_HIL
 
 
@@ -235,9 +244,41 @@ class ANADStateMachine:
         # S4 -> S5
         logger.info(f"[ANA-D SM] State: TRIGGER_W1. Invoking ANA-W1 for iteration {self.iteration_id}...")
         self.auto_fix_count += 1
-        self.state = State.WAIT_W1
-        
+        # find scud file in iteration directory. make sure only one scud file is present
+        scud_files = [f for f in os.listdir(self.iteration_dir) if f.endswith(".scud")]
+        if not scud_files:
+            logger.error(f"[ANA-D SM] No .scud file found in iteration directory: {self.iteration_dir}")
+            self.state = State.PREPARE_HIL
+            return
+        elif len(scud_files) > 1:
+            logger.error(f"[ANA-D SM] Multiple .scud files found in iteration directory: {self.iteration_dir}. Expected only one.")
+            self.state = State.PREPARE_HIL
+            return
+        scud_path = os.path.join(self.iteration_dir, scud_files[0])
+        schematic_images_path = os.path.join(self.iteration_dir, "schematic_images")
 
+        # Call ANA-W1 agent 
+        run_ana_w1_agent(schematic_images_path=schematic_images_path, scud_path=scud_path, circuit_name=self.circuit_name)
+
+        # Inspect workspace for new circuit tsx file with self.circuit_name
+        circuit_path = os.path.join(self.iteration_dir, f"{self.circuit_name}.tsx")
+        if not os.path.exists(circuit_path):
+            logger.error(f"[ANA-D SM] ANA-W1 did not produce expected circuit file: {circuit_path}")
+            self.state = State.PREPARE_HIL
+            return
+
+        logger.info(f"[ANA-D SM] ANA-W1 produced circuit file: {circuit_path}")
+        # NOTE: For now we don't enter into WAIT_W1 state, directly move to TRIGGER_W2
+        # run_ana_w1_agent is blocking and will complete before moving to next state
+        # Don't find any use case for WAIT_W1 state currently.
+
+        # self.state = State.WAIT_W1
+        self.state = State.TRIGGER_W2
+        
+        # ASSUMPTION: Now iteration directory will have circuit tsx files from ANA-W1
+        return
+    
+    # NOTE: Currently unused state
     def _handle_wait_w1(self):
         # S5 -> S6
         logger.info("[ANA-D SM] State: WAIT_W1. Awaiting ANA-W1 output...")
@@ -247,8 +288,22 @@ class ANADStateMachine:
     def _handle_trigger_w2(self):
         # S6 -> S7
         logger.info(f"[ANA-D SM] State: TRIGGER_W2. Invoking VHL-VAP for iteration {self.iteration_id}...")
-        self.state = State.WAIT_VAP
 
+        agent = ANA_validation_agent()
+        try:
+            result = agent.validate_circuit(self.circuit_name, workspace=self.iteration_dir)
+            print("\n--- Evaluation Results ---")
+            print(json.dumps(result, indent=2))
+        except Exception as e:
+            print(f"Error during validation: {e}")
+            logger.exception("Full stack trace:")
+            sys.exit(1)
+        finally:
+            agent.close()
+
+        self.state = State.INIT
+
+    # NOTE: Currently unused state
     def _handle_wait_vap(self):
         # S7 -> S0
         logger.info("[ANA-D SM] State: WAIT_VAP. Awaiting VAP results...")

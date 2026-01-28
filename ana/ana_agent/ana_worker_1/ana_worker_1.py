@@ -119,7 +119,7 @@ conversation.set_security_analyzer(LLMSecurityAnalyzer())
 
 logger.info("ANA Agent initialized successfully.")
 
-def process_scud(scud_path: str, schematic_images_path: str = None, tsckt_op_manual_path: str = None):
+def run_ana_w1_agent(scud_path: str, schematic_images_path: str = None,circuit_name: str = None):
     """
     Process a SCUD file and analyze its components.
     
@@ -135,9 +135,10 @@ def process_scud(scud_path: str, schematic_images_path: str = None, tsckt_op_man
         user_message += f"You can refer to schematic images located at '{schematic_images_path}' for visual clarification. You can use file_editor tool to view these images as needed."
 
     
-    user_message += "Refer ana/resources/component_pin_mapping.md for component pin mapping information if needed."
+    user_message += "Refer component_pin_mapping.md for component pin mapping information if needed."
     
-    user_message += "You can use ana/output directory to store any output files you generate during the task."
+    user_message += "You should generate and store tsx circuit file in the workspace directory."
+    user_message += f"Ensure the circuit file is named '{circuit_name}.tsx'." if circuit_name else "Ensure the circuit file is named appropriately with a .tsx extension."
     conversation.send_message(user_message)
     conversation.run()
     
@@ -148,5 +149,4 @@ def process_scud(scud_path: str, schematic_images_path: str = None, tsckt_op_man
 if __name__ == "__main__":
     scud_path = os.path.join(submodule_root, "resources/bq79616_eval_board.scud")
     schematic_images_path = os.path.join(submodule_root, "resources/schematic_images")
-    tsckt_op_manual_path = os.path.join(submodule_root, "resources/tscircuit_operation_manual.md")
     # process_scud(scud_path, schematic_images_path, tsckt_op_manual_path)
