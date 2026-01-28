@@ -6,8 +6,8 @@ import logging
 from typing import Dict, Any
 
 from openhands.sdk import get_logger
-from ana_worker_2.utils.object_store import MinioObjectStore
-from ana_worker_2.utils.mcp_utils import MCPInvoker
+from ana_agent.ana_worker_2.utils.object_store import MinioObjectStore
+from ana_agent.ana_worker_2.utils.mcp_utils import MCPInvoker
 
 # Configure logger
 logger = get_logger(__name__)
