@@ -220,8 +220,9 @@ class ANADStateMachine:
             schematic_images_path = os.path.join(self.iteration_manager.current_iteration_dir, "schematic_images")
             
             run_ana_w1_agent(
-                schematic_images_path=schematic_images_path, 
-                scud_path=scud_path, 
+                workspace=str(self.iteration_manager.current_iteration_dir),
+                schematic_images_path=schematic_images_path,
+                scud_path=scud_path,
                 circuit_name=self.circuit_name
             )
 

@@ -80,7 +80,7 @@ Example:
 Components defined elsewhere (e.g., ICs or reusable blocks) may be imported and instantiated.
 
 ```tsx
-import { ControllerIC } from "./lib/ControllerIC"
+import { ControllerIC } from "./lib/imports/ControllerIC"
 
 <ControllerIC name="U1" />
 ```
@@ -260,32 +260,100 @@ export default () => {
 
 | Element                           | Description               |
 | --------------------------------- | ------------------------- |
-| [`<battery />`](skills/tsci_built_in_elements/tsci_built_in_elements/battery.md) | A power source that provides electrical energy through electrochemical reactions. |
-| [`<breakout />`](skills/tsci_built_in_elements/tsci_built_in_elements/breakout.md) | A container used to guide the autorouter on where connections should exit a group. |
-| [`<breakoutpoint />`](skills/tsci_built_in_elements/tsci_built_in_elements/breakoutpoint.md) | Marks the XY coordinate that the autorouter should use when connecting a net or pin inside a breakout. |
-| [`<cadassembly />`](skills/tsci_built_in_elements/tsci_built_in_elements/cadassembly.md) | Used to put together the 3D models of a component when multiple models are used. |
-| [`<cadmodel />`](skills/tsci_built_in_elements/tsci_built_in_elements/cadmodel.md) | Used to display a 3D model of a component. |
-| [`<capacitor />`](skills/tsci_built_in_elements/tsci_built_in_elements/capacitor.md) | Stores electrical energy in an electric field, used for filtering, energy storage, and timing. |
-| [`<copperpour />`](skills/tsci_built_in_elements/tsci_built_in_elements/copperpour.md) | Creates a copper pour (groundplane) connected to a specific net to improve signal integrity. |
-| [`<crystal />`](skills/tsci_built_in_elements/tsci_built_in_elements/crystal.md) | Provides a stable clock signal essential for timing applications and microcontroller operations. |
-| [`<cutout />`](skills/tsci_built_in_elements/tsci_built_in_elements/cutout.md) | Removes material from a board outline to add interior slots, mounting reliefs, or custom shapes. |
-| [`<diode />`](skills/tsci_built_in_elements/tsci_built_in_elements/diode.md) | Semiconductor device that allows current to flow primarily in one direction. |
-| [`<footprint />`](skills/tsci_built_in_elements/tsci_built_in_elements/footprint.md) | Defines PCB elements like plated holes or SMT pads for a component. |
-| [`<fuse />`](skills/tsci_built_in_elements/tsci_built_in_elements/fuse.md) | A safety device that protects electrical circuits by interrupting current flow when it exceeds a threshold. |
-| [`<group />`](skills/tsci_built_in_elements/tsci_built_in_elements/group.md) | Basic container element used for structural organization and layout of other elements. |
-| [`<hole />`](skills/tsci_built_in_elements/tsci_built_in_elements/hole.md) | Used for mechanical mounting on the PCB; does not have conductive properties. |
-| [`<inductor />`](skills/tsci_built_in_elements/tsci_built_in_elements/inductor.md) | Stores electrical energy in a magnetic field, used in filters, oscillators, and power supplies. |
-| [`<jumper />`](skills/tsci_built_in_elements/tsci_built_in_elements/jumper.md) | Represents a small multi-pin connector, commonly a male or female header. Use `footprint` property to select the right number of pins(eg: `footprint="pinrow4"`) |
-| [`<led />`](skills/tsci_built_in_elements/tsci_built_in_elements/led.md) | Light-emitting diode that emits light when forward current flows through it. |
-| [`<mosfet />`](skills/tsci_built_in_elements/tsci_built_in_elements/mosfet.md) | A type of transistor used to control the flow of current in a circuit. |
-| [`<net />`](skills/tsci_built_in_elements/tsci_built_in_elements/net.md) | Represents a group of connected traces, typically used for power buses and ground. |
-| [`<resistor />`](skills/tsci_built_in_elements/tsci_built_in_elements/resistor.md) | A two-pin non-polar component that resists the flow of electricity. |
-| [`<solderjumper />`](skills/tsci_built_in_elements/tsci_built_in_elements/solderjumper.md) | A tiny jumper made from exposed pads on the PCB that can be bridged or cut. |
-| [`<switch />`](skills/tsci_built_in_elements/tsci_built_in_elements/switch.md) | A mechanical component used to connect or disconnect parts of a circuit. |
-| [`<testpoint />`](skills/tsci_built_in_elements/tsci_built_in_elements/testpoint.md) | A designated location on a PCB for testing, debugging, and measuring electrical signals. |
-| [`<trace />`](skills/tsci_built_in_elements/tsci_built_in_elements/trace.md) | Represents an electrical connection between two or more points in a circuit. |
-| [`<transistor />`](skills/tsci_built_in_elements/tsci_built_in_elements/transistor.md) | A three-terminal semiconductor device used to amplify or switch electronic signals. |
-| [`<via />`](skills/tsci_built_in_elements/tsci_built_in_elements/via.md) | A plated hole that electrically connects different layers of a PCB. |
+| [`<battery />`](tsci_built_in_elements/battery.md) | A power source that provides electrical energy through electrochemical reactions. |
+| [`<breakout />`](tsci_built_in_elements/breakout.md) | A container used to guide the autorouter on where connections should exit a group. |
+| [`<breakoutpoint />`](tsci_built_in_elements/breakoutpoint.md) | Marks the XY coordinate that the autorouter should use when connecting a net or pin inside a breakout. |
+| [`<cadassembly />`](tsci_built_in_elements/cadassembly.md) | Used to put together the 3D models of a component when multiple models are used. |
+| [`<cadmodel />`](tsci_built_in_elements/cadmodel.md) | Used to display a 3D model of a component. |
+| [`<capacitor />`](tsci_built_in_elements/capacitor.md) | Stores electrical energy in an electric field, used for filtering, energy storage, and timing. |
+| [`<copperpour />`](tsci_built_in_elements/copperpour.md) | Creates a copper pour (groundplane) connected to a specific net to improve signal integrity. |
+| [`<crystal />`](tsci_built_in_elements/crystal.md) | Provides a stable clock signal essential for timing applications and microcontroller operations. |
+| [`<cutout />`](tsci_built_in_elements/cutout.md) | Removes material from a board outline to add interior slots, mounting reliefs, or custom shapes. |
+| [`<diode />`](tsci_built_in_elements/diode.md) | Semiconductor device that allows current to flow primarily in one direction. |
+| [`<footprint />`](tsci_built_in_elements/footprint.md) | Defines PCB elements like plated holes or SMT pads for a component. |
+| [`<fuse />`](tsci_built_in_elements/fuse.md) | A safety device that protects electrical circuits by interrupting current flow when it exceeds a threshold. |
+| [`<group />`](tsci_built_in_elements/group.md) | Basic container element used for structural organization and layout of other elements. |
+| [`<hole />`](tsci_built_in_elements/hole.md) | Used for mechanical mounting on the PCB; does not have conductive properties. |
+| [`<inductor />`](tsci_built_in_elements/inductor.md) | Stores electrical energy in a magnetic field, used in filters, oscillators, and power supplies. |
+| [`<jumper />`](tsci_built_in_elements/jumper.md) | Represents a small multi-pin connector, commonly a male or female header. Use `footprint` property to select the right number of pins(eg: `footprint="pinrow4"`) |
+| [`<led />`](tsci_built_in_elements/led.md) | Light-emitting diode that emits light when forward current flows through it. |
+| [`<mosfet />`](tsci_built_in_elements/mosfet.md) | A type of transistor used to control the flow of current in a circuit. |
+| [`<net />`](tsci_built_in_elements/net.md) | Represents a group of connected traces, typically used for power buses and ground. |
+| [`<resistor />`](tsci_built_in_elements/resistor.md) | A two-pin non-polar component that resists the flow of electricity. |
+| [`<solderjumper />`](tsci_built_in_elements/solderjumper.md) | A tiny jumper made from exposed pads on the PCB that can be bridged or cut. |
+| [`<switch />`](tsci_built_in_elements/switch.md) | A mechanical component used to connect or disconnect parts of a circuit. |
+| [`<testpoint />`](tsci_built_in_elements/testpoint.md) | A designated location on a PCB for testing, debugging, and measuring electrical signals. |
+| [`<trace />`](tsci_built_in_elements/trace.md) | Represents an electrical connection between two or more points in a circuit. |
+| [`<transistor />`](tsci_built_in_elements/transistor.md) | A three-terminal semiconductor device used to amplify or switch electronic signals. |
+| [`<via />`](tsci_built_in_elements/via.md) | A plated hole that electrically connects different layers of a PCB. |
 
 Please refer to the individual markdown files for more details on each component.
 
+## 9. Importing Local Library Components
+
+This section describes **how to import existing local component libraries** into a `tscircuit` circuit file.
+These components are **already defined** as `.tsx` modules and reside in the project’s local library directory.
+
+> ANA agents **must never redefine components**.
+> If a component exists in the local library, it **must be imported and instantiated**, not recreated.
+
+---
+
+### Library Location Convention
+
+All locally available component libraries are stored under:
+
+```text
+./lib/imports/
+```
+
+Each component is defined in its own `.tsx` file and exposes **exactly one exported component**.
+
+---
+
+### Import Syntax
+
+Use standard TypeScript import syntax with a **relative path**:
+
+```ts
+import { LM555 } from "./lib/imports/LM555"
+```
+
+Multiple components may be imported as needed:
+
+```ts
+import { LM555 } from "./lib/imports/LM555"
+import { IR2110 } from "./lib/imports/IR2110"
+import { IRFZ44N } from "./lib/imports/IRFZ44N"
+```
+
+---
+
+### Instantiating Imported Components
+
+Once imported, components are instantiated like any other `tscircuit` element.
+
+Example:
+
+```tsx
+<LM555 name="U1" />
+<IR2110 name="U2" />
+<IRFZ44N name="Q1" />
+```
+
+**Rules:**
+
+* The `name` prop is mandatory
+* Imported components are treated as **black boxes**
+* Internal pin mappings must not be inferred or modified
+
+---
+
+### Interaction with Built-in Primitives
+
+Imported components may coexist with built-in primitives:
+
+```tsx
+<resistor name="R1" resistance="10k" footprint="0603" />
+<BZX84C24 name="D1" />
+```

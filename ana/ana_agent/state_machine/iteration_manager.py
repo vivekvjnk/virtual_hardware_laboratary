@@ -32,6 +32,13 @@ class IterationManager:
         scud_file_name = f"{self.circuit_name}.scud"
         pin_mapping_src = os.path.join(self.workspace, "component_pin_mapping.md")
         
+        tsci_built_in_elements = os.path.join(self.workspace, "tsci_built_in_elements")
+        if os.path.exists(tsci_built_in_elements):
+            tsci_link = os.path.join(self.current_iteration_dir, "tsci_built_in_elements")
+            if not os.path.exists(tsci_link):
+                os.symlink(tsci_built_in_elements, tsci_link)
+                logger.info(f"[Iteration Manager] Created symlink for TSCI built-in elements")
+                
         # Link Schematic Images
         if os.path.exists(schematic_images_path):
             schematic_images_link = os.path.join(self.current_iteration_dir, "schematic_images")

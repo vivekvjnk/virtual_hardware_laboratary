@@ -109,17 +109,9 @@ def conversation_callback(event: Event):
     if isinstance(event, LLMConvertibleEvent):
         llm_messages.append(event.to_llm_message())
 
-# Initialize Conversation
-conversation = Conversation(
-    agent=agent,
-    callbacks=[conversation_callback],
-    workspace=cwd,
-)
-conversation.set_security_analyzer(LLMSecurityAnalyzer())
-
 logger.info("ANA Agent initialized successfully.")
 
-def run_ana_w1_agent(scud_path: str, schematic_images_path: str = None,circuit_name: str = None):
+def run_ana_w1_agent(workspace:str,scud_path: str, schematic_images_path: str = None,circuit_name: str = None):
     """
     Process a SCUD file and analyze its components.
     
@@ -128,6 +120,15 @@ def run_ana_w1_agent(scud_path: str, schematic_images_path: str = None,circuit_n
         schematic_images_path: Path to schematic images directory (optional)
     """
     logger.info(f"Starting conversation with SCUD: {scud_path}")
+    
+    # Initialize Conversation
+    conversation = Conversation(
+        agent=agent,
+        callbacks=[conversation_callback],
+        workspace=workspace,
+    )
+    conversation.set_security_analyzer(LLMSecurityAnalyzer())
+
     user_message = (
         f"Please process the SCUD file located at '{scud_path}'."
     )
