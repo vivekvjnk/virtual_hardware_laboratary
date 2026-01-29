@@ -42,11 +42,25 @@ class ANADStateMachine:
             "from_state_id": None
         }
 
-        # Setup
+        # State Transition Table
+        self.transition_table = {
+            State.INIT: State.OBSERVE,
+            State.OBSERVE: State.AUTHORIZE,
+            State.PREPARE_FIX: State.TRIGGER_W1,
+            State.TRIGGER_W1: State.TRIGGER_W2,
+            State.WAIT_W1: State.TRIGGER_W2,
+            State.TRIGGER_W2: State.INIT,
+            State.WAIT_VAP: State.INIT,
+            State.PREPARE_HIL: State.HIL_WAIT,
+            # HIL_WAIT defaults to itself if no proposal (waiting for input)
+            State.HIL_WAIT: State.HIL_WAIT
+        }
+
+        # MCP Setup
         self.mcp_manager.ensure_server_running()
 
     def step(self, event: Optional[str] = None, data: Optional[Dict[str, Any]] = None):
-        """Executes one step of the state machine using message passing."""
+        """Executes one step of the state machine using message passing framework."""
         logger.info(f"Stepping from state: {self.state}")
         
         # Inject external inputs into current message
@@ -73,26 +87,44 @@ class ANADStateMachine:
             logger.error(f"No handler for state: {self.state}")
             return
 
-        # Execute handler and get next message
-        # Each handler is responsible for returning a dictionary with at least "state_id"
-        next_message = handler(self.current_message)
+        # Execute handler and get result message describing the CURRENT node's execution
+        # Handlers must return their own state_id as per user instruction
+        result_message = handler(self.current_message)
         
-        # Ensure we capture transition metadata
+        # Explicit logic to decide the transition
+        next_state = self._get_next_state(self.state, result_message)
+        
+        # Prepare the message for the next state
+        next_message = result_message.copy()
         next_message["from_state_id"] = self.state
+        next_message["state_id"] = next_state
         
-        # Update global/internal state for backward compatibility and logging
-        self.state = next_message["state_id"]
+        # Remove proposal once it has been processed
+        next_message.pop("proposed_next_state", None)
+
+        # Update global/internal state
+        self.state = next_state
         self.current_message = next_message
         
-        logger.info(f"New state: {self.state} (Triggered by: {next_message['from_state_id']})")
+        logger.info(f"New state: {self.state} (Triggered from: {next_message['from_state_id']})")
+
+    def _get_next_state(self, current_state: State, message: Dict[str, Any]) -> State:
+        """Determines the next state. Gives preference to proposed_next_state if present."""
+        
+        # 1. Check if the node proposed a specific next state
+        if "proposed_next_state" in message:
+            return message["proposed_next_state"]
+        
+        # 2. Default explicit transitions logic
+        return self.transition_table.get(current_state, current_state)
 
     def _handle_init(self, message: Dict[str, Any]) -> Dict[str, Any]:
         iteration_id = hex(int(time.time()))[2:]
         self.iteration_manager.start_new_iteration(iteration_id)
         
-        # Return new message for the next node
+        # Return current state and data; transition logic is now in step()
         return {
-            "state_id": State.OBSERVE,
+            "state_id": State.INIT,
             "iteration_id": iteration_id
         }
 
@@ -101,7 +133,7 @@ class ANADStateMachine:
         
         if len(self.iteration_manager.iteration_ids) < 2:
             logger.info("[ANA-D SM] First iteration. Skipping observation.")
-            return {"state_id": State.AUTHORIZE}
+            return {"state_id": State.OBSERVE}
 
         previous_dir = self.iteration_manager.get_previous_iteration_dir()
         logger.info(f"[ANA-D SM] Observing previous iteration: {previous_dir}")
@@ -122,7 +154,7 @@ class ANADStateMachine:
         logger.info("[ANA-D SM] Awaiting commit from Observer Agent via MCP...")
         observation = self.mcp_manager.poll_for_observation()
 
-        next_msg = {"state_id": State.AUTHORIZE}
+        result_msg = {"state_id": State.OBSERVE}
         if observation:
             payload = observation["message"]["payload"]
             issue_kind = payload.get("issue_kind", "UNKNOWN")
@@ -133,48 +165,51 @@ class ANADStateMachine:
                 "INTENT_MISMATCH": "ambiguous",
                 "NONE": "satisfied"
             }
-            # Still updating instance variables to preserve logic as requested
             self.intent_status = mapping.get(issue_kind, "ambiguous")
             self.observation = observation
             
             # Enrich message
-            next_msg.update({
+            result_msg.update({
                 "intent_status": self.intent_status,
                 "observation": observation
             })
             logger.info(f"[ANA-D SM] Observation: intent_status={self.intent_status}")
         
-        return next_msg
+        return result_msg
 
     def _handle_authorize(self, message: Dict[str, Any]) -> Dict[str, Any]:
         logger.info(f"[ANA-D SM] State: AUTHORIZE. VAP={self.vap_decision}, Error={self.error_class}, Intent={self.intent_status}")
         logger.info(f"[ANA-D SM] Triggered by: {message.get('from_state_id')}")
 
-        next_state = State.PREPARE_HIL # Default fallback
+        # Propose next state based on logic
+        proposed_next = State.PREPARE_HIL 
 
         if self.vap_decision == "REJECT":
             if self.error_class == "mechanical" and self.auto_fix_count < self.max_auto_fixes:
-                next_state = State.PREPARE_FIX
+                proposed_next = State.PREPARE_FIX
             else:
-                next_state = State.PREPARE_HIL
+                proposed_next = State.PREPARE_HIL
             
             # NOTE : Temporary re-routing for testing purpose (Matches original code)
-            next_state = State.PREPARE_FIX
+            proposed_next = State.PREPARE_FIX
 
         elif self.vap_decision == "ACCEPT":
             if self.intent_status == "satisfied":
-                next_state = State.EXIT_SUCCESS
+                proposed_next = State.EXIT_SUCCESS
             else:
-                next_state = State.PREPARE_HIL
+                proposed_next = State.PREPARE_HIL
 
         elif self.vap_decision == "UNDECIDED":
-            next_state = State.TRIGGER_W1
+            proposed_next = State.TRIGGER_W1
         
-        return {"state_id": next_state}
+        return {
+            "state_id": State.AUTHORIZE,
+            "proposed_next_state": proposed_next
+        }
 
     def _handle_prepare_fix(self, message: Dict[str, Any]) -> Dict[str, Any]:
         logger.info("[ANA-D SM] State: PREPARE_FIX. Constructing fix instruction...")
-        return {"state_id": State.TRIGGER_W1}
+        return {"state_id": State.PREPARE_FIX}
 
     def _handle_trigger_w1(self, message: Dict[str, Any]) -> Dict[str, Any]:
         logger.info(f"[ANA-D SM] State: TRIGGER_W1. Invoking ANA-W1...")
@@ -192,15 +227,21 @@ class ANADStateMachine:
 
             if not os.path.exists(self.iteration_manager.get_circuit_tsx_path()):
                 logger.error(f"[ANA-D SM] ANA-W1 did not produce circuit file")
-                return {"state_id": State.PREPARE_HIL}
+                return {
+                    "state_id": State.TRIGGER_W1,
+                    "proposed_next_state": State.PREPARE_HIL
+                }
 
-            return {"state_id": State.TRIGGER_W2}
+            return {"state_id": State.TRIGGER_W1}
         except Exception as e:
             logger.error(f"Error in TRIGGER_W1: {e}")
-            return {"state_id": State.PREPARE_HIL}
+            return {
+                "state_id": State.TRIGGER_W1,
+                "proposed_next_state": State.PREPARE_HIL
+            }
 
     def _handle_wait_w1(self, message: Dict[str, Any]) -> Dict[str, Any]:
-        return {"state_id": State.TRIGGER_W2}
+        return {"state_id": State.WAIT_W1}
 
     def _handle_trigger_w2(self, message: Dict[str, Any]) -> Dict[str, Any]:
         logger.info(f"[ANA-D SM] State: TRIGGER_W2. Invoking VHL-VAP...")
@@ -212,7 +253,7 @@ class ANADStateMachine:
             )
             self.vap_decision = result.get("decision")
             logger.info(f"[ANA-D SM] VAP decision: {self.vap_decision}")
-            return {"state_id": State.INIT}
+            return {"state_id": State.TRIGGER_W2}
         except Exception as e:
             logger.exception(f"Error during validation: {e}")
             raise e
@@ -220,11 +261,11 @@ class ANADStateMachine:
             agent.close()
 
     def _handle_wait_vap(self, message: Dict[str, Any]) -> Dict[str, Any]:
-        return {"state_id": State.INIT}
+        return {"state_id": State.WAIT_VAP}
 
     def _handle_prepare_hil(self, message: Dict[str, Any]) -> Dict[str, Any]:
         logger.info("[ANA-D SM] State: PREPARE_HIL. Escalating to human...")
-        return {"state_id": State.HIL_WAIT}
+        return {"state_id": State.PREPARE_HIL}
 
     def _handle_hil_wait(self, message: Dict[str, Any]) -> Dict[str, Any]:
         logger.info("[ANA-D SM] State: HIL_WAIT. Awaiting human authority...")
@@ -234,10 +275,16 @@ class ANADStateMachine:
         
         if event == "human_response":
             logger.info("[ANA-D SM] Human responded. Transitioning to INIT.")
-            return {"state_id": State.INIT}
+            return {
+                "state_id": State.HIL_WAIT,
+                "proposed_next_state": State.INIT
+            }
         elif event == "abort":
             logger.info("[ANA-D SM] Process aborted by human. Transitioning to EXIT_ABORT.")
-            return {"state_id": State.EXIT_ABORT}
+            return {
+                "state_id": State.HIL_WAIT,
+                "proposed_next_state": State.EXIT_ABORT
+            }
         
         return {"state_id": State.HIL_WAIT}
 
