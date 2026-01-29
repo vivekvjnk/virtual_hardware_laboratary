@@ -92,7 +92,6 @@ class ObserverAgent:
         self,
         mode: ObserverMode,
         iteration_dir: str,
-        root_workspace: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Execute an observation based on the given mode and iteration context.
@@ -105,9 +104,7 @@ class ObserverAgent:
         Returns:
             Dict containing the observation result and metadata
         """
-        if root_workspace is None:
-            root_workspace = os.getcwd()
-            
+
         # Build system prompt based on mode
         system_prompt = build_observer_system_prompt(mode)
         
@@ -134,7 +131,6 @@ class ObserverAgent:
         
         # Build user message with context
         user_message = self._build_user_message(
-            iteration_hash=iteration_dir,
             iteration_dir=iteration_dir,
         )
         
@@ -154,7 +150,6 @@ class ObserverAgent:
 
     def _build_user_message(
             self,
-            iteration_hash: str,
             iteration_dir: str,
         ) -> str:
         """
@@ -163,14 +158,12 @@ class ObserverAgent:
         """
 
         message_parts = [
-            "You are in observation mode.",
-            "",
-            "ITERATION CONTEXT:",
-            f"- Directory: {iteration_dir}",
+            "CONTEXT:",
+            f"- Iteration Directory: {iteration_dir}",
             "",
             "TASK:",
-            "- Analyze the artifacts in the iteration directory.",
-            "- Commit exactly one observation using the commit_observation tool.",
+            "- Analyze the artifacts in the 'iteration directory'.",
+            "- Commit exactly one observation using the 'commit_observation' tool.",
         ]
         return "\n".join(message_parts)
 

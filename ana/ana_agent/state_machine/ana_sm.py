@@ -179,7 +179,7 @@ class ANADStateMachine:
         try:
             result = observer.observe(
                 mode=observer_mode,
-                iteration_dir=self.iteration_id,
+                iteration_dir=previous_iteration_dir,
             )
             print("\n--- Observation Result ---")
             print(json.dumps(result, indent=2))

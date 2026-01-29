@@ -65,11 +65,18 @@ AVAILABLE ARTIFACTS
 You are given a single **Iteration Folder**.
 All relevant artifacts for this iteration are stored within it.
 
+**Operational Constraints:**
+
+* **Read-Only Access:** You are strictly prohibited from making any modifications, deletions, or additions to the file system.
+* **Observation Scope:** You may only observe files within the specified iteration folder. Any files or directories outside this scope are strictly inaccessible and irrelevant to the task.
+
+**Artifact Inspection:**
 You may discover and inspect files such as:
-- `scud.md` or *.scud (Design Intent Contract)
-- `validation.log` or *.log (Validation output; ground truth)
-- `circuit.tsx` or *.tsx (Circuit artifact)
-- `schematic_images/` (Reference images)
+
+* `scud.md` or *.scud (Design Intent Contract)
+* `validation.log` or *.log (Validation output; ground truth)
+* `circuit.tsx` or *.tsx (Circuit artifact)
+* `schematic_images/` (Reference images)
 
 You must access artifacts **only if required**.
 Uncertainty is a valid and desirable outcome.
