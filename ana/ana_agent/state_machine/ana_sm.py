@@ -10,9 +10,9 @@ from ana_agent.observer import ObserverAgent, ObserverMode
 from ana_agent.ana_worker_1 import run_ana_w1_agent
 from ana_agent.ana_worker_2.agent import ANA_validation_agent
 
-from .states import State
-from .mcp_manager import MCPManager
-from .iteration_manager import IterationManager
+from ana_agent.state_machine.states import State
+from ana_agent.state_machine.mcp_manager import MCPManager
+from ana_agent.state_machine.iteration_manager import IterationManager
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,8 @@ class ANADStateMachine:
         self.current_message: Dict[str, Any] = {
             "state_id": State.INIT,
             "from_state_id": None,
-            "auto_fix_count": 0
+            "auto_fix_count": 0,
+            "observations": []
         }
 
         # State Transition Table
@@ -119,7 +120,7 @@ class ANADStateMachine:
         return self.transition_table.get(current_state, current_state)
 
     def _handle_init(self, message: Dict[str, Any]) -> Dict[str, Any]:
-        logger.info(f"[ANA-D SM] State: INIT. Triggered from: {message.get('from_state_id')}")
+        logger.info(f"[ANA-D SM] State: INIT. Triggered from: {message.get('from_state_id')}\n{"*"*30}\n{message}\n{"*"*30}")
         result_msg = message.copy()
         
         iteration_id = hex(int(time.time()))[2:]
@@ -132,15 +133,12 @@ class ANADStateMachine:
         })
         
         # Clear states from previous iteration
-        result_msg.pop("vap_decision", None)
-        result_msg.pop("intent_status", None)
-        result_msg.pop("observation", None)
-        result_msg.pop("error_class", None)
+        # NOTE: We don't clear states here. Instead we should do it from the authorize node
         
         return result_msg
 
     def _handle_observe(self, message: Dict[str, Any]) -> Dict[str, Any]:
-        logger.info(f"[ANA-D SM] State: OBSERVE. Triggered from: {message.get('from_state_id')}")
+        logger.info(f"[ANA-D SM] State: OBSERVE. Triggered from: {message.get('from_state_id')}\n{"*"*30}\n{message}\n{"*"*30}")
         result_msg = message.copy()
         result_msg["state_id"] = State.OBSERVE
         
@@ -157,19 +155,20 @@ class ANADStateMachine:
                 mode=ObserverMode("validation_error"),
                 iteration_dir=previous_dir,
             )
-            logger.info(f"Observation Result: {json.dumps(result, indent=2)}")
+            logger.info(f"[ANA-D SM] Observation Result: {json.dumps(result, indent=2)}")
         except Exception as e:
             logger.exception(f"Error during observation: {e}")
             sys.exit(1)
         finally:
             observer.close()
-
+        
         logger.info("[ANA-D SM] Awaiting commit from Observer Agent via MCP...")
-        observation = self.mcp_manager.poll_for_observation()
+        observation_mcp = self.mcp_manager.poll_for_observation()
 
-        if observation:
-            payload = observation["message"]["payload"]
+        if observation_mcp:
+            payload = observation_mcp["message"]["payload"]
             issue_kind = payload.get("issue_kind", "UNKNOWN")
+            notes = payload.get("notes", "")
             
             mapping = {
                 "LOCAL": "violated",
@@ -178,21 +177,30 @@ class ANADStateMachine:
                 "NONE": "satisfied"
             }
             intent_status = mapping.get(issue_kind, "ambiguous")
+            error_class = issue_kind
+            # Create simple string observation
+            observation_str =  notes if notes else f"[{issue_kind}]"
             
-            # Enrich message - OBSERVE handler is responsible for setting/clearing its data
+            # Update observations list
+            observations = result_msg.get("observations", [])
+            observations.append(observation_str)
+            
+            # Enrich message
             result_msg.update({
                 "intent_status": intent_status,
-                "observation": observation
+                "observations": observations,
+                "error_class" : error_class
             })
-            logger.info(f"[ANA-D SM] Observation: intent_status={intent_status}")
+            logger.info(f"[ANA-D SM] Added observation: {observation_str}")
         else:
-            # Clear if not found
+            # Clear status if no observation found
             result_msg.pop("intent_status", None)
-            result_msg.pop("observation", None)
         
         return result_msg
 
     def _handle_authorize(self, message: Dict[str, Any]) -> Dict[str, Any]:
+        logger.info(f"[ANA-D SM] State: AUTHORIZE. Triggered from: {message.get('from_state_id')}\n{"*"*30}\n{message}\n{"*"*30}")
+        
         result_msg = message.copy()
         result_msg["state_id"] = State.AUTHORIZE
         
@@ -208,7 +216,7 @@ class ANADStateMachine:
         proposed_next = State.PREPARE_HIL 
 
         if vap_decision == "REJECT":
-            if error_class == "mechanical" and auto_fix_count < self.max_auto_fixes:
+            if error_class == "LOCAL" and auto_fix_count < self.max_auto_fixes:
                 proposed_next = State.PREPARE_FIX
             else:
                 proposed_next = State.PREPARE_HIL
@@ -222,16 +230,25 @@ class ANADStateMachine:
         elif vap_decision == "UNDECIDED":
             proposed_next = State.TRIGGER_W1
         
+        # Clear control state variables. They are consumed here in authorize
+        result_msg.pop("vap_decision", None)
+        result_msg.pop("intent_status", None)
+        result_msg.pop("error_class", None)
+        
+        
         result_msg["proposed_next_state"] = proposed_next
         return result_msg
 
     def _handle_prepare_fix(self, message: Dict[str, Any]) -> Dict[str, Any]:
-        logger.info("[ANA-D SM] State: PREPARE_FIX. Constructing fix instruction...")
+        logger.info(f"[ANA-D SM] State: PREPARE_FIX. Triggered from: {message.get('from_state_id')}\n{"*"*30}\n{message}\n{"*"*30}")
+        
         result_msg = message.copy()
         result_msg["state_id"] = State.PREPARE_FIX
         return result_msg
 
     def _handle_trigger_w1(self, message: Dict[str, Any]) -> Dict[str, Any]:
+        logger.info(f"[ANA-D SM] State: TRIGGER_W1. Triggered from: {message.get('from_state_id')}\n{"*"*30}\n{message}\n{"*"*30}")
+        
         # If last state is not PREPARE_FIX, ANA-W1 is in error correction mode
         # In this mode, ANA-W1 should use different system prompt. 
         # Previous iteration artefacts, specifically evaluation results and circuit tsx file, should be made available.
@@ -253,6 +270,7 @@ class ANADStateMachine:
             # NOTE: Branching logic based on previous state
             # Any path other than from PREPARE_FIX means synthesis mode
             # system prompt selection and previous artefact usage is handled inside run_ana_w1_agent
+            observations = result_msg.get("observations", [])
             if previous_state == State.PREPARE_FIX:
                 logger.info("[ANA-D SM] ANA-W1 in standard mode (triggered from PREPARE_FIX).")
                 run_ana_w1_agent(
@@ -260,7 +278,8 @@ class ANADStateMachine:
                     previous_iteration_dir=self.iteration_manager.get_previous_iteration_dir(),
                     schematic_images_path=schematic_images_path,
                     scud_path=scud_path,
-                    circuit_name=self.circuit_name
+                    circuit_name=self.circuit_name,
+                    observations=observations
                 )
             else:
                 logger.info("[ANA-D SM] ANA-W1 in error correction mode (not triggered from PREPARE_FIX).")
@@ -268,19 +287,23 @@ class ANADStateMachine:
                     workspace=str(self.iteration_manager.current_iteration_dir),
                     schematic_images_path=schematic_images_path,
                     scud_path=scud_path,
-                    circuit_name=self.circuit_name
+                    circuit_name=self.circuit_name,
+                    observations=observations
                 )
 
             if not os.path.exists(self.iteration_manager.get_circuit_tsx_path()):
                 logger.error(f"[ANA-D SM] ANA-W1 did not produce circuit file")
                 result_msg["proposed_next_state"] = State.PREPARE_HIL
                 return result_msg
-
+            
+            # Now clear the observation list. ana_w1 successfully consumed observations
+            result_msg["observations"] = []
             return result_msg
         except Exception as e:
             logger.error(f"Error in TRIGGER_W1: {e}")
             result_msg["proposed_next_state"] = State.PREPARE_HIL
             return result_msg
+
 
     def _handle_wait_w1(self, message: Dict[str, Any]) -> Dict[str, Any]:
         result_msg = message.copy()
@@ -288,7 +311,7 @@ class ANADStateMachine:
         return result_msg
 
     def _handle_trigger_w2(self, message: Dict[str, Any]) -> Dict[str, Any]:
-        logger.info(f"[ANA-D SM] State: TRIGGER_W2. Invoking VHL-VAP...")
+        logger.info(f"[ANA-D SM] State: TRIGGER_W2. Triggered from: {message.get('from_state_id')}\n{"*"*30}\n{message}\n{"*"*30}")
         result_msg = message.copy()
         result_msg["state_id"] = State.TRIGGER_W2
         
@@ -316,13 +339,13 @@ class ANADStateMachine:
         return result_msg
 
     def _handle_prepare_hil(self, message: Dict[str, Any]) -> Dict[str, Any]:
-        logger.info("[ANA-D SM] State: PREPARE_HIL. Escalating to human...")
+        logger.info(f"[ANA-D SM] State: PREPARE_HIL. Triggered from: {message.get('from_state_id')}\n{"*"*30}\n{message}\n{"*"*30}")
         result_msg = message.copy()
         result_msg["state_id"] = State.PREPARE_HIL
         return result_msg
 
     def _handle_hil_wait(self, message: Dict[str, Any]) -> Dict[str, Any]:
-        logger.info("[ANA-D SM] State: HIL_WAIT. Awaiting human authority...")
+        logger.info(f"[ANA-D SM] State: HIL_WAIT. Triggered from: {message.get('from_state_id')}\n{"*"*30}\n{message}\n{"*"*30}")
         result_msg = message.copy()
         result_msg["state_id"] = State.HIL_WAIT
         
@@ -330,8 +353,13 @@ class ANADStateMachine:
         data = message.get("data")
         
         if event == "human_response":
-            logger.info("[ANA-D SM] Human responded. Transitioning to INIT.")
-            result_msg["proposed_next_state"] = State.INIT
+            logger.info(f"[ANA-D SM] Human responded: {data}")
+            # Add human response to observations
+            observations = result_msg.get("observations", [])
+            observations.append(f"[HIL] {data}")
+            result_msg["observations"] = observations
+            
+            result_msg["proposed_next_state"] = State.AUTHORIZE
             return result_msg
         elif event == "abort":
             logger.info("[ANA-D SM] Process aborted by human. Transitioning to EXIT_ABORT.")
