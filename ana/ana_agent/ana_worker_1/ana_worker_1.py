@@ -1,4 +1,5 @@
 import os
+from typing import List, Optional
 from pydantic import SecretStr
 from openhands.sdk import (
     LLM,
@@ -47,8 +48,8 @@ llm_condenser = LLM(
 # Configure paths
 cwd = os.getcwd()
 submodule_root = Path(__file__).resolve().parent
-logger.info(f"Current working directory: {cwd}")
-logger.info(f"Submodule root directory: {submodule_root}")
+logger.info(f"ANA-W1: Current working directory: {cwd}")
+logger.info(f"ANA-W1: Submodule root directory: {submodule_root}")
 
 # Configure Tools
 tools = [
@@ -103,17 +104,18 @@ def conversation_callback(event: Event):
     if isinstance(event, LLMConvertibleEvent):
         llm_messages.append(event.to_llm_message())
 
-logger.info("ANA Agent initialized successfully.")
+logger.info("ANA-W1: Agent initialized successfully.")
 
-def run_ana_w1_agent(workspace:str,scud_path: str, schematic_images_path: str = None,component_pin_mapping_path: str = None,circuit_name: str = None,previous_iteration_dir: str = None):
+def run_ana_w1_agent(workspace:str,scud_path: str, schematic_images_path: str = None,component_pin_mapping_path: str = None,circuit_name: str = None,previous_iteration_dir: str = None, observations: List[str] = None):
     """
     Process a SCUD file and analyze its components.
     
     Args:
         scud_path: Path to the SCUD file to process
         schematic_images_path: Path to schematic images directory (optional)
+        observations: List of circuit change observations/suggestions (optional)
     """
-    logger.info(f"Starting conversation with SCUD: {scud_path}")
+    logger.info(f"ANA-W1: Starting conversation with SCUD: {scud_path}")
     # Initialize Agent
     agent = Agent(
         llm=llm,
@@ -129,33 +131,48 @@ def run_ana_w1_agent(workspace:str,scud_path: str, schematic_images_path: str = 
         workspace=workspace,
     )
     conversation.set_security_analyzer(LLMSecurityAnalyzer())
-    user_message = (
-        f"Please process the SCUD file located at '{scud_path}'."
-    )
+    
 
     # If previous iteration dir is provided, agent is in error correction mode
     if previous_iteration_dir:
-        logger.info(f"Previous iteration directory provided: {previous_iteration_dir}. Entering error correction mode.")
+        logger.info(f"ANA-W1: Previous iteration directory provided: {previous_iteration_dir}. Entering error correction mode.")
+        
         # add user instructions about using previous artifacts
         # Find any tsx file in previous iteration dir, assume only one tsx file exists
         prev_tsx_files = list(Path(previous_iteration_dir).glob("*.tsx"))
         if prev_tsx_files:
             prev_tsx_file_path = prev_tsx_files[0]
-            logger.info(f"Found previous circuit tsx file: {prev_tsx_file_path}. It will be made available to the agent.")
-            user_message += f"Please use the previous circuit file '{prev_tsx_file_path}' as a reference for error correction."
+            logger.info(f"ANA-W1: Found previous circuit tsx file: {prev_tsx_file_path}. It will be made available to the agent.")
+            user_message = f"Please use the previous circuit file '{prev_tsx_file_path}' as a reference for error correction."
             prev_eval_log_files = Path(previous_iteration_dir, "evaluation_results/")
             user_message += f"You may refer to previous evaluation results located at '{prev_eval_log_files}' for understanding previous errors."
         else:
-            logger.error(f"No previous circuit tsx file found in {previous_iteration_dir}. Proceeding without it.")
+            logger.error(f"ANA-W1: No previous circuit tsx file found in {previous_iteration_dir}. Proceeding without it.")
             raise FileNotFoundError(f"No .tsx file found in previous iteration directory: {previous_iteration_dir}")
-   
+    else:
+        user_message = (
+            f"Please process the SCUD file located at '{scud_path}'."
+        )
+    # Add observations if provided
+    if observations:
+        logger.info(f"ANA-W1: Adding {len(observations)} observations to user message.")
+        user_message += "\n\nFollowing observations/suggestions have been proposed for the circuit:\n"
+        for i, obs in enumerate(observations):
+            user_message += f"{i+1}. {obs}\n"
+        user_message += "\nPlease incorporate these observations into your circuit design/correction."
+
+        user_message = (
+            f"Refer the SCUD document at '{scud_path}'."
+        )
+
     if schematic_images_path:
-        user_message += f"You may refer to schematic images located at '{schematic_images_path}' for visual clarification. You can use file_editor tool to view these images as needed."
+        user_message += f"\n\nYou may refer to schematic images located at '{schematic_images_path}' for visual clarification. You can use file_editor tool to view these images as needed."
 
     if component_pin_mapping_path:
-        user_message += f"Refer component_pin_mapping.md at '{component_pin_mapping_path}' for component pin mapping information if needed."
+        user_message += f"\n\nRefer component_pin_mapping.md at '{component_pin_mapping_path}' for component pin mapping information if needed."
     
-    user_message += "You should generate and store tsx circuit file in the current workspace directory."
+    user_message += "\n\nYou should generate and store tsx circuit file in the current workspace directory."
+    user_message += "\n\nAll local library components are available under '/app/lib/imports/'. Any other path would produce import errors during validation."
     user_message += f"Ensure the circuit file is named '{circuit_name}.tsx'." if circuit_name else "Ensure the circuit file is named appropriately with a .tsx extension."
     conversation.send_message(user_message)
     conversation.run()

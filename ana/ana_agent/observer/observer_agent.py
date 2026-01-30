@@ -106,7 +106,12 @@ class ObserverAgent:
         """
 
         # Build system prompt based on mode
-        system_prompt = build_observer_system_prompt(mode)
+        # system_prompt = build_observer_system_prompt(mode)
+        prompt_file = "observer_error.j2" if mode=="validation_error" else "observer_no_error.j2"
+        # Get path to the current file. This is the root of observer agent
+        current_file_path = os.path.abspath(__file__)
+        observer_root = os.path.dirname(current_file_path)
+        prompt_path = os.path.join(observer_root, prompt_file)
         
         # Configure tools for the agent
         tools = [
@@ -119,7 +124,7 @@ class ObserverAgent:
             llm=self.llm,
             mcp_config=self.mcp_config,
             tools=tools,
-            system_prompt=system_prompt,
+            system_prompt_filename=prompt_path,
             condenser=self.condenser,
         )
         

@@ -28,14 +28,14 @@ It assumes that **all components referenced already exist** and are importable.
 Every circuit must be wrapped in a `<board />` element.
 
 ```tsx
-<board width="100mm" height="80mm">
+<board width="100mm" height="80mm" routingDisabled={true}>
   {/* circuit contents */}
 </board>
 ```
 
 * `<board />` is the root of schematic and PCB generation
 * All components, nets, groups, and traces must be children of `<board />`
-
+* NOTE: Always use `routingDisabled={true}` property. We disable auto-routing to speed up evaluation.
 ---
 
 ## 2. Using Existing Components
@@ -80,7 +80,7 @@ Example:
 Components defined elsewhere (e.g., ICs or reusable blocks) may be imported and instantiated.
 
 ```tsx
-import { ControllerIC } from "./lib/imports/ControllerIC"
+import { ControllerIC } from "/app/lib/imports/ControllerIC"
 
 <ControllerIC name="U1" />
 ```
@@ -228,7 +228,7 @@ Components or groups may be positioned explicitly.
 ## 7. Canonical Assembly Example
 
 ```tsx
-import { ControllerIC } from "./lib/ControllerIC"
+import { ControllerIC } from "/app/lib/ControllerIC"
 
 export default () => {
   return (
@@ -304,7 +304,7 @@ These components are **already defined** as `.tsx` modules and reside in the pro
 All locally available component libraries are stored under:
 
 ```text
-./lib/imports/
+/app/lib/imports/
 ```
 
 Each component is defined in its own `.tsx` file and exposes **exactly one exported component**.
@@ -313,18 +313,18 @@ Each component is defined in its own `.tsx` file and exposes **exactly one expor
 
 ### Import Syntax
 
-Use standard TypeScript import syntax with a **relative path**:
+Use standard TypeScript import syntax with a **absolute path**:
 
 ```ts
-import { LM555 } from "./lib/imports/LM555"
+import { LM555 } from "/app/lib/imports/LM555"
 ```
 
 Multiple components may be imported as needed:
 
 ```ts
-import { LM555 } from "./lib/imports/LM555"
-import { IR2110 } from "./lib/imports/IR2110"
-import { IRFZ44N } from "./lib/imports/IRFZ44N"
+import { LM555 } from "/app/lib/imports/LM555"
+import { IR2110 } from "/app/lib/imports/IR2110"
+import { IRFZ44N } from "/app/lib/imports/IRFZ44N"
 ```
 
 ---

@@ -119,7 +119,7 @@ Example 1:
 Validation log excerpt:
 ```
 
-Cannot find module './lib/BQ79616PAPR'
+Cannot find module '/app/lib/imports/BQ79616PAPQ'
 
 ```
 Committed observation:
