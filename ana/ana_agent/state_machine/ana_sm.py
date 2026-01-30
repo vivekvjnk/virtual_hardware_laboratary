@@ -213,9 +213,6 @@ class ANADStateMachine:
             else:
                 proposed_next = State.PREPARE_HIL
             
-            # NOTE : Temporary re-routing for testing purpose (Matches original code)
-            proposed_next = State.PREPARE_FIX
-
         elif vap_decision == "ACCEPT":
             if intent_status == "satisfied":
                 proposed_next = State.EXIT_SUCCESS
@@ -235,6 +232,11 @@ class ANADStateMachine:
         return result_msg
 
     def _handle_trigger_w1(self, message: Dict[str, Any]) -> Dict[str, Any]:
+        # If last state is not PREPARE_FIX, ANA-W1 is in error correction mode
+        # In this mode, ANA-W1 should use different system prompt. 
+        # Previous iteration artefacts, specifically evaluation results and circuit tsx file, should be made available.
+        previous_state = message.get("from_state_id")
+
         logger.info(f"[ANA-D SM] State: TRIGGER_W1. Invoking ANA-W1...")
         result_msg = message.copy()
         result_msg["state_id"] = State.TRIGGER_W1
@@ -246,13 +248,28 @@ class ANADStateMachine:
         try:
             scud_path = self.iteration_manager.get_scud_path()
             schematic_images_path = os.path.join(self.iteration_manager.current_iteration_dir, "schematic_images")
-            
-            run_ana_w1_agent(
-                workspace=str(self.iteration_manager.current_iteration_dir),
-                schematic_images_path=schematic_images_path,
-                scud_path=scud_path,
-                circuit_name=self.circuit_name
-            )
+
+
+            # NOTE: Branching logic based on previous state
+            # Any path other than from PREPARE_FIX means synthesis mode
+            # system prompt selection and previous artefact usage is handled inside run_ana_w1_agent
+            if previous_state == State.PREPARE_FIX:
+                logger.info("[ANA-D SM] ANA-W1 in standard mode (triggered from PREPARE_FIX).")
+                run_ana_w1_agent(
+                    workspace=str(self.iteration_manager.current_iteration_dir),
+                    previous_iteration_dir=self.iteration_manager.get_previous_iteration_dir(),
+                    schematic_images_path=schematic_images_path,
+                    scud_path=scud_path,
+                    circuit_name=self.circuit_name
+                )
+            else:
+                logger.info("[ANA-D SM] ANA-W1 in error correction mode (not triggered from PREPARE_FIX).")
+                run_ana_w1_agent(
+                    workspace=str(self.iteration_manager.current_iteration_dir),
+                    schematic_images_path=schematic_images_path,
+                    scud_path=scud_path,
+                    circuit_name=self.circuit_name
+                )
 
             if not os.path.exists(self.iteration_manager.get_circuit_tsx_path()):
                 logger.error(f"[ANA-D SM] ANA-W1 did not produce circuit file")
