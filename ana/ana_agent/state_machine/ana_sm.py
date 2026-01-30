@@ -19,15 +19,9 @@ logger = logging.getLogger(__name__)
 class ANADStateMachine:
     def __init__(self, max_auto_fixes: int = 3):
         self.state = State.INIT
+        # Inputs/Observations - Now handled via current_message for transparency
         self.max_auto_fixes = max_auto_fixes
-        self.auto_fix_count = 0
         
-        # Inputs/Observations (Keep for now to avoid logic changes, but framework supports message passing)
-        self.vap_decision: Optional[str] = "UNDECIDED"
-        self.error_class: Optional[str] = None
-        self.intent_status: Optional[str] = None
-        self.observation = None
-
         # Project Info
         self.circuit_name: str = "bq79616_eval_board"
         self.workspace = Path(os.getcwd()) / "ana_workspace" / f"{self.circuit_name}_project"
@@ -39,7 +33,8 @@ class ANADStateMachine:
         # Initial Message
         self.current_message: Dict[str, Any] = {
             "state_id": State.INIT,
-            "from_state_id": None
+            "from_state_id": None,
+            "auto_fix_count": 0
         }
 
         # State Transition Table
@@ -63,11 +58,12 @@ class ANADStateMachine:
         """Executes one step of the state machine using message passing framework."""
         logger.info(f"Stepping from state: {self.state}")
         
-        # Inject external inputs into current message
+        # Inject external inputs into a copy of current message
+        message = self.current_message.copy()
         if event:
-            self.current_message["event"] = event
+            message["event"] = event
         if data:
-            self.current_message["data"] = data
+            message["data"] = data
 
         handlers = {
             State.INIT: self._handle_init,
@@ -88,8 +84,8 @@ class ANADStateMachine:
             return
 
         # Execute handler and get result message describing the CURRENT node's execution
-        # Handlers must return their own state_id as per user instruction
-        result_message = handler(self.current_message)
+        # All handlers now receive and return the message for transparency
+        result_message = handler(message)
         
         # Explicit logic to decide the transition
         next_state = self._get_next_state(self.state, result_message)
@@ -98,6 +94,10 @@ class ANADStateMachine:
         next_message = result_message.copy()
         next_message["from_state_id"] = self.state
         next_message["state_id"] = next_state
+        
+        # Remove event and data once processed by the handler
+        next_message.pop("event", None)
+        next_message.pop("data", None)
         
         # Remove proposal once it has been processed
         next_message.pop("proposed_next_state", None)
@@ -119,21 +119,34 @@ class ANADStateMachine:
         return self.transition_table.get(current_state, current_state)
 
     def _handle_init(self, message: Dict[str, Any]) -> Dict[str, Any]:
+        logger.info(f"[ANA-D SM] State: INIT. Triggered from: {message.get('from_state_id')}")
+        result_msg = message.copy()
+        
         iteration_id = hex(int(time.time()))[2:]
         self.iteration_manager.start_new_iteration(iteration_id)
         
-        # Return current state and data; transition logic is now in step()
-        return {
+        # INIT handler is responsible for clearing the iteration-specific state
+        result_msg.update({
             "state_id": State.INIT,
-            "iteration_id": iteration_id
-        }
+            "iteration_id": iteration_id,
+        })
+        
+        # Clear states from previous iteration
+        result_msg.pop("vap_decision", None)
+        result_msg.pop("intent_status", None)
+        result_msg.pop("observation", None)
+        result_msg.pop("error_class", None)
+        
+        return result_msg
 
     def _handle_observe(self, message: Dict[str, Any]) -> Dict[str, Any]:
         logger.info(f"[ANA-D SM] State: OBSERVE. Triggered from: {message.get('from_state_id')}")
+        result_msg = message.copy()
+        result_msg["state_id"] = State.OBSERVE
         
         if len(self.iteration_manager.iteration_ids) < 2:
             logger.info("[ANA-D SM] First iteration. Skipping observation.")
-            return {"state_id": State.OBSERVE}
+            return result_msg
 
         previous_dir = self.iteration_manager.get_previous_iteration_dir()
         logger.info(f"[ANA-D SM] Observing previous iteration: {previous_dir}")
@@ -154,7 +167,6 @@ class ANADStateMachine:
         logger.info("[ANA-D SM] Awaiting commit from Observer Agent via MCP...")
         observation = self.mcp_manager.poll_for_observation()
 
-        result_msg = {"state_id": State.OBSERVE}
         if observation:
             payload = observation["message"]["payload"]
             issue_kind = payload.get("issue_kind", "UNKNOWN")
@@ -165,27 +177,38 @@ class ANADStateMachine:
                 "INTENT_MISMATCH": "ambiguous",
                 "NONE": "satisfied"
             }
-            self.intent_status = mapping.get(issue_kind, "ambiguous")
-            self.observation = observation
+            intent_status = mapping.get(issue_kind, "ambiguous")
             
-            # Enrich message
+            # Enrich message - OBSERVE handler is responsible for setting/clearing its data
             result_msg.update({
-                "intent_status": self.intent_status,
+                "intent_status": intent_status,
                 "observation": observation
             })
-            logger.info(f"[ANA-D SM] Observation: intent_status={self.intent_status}")
+            logger.info(f"[ANA-D SM] Observation: intent_status={intent_status}")
+        else:
+            # Clear if not found
+            result_msg.pop("intent_status", None)
+            result_msg.pop("observation", None)
         
         return result_msg
 
     def _handle_authorize(self, message: Dict[str, Any]) -> Dict[str, Any]:
-        logger.info(f"[ANA-D SM] State: AUTHORIZE. VAP={self.vap_decision}, Error={self.error_class}, Intent={self.intent_status}")
+        result_msg = message.copy()
+        result_msg["state_id"] = State.AUTHORIZE
+        
+        vap_decision = result_msg.get("vap_decision", "UNDECIDED")
+        error_class = result_msg.get("error_class")
+        intent_status = result_msg.get("intent_status")
+        auto_fix_count = result_msg.get("auto_fix_count", 0)
+
+        logger.info(f"[ANA-D SM] State: AUTHORIZE. VAP={vap_decision}, Error={error_class}, Intent={intent_status}, Auto-fix Count={auto_fix_count}")
         logger.info(f"[ANA-D SM] Triggered by: {message.get('from_state_id')}")
 
         # Propose next state based on logic
         proposed_next = State.PREPARE_HIL 
 
-        if self.vap_decision == "REJECT":
-            if self.error_class == "mechanical" and self.auto_fix_count < self.max_auto_fixes:
+        if vap_decision == "REJECT":
+            if error_class == "mechanical" and auto_fix_count < self.max_auto_fixes:
                 proposed_next = State.PREPARE_FIX
             else:
                 proposed_next = State.PREPARE_HIL
@@ -193,27 +216,32 @@ class ANADStateMachine:
             # NOTE : Temporary re-routing for testing purpose (Matches original code)
             proposed_next = State.PREPARE_FIX
 
-        elif self.vap_decision == "ACCEPT":
-            if self.intent_status == "satisfied":
+        elif vap_decision == "ACCEPT":
+            if intent_status == "satisfied":
                 proposed_next = State.EXIT_SUCCESS
             else:
                 proposed_next = State.PREPARE_HIL
 
-        elif self.vap_decision == "UNDECIDED":
+        elif vap_decision == "UNDECIDED":
             proposed_next = State.TRIGGER_W1
         
-        return {
-            "state_id": State.AUTHORIZE,
-            "proposed_next_state": proposed_next
-        }
+        result_msg["proposed_next_state"] = proposed_next
+        return result_msg
 
     def _handle_prepare_fix(self, message: Dict[str, Any]) -> Dict[str, Any]:
         logger.info("[ANA-D SM] State: PREPARE_FIX. Constructing fix instruction...")
-        return {"state_id": State.PREPARE_FIX}
+        result_msg = message.copy()
+        result_msg["state_id"] = State.PREPARE_FIX
+        return result_msg
 
     def _handle_trigger_w1(self, message: Dict[str, Any]) -> Dict[str, Any]:
         logger.info(f"[ANA-D SM] State: TRIGGER_W1. Invoking ANA-W1...")
-        self.auto_fix_count += 1
+        result_msg = message.copy()
+        result_msg["state_id"] = State.TRIGGER_W1
+        
+        # Update auto_fix_count in message
+        auto_fix_count = result_msg.get("auto_fix_count", 0) + 1
+        result_msg["auto_fix_count"] = auto_fix_count
         
         try:
             scud_path = self.iteration_manager.get_scud_path()
@@ -228,66 +256,72 @@ class ANADStateMachine:
 
             if not os.path.exists(self.iteration_manager.get_circuit_tsx_path()):
                 logger.error(f"[ANA-D SM] ANA-W1 did not produce circuit file")
-                return {
-                    "state_id": State.TRIGGER_W1,
-                    "proposed_next_state": State.PREPARE_HIL
-                }
+                result_msg["proposed_next_state"] = State.PREPARE_HIL
+                return result_msg
 
-            return {"state_id": State.TRIGGER_W1}
+            return result_msg
         except Exception as e:
             logger.error(f"Error in TRIGGER_W1: {e}")
-            return {
-                "state_id": State.TRIGGER_W1,
-                "proposed_next_state": State.PREPARE_HIL
-            }
+            result_msg["proposed_next_state"] = State.PREPARE_HIL
+            return result_msg
 
     def _handle_wait_w1(self, message: Dict[str, Any]) -> Dict[str, Any]:
-        return {"state_id": State.WAIT_W1}
+        result_msg = message.copy()
+        result_msg["state_id"] = State.WAIT_W1
+        return result_msg
 
     def _handle_trigger_w2(self, message: Dict[str, Any]) -> Dict[str, Any]:
         logger.info(f"[ANA-D SM] State: TRIGGER_W2. Invoking VHL-VAP...")
+        result_msg = message.copy()
+        result_msg["state_id"] = State.TRIGGER_W2
+        
         agent = ANA_validation_agent()
         try:
             result = agent.validate_circuit(
                 self.circuit_name, 
                 workspace=self.iteration_manager.current_iteration_dir
             )
-            self.vap_decision = result.get("decision")
-            logger.info(f"[ANA-D SM] VAP decision: {self.vap_decision}")
-            return {"state_id": State.TRIGGER_W2}
+            vap_decision = result.get("decision")
+            result_msg["vap_decision"] = vap_decision
+            logger.info(f"[ANA-D SM] VAP decision: {vap_decision}")
+            return result_msg
         except Exception as e:
             logger.exception(f"Error during validation: {e}")
+            # Clear decision on failure
+            result_msg.pop("vap_decision", None)
             raise e
         finally:
             agent.close()
 
     def _handle_wait_vap(self, message: Dict[str, Any]) -> Dict[str, Any]:
-        return {"state_id": State.WAIT_VAP}
+        result_msg = message.copy()
+        result_msg["state_id"] = State.WAIT_VAP
+        return result_msg
 
     def _handle_prepare_hil(self, message: Dict[str, Any]) -> Dict[str, Any]:
         logger.info("[ANA-D SM] State: PREPARE_HIL. Escalating to human...")
-        return {"state_id": State.PREPARE_HIL}
+        result_msg = message.copy()
+        result_msg["state_id"] = State.PREPARE_HIL
+        return result_msg
 
     def _handle_hil_wait(self, message: Dict[str, Any]) -> Dict[str, Any]:
         logger.info("[ANA-D SM] State: HIL_WAIT. Awaiting human authority...")
+        result_msg = message.copy()
+        result_msg["state_id"] = State.HIL_WAIT
         
         event = message.get("event")
         data = message.get("data")
         
         if event == "human_response":
             logger.info("[ANA-D SM] Human responded. Transitioning to INIT.")
-            return {
-                "state_id": State.HIL_WAIT,
-                "proposed_next_state": State.INIT
-            }
+            result_msg["proposed_next_state"] = State.INIT
+            return result_msg
         elif event == "abort":
             logger.info("[ANA-D SM] Process aborted by human. Transitioning to EXIT_ABORT.")
-            return {
-                "state_id": State.HIL_WAIT,
-                "proposed_next_state": State.EXIT_ABORT
-            }
+            result_msg["proposed_next_state"] = State.EXIT_ABORT
+            return result_msg
         
-        return {"state_id": State.HIL_WAIT}
+        return result_msg
 
     def is_terminal(self) -> bool:
         return self.state in [State.EXIT_SUCCESS, State.EXIT_ABORT]
