@@ -168,7 +168,7 @@ class ANADStateMachine:
         if observation_mcp:
             payload = observation_mcp["message"]["payload"]
             issue_kind = payload.get("issue_kind", "UNKNOWN")
-            notes = payload.get("notes", "")
+            notes = payload.get("observations", "")
             
             mapping = {
                 "LOCAL": "violated",
@@ -272,7 +272,7 @@ class ANADStateMachine:
             # system prompt selection and previous artefact usage is handled inside run_ana_w1_agent
             observations = result_msg.get("observations", [])
             if previous_state == State.PREPARE_FIX:
-                logger.info("[ANA-D SM] ANA-W1 in standard mode (triggered from PREPARE_FIX).")
+                logger.info("[ANA-D SM] ANA-W1 in error correction mode (triggered from PREPARE_FIX).")
                 run_ana_w1_agent(
                     workspace=str(self.iteration_manager.current_iteration_dir),
                     previous_iteration_dir=self.iteration_manager.get_previous_iteration_dir(),
@@ -282,7 +282,7 @@ class ANADStateMachine:
                     observations=observations
                 )
             else:
-                logger.info("[ANA-D SM] ANA-W1 in error correction mode (not triggered from PREPARE_FIX).")
+                logger.info("[ANA-D SM] ANA-W1 in synthesis mode (not triggered from PREPARE_FIX).")
                 run_ana_w1_agent(
                     workspace=str(self.iteration_manager.current_iteration_dir),
                     schematic_images_path=schematic_images_path,
@@ -375,7 +375,7 @@ class ANADStateMachine:
         self.mcp_manager.cleanup()
 
 if __name__ == "__main__":
-    sm = ANADStateMachine()
+    sm = ANADStateMachine(max_auto_fixes=5)
     logger.info("--- Starting State Machine ---")
     while not sm.is_terminal() and sm.state != State.HIL_WAIT:
         sm.step()

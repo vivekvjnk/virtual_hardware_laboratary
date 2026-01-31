@@ -21,7 +21,20 @@ class MCPManager:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.settimeout(1)
                 s.connect(("127.0.0.1", 8001))
-            logger.info("[MCP Manager] MCP Server already running on port 8001.")
+            
+            logger.info("[MCP Manager] MCP Server already running on port 8001. Syncing state...")
+            try:
+                with httpx.Client() as client:
+                    response = client.get(f"{self.mcp_endpoint}/mcp/commits")
+                    if response.status_code == 200:
+                        commits = response.json().get("commits", [])
+                        obs_commits = [c for c in commits if c.get("tool_name") == "commit_observation"]
+                        if obs_commits:
+                            latest_commit = max(obs_commits, key=lambda x: x["commit_id"])
+                            self.last_commit_id = latest_commit["commit_id"]
+                            logger.info(f"[MCP Manager] Synced state. Last commit ID: {self.last_commit_id}")
+            except Exception as e:
+                logger.warning(f"[MCP Manager] Failed to sync state: {e}")
             return
         except (ConnectionRefusedError, socket.timeout):
             pass
@@ -52,8 +65,8 @@ class MCPManager:
             try:
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                     s.settimeout(1)
-                    s.connect(("127.0.0.1", 8001))
-                logger.info(f"[MCP Manager] MCP Server started on attempt {i+1}")
+                s.connect(("127.0.0.1", 8001))
+                logger.info("[MCP Manager] MCP Server is running on port 8001.")
                 return
             except (ConnectionRefusedError, socket.timeout):
                 time.sleep(1)
@@ -61,25 +74,24 @@ class MCPManager:
         logger.error("[MCP Manager] Failed to start MCP Server.")
 
     def poll_for_observation(self) -> Optional[Dict[str, Any]]:
-        """Polls MCP for an observation commit since last_commit_id."""
+        """Polls MCP for an observation commit."""
         url = f"{self.mcp_endpoint}/mcp/commits"
-        params = {
-            "since": self.last_commit_id,
-            "endpoint": "/mcp/observe"
-        }
-
-        logger.info(f"[MCP Manager] Polling {url} with since={self.last_commit_id}...")
+        logger.info(f"[MCP Manager] Polling {url} for latest observation...")
         
         while True:
             try:
                 with httpx.Client() as client:
-                    response = client.get(url, params=params)
+                    response = client.get(url)
                     if response.status_code == 200:
                         commits = response.json().get("commits", [])
-                        for commit in commits:
-                            if commit["tool_name"] == "commit_observation":
-                                self.last_commit_id = commit["commit_id"]
-                                return commit
+                        # Filter for observation commits
+                        obs_commits = [c for c in commits if c.get("tool_name") == "commit_observation"]
+                        if obs_commits:
+                            # Get the latest commit based on commit_id
+                            latest_commit = max(obs_commits, key=lambda x: x["commit_id"])
+                            if latest_commit["commit_id"] > self.last_commit_id:
+                                self.last_commit_id = latest_commit["commit_id"]
+                                return latest_commit
                 
                 time.sleep(2)
             except Exception as e:

@@ -132,6 +132,7 @@ def run_ana_w1_agent(workspace:str,scud_path: str, schematic_images_path: str = 
     )
     conversation.set_security_analyzer(LLMSecurityAnalyzer())
     
+    user_message = ""
 
     # If previous iteration dir is provided, agent is in error correction mode
     if previous_iteration_dir:
@@ -143,37 +144,52 @@ def run_ana_w1_agent(workspace:str,scud_path: str, schematic_images_path: str = 
         if prev_tsx_files:
             prev_tsx_file_path = prev_tsx_files[0]
             logger.info(f"ANA-W1: Found previous circuit tsx file: {prev_tsx_file_path}. It will be made available to the agent.")
-            user_message = f"Please use the previous circuit file '{prev_tsx_file_path}' as a reference for error correction."
-            prev_eval_log_files = Path(previous_iteration_dir, "evaluation_results/")
+            
+            user_message += f"Please use the previous circuit file '{prev_tsx_file_path}' as a reference for error correction."
+            prev_eval_log_files = Path(previous_iteration_dir, "evaluation_results")
             user_message += f"You may refer to previous evaluation results located at '{prev_eval_log_files}' for understanding previous errors."
+        
         else:
             logger.error(f"ANA-W1: No previous circuit tsx file found in {previous_iteration_dir}. Proceeding without it.")
             raise FileNotFoundError(f"No .tsx file found in previous iteration directory: {previous_iteration_dir}")
     else:
+        logger.info(f"ANA-W1: First iteration. Entering synthesis mode.")
+        
         user_message = (
             f"Please process the SCUD file located at '{scud_path}'."
         )
+
     # Add observations if provided
     if observations:
         logger.info(f"ANA-W1: Adding {len(observations)} observations to user message.")
         user_message += "\n\nFollowing observations/suggestions have been proposed for the circuit:\n"
         for i, obs in enumerate(observations):
             user_message += f"{i+1}. {obs}\n"
-        user_message += "\nPlease incorporate these observations into your circuit design/correction."
+        user_message += "\nPlease incorporate these observations into your circuit correction."
 
-        user_message = (
-            f"Refer the SCUD document at '{scud_path}'."
+        user_message += (
+            f"You may refer the SCUD document at '{scud_path}'."
         )
+    else:
+        logger.warning("No observations found. Could be first iteration..")
 
     if schematic_images_path:
         user_message += f"\n\nYou may refer to schematic images located at '{schematic_images_path}' for visual clarification. You can use file_editor tool to view these images as needed."
 
     if component_pin_mapping_path:
-        user_message += f"\n\nRefer component_pin_mapping.md at '{component_pin_mapping_path}' for component pin mapping information if needed."
+        user_message += f"\n\nYou may refer component_pin_mapping.md at '{component_pin_mapping_path}' for component pin mapping information if needed."
     
-    user_message += "\n\nYou should generate and store tsx circuit file in the current workspace directory."
-    user_message += "\n\nAll local library components are available under '/app/lib/imports/'. Any other path would produce import errors during validation."
+    if not observations:
+        user_message += "\n\nAll local library components are available under '/app/lib/imports/' in the execution environment. The execution environment is a remote container. Any other path would produce import errors during validation."
+    
+    # Information on execution environment and the process
+    user_message += "\n\nYou should generate and store tsx circuit file in the current workspace directory. The circuit file will be evaluated by the backend in a a remote execution environment. All the imports in the circuit will be resolved in this execution environment. Libraries are available under /app/lib/imports/ directory in the execution environment."
+
+    
     user_message += f"Ensure the circuit file is named '{circuit_name}.tsx'." if circuit_name else "Ensure the circuit file is named appropriately with a .tsx extension."
+
+    logger.info(f"Final user message {"*"*100}\n{user_message}")
+
     conversation.send_message(user_message)
     conversation.run()
     

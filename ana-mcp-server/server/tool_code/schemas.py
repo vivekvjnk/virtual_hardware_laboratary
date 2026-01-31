@@ -21,7 +21,7 @@ class ObservationCommit(BaseModel):
         )
     )
     confidence: confloat(ge=0.0, le=1.0) = Field(..., description="Confidence level of the  classification (0.0 to 1.0).")
-    notes: Optional[str] = Field(None, description="Additional notes for the observation.")
+    observations: str = Field(None, description="All observations on the error/s in simple string format.")
 
 
 class FixProposalCommit(BaseModel):
