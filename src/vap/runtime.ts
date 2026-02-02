@@ -179,10 +179,10 @@ export class VAPRuntime {
             if (this.resultsBlobId) {
                 status.metadata.results_blob_id = this.resultsBlobId;
             }
-
-            // If decision is set, include it
+            
+            status.decision = this.controlState.decision;
+            // If decision is set, include eval_status
             if (this.controlState.decision !== "UNDECIDED") {
-                status.decision = this.controlState.decision;
                 status.eval_status = this.controlState.decision === "ACCEPT" ? "Success" : "Error";
 
                 // If we are in Default state and have a decision, this is the "final poll"
