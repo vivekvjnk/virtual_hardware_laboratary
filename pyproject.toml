@@ -12,6 +12,7 @@ dependencies = [
     "python-dotenv>=1.2.1",
     "ana",
     "ana-mcp-server",
+    "vhl-protocol",
 ]
 
 [tool.uv.workspace]
@@ -20,6 +21,7 @@ members = [
     "agent-sdk/openhands-tools",
     "ana-mcp-server",
     "ana",
+    "vhl_protocol",
 ]
 
 [tool.uv.sources]
@@ -27,3 +29,4 @@ openhands-sdk = { workspace = true }
 openhands-tools = { workspace = true }
 ana-mcp-server = { workspace = true }
 ana = { workspace = true }
+vhl-protocol = { workspace = true }

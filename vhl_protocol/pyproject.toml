@@ -1,0 +1,16 @@
+[project]
+name = "vhl-protocol"
+version = "0.1.0"
+description = "Universal VHL Protocol layer for Agent Framework and Runtime"
+dependencies = [
+    "pydantic>=2.0.0",
+    "websockets>=12.0",
+]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["vhl_protocol*"]
