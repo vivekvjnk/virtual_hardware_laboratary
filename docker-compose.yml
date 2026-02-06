@@ -7,6 +7,7 @@ services:
     ports:
       - "8080:8080"
       - "8081:8081"
+      - "1080:1080" # Port for Agent WebSocket Server
     networks:
       - vhl-network
     volumes:

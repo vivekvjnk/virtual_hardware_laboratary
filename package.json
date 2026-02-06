@@ -9,6 +9,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "start:vap": "tsx src/vap/vapIndex.ts",
+    "start:ws": "tsx src/server/wsIndex.ts",
     "test": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand",
     "clean": "rm -rf dist"
   },
@@ -18,13 +19,15 @@
     "archiver": "^7.0.1",
     "express": "^5.2.1",
     "minio": "^8.0.6",
-    "react": "^19.2.3"
+    "react": "^19.2.3",
+    "ws": "^8.19.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
     "@types/jest": "^29.5.11",
     "@types/node": "^20.11.0",
     "@types/react": "^19.2.8",
+    "@types/ws": "^8.18.1",
     "jest": "^29.7.0",
     "ts-jest": "^29.1.2",
     "ts-node": "^10.9.2",
