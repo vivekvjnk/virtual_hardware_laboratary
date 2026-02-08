@@ -51,13 +51,14 @@ export class AgentWebSocketServer {
             }
 
             ws.on("message", async (data: any) => {
+                const dataString = data.toString()
+                console.debug(`[AgentWS] Received raw message: ${dataString}`)
                 try {
-                    const msg = JSON.parse(data.toString()) as WebSocketMessage
+                    const msg = JSON.parse(dataString) as WebSocketMessage
+                    console.log(`[AgentWS] Handling message of type: ${msg.type}`)
                     await handler.onMessage(msg, send)
                 } catch (err) {
-                    console.error("AgentWebSocketServer: Error handling message", err)
-                    // We don't follow the mandatory schema for this internal error relay 
-                    // but we can if we want. For now, just a raw message is okay for the relay.
+                    console.error("[AgentWS] Error handling message:", err, dataString)
                     ws.send(JSON.stringify({
                         type: "ERROR",
                         payload: { message: "Internal server error handling message", scope: "runtime", severity: "error" }
@@ -65,8 +66,8 @@ export class AgentWebSocketServer {
                 }
             })
 
-            ws.on("close", () => {
-                console.log("AgentWebSocketServer: Client disconnected")
+            ws.on("close", (code, reason) => {
+                console.log(`[AgentWS] Client disconnected. Code: ${code}, Reason: ${reason}`)
                 if (handler.onDisconnect) {
                     handler.onDisconnect()
                 }

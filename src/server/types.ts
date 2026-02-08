@@ -12,17 +12,23 @@ export type EventType =
     | "ARTIFACT_UPDATED"
     | "AUTHORITY_REQUIRED"
     | "ERROR"
+    // Workspace Management
+    | "WORKSPACE_DOWNLOAD"
+    | "WORKSPACE_UPLOAD"
+    | "WORKSPACE_SYNC_COMPLETE"
     // Transport-Only (Relay Layer)
     | "IDENTIFY"
     | "AGENT_CONNECTED"
     | "AGENT_DISCONNECTED"
+    | "WORKSPACE_CONNECTED"
+    | "WORKSPACE_DISCONNECTED"
 
 export interface AgentMessage {
     id: string
     type: EventType
     artifact_id: string | null
     timestamp: string // ISO-8601
-    source: "runtime" | "backend"
+    source: "runtime" | "backend" | "vhl_workspace"
     payload: any
 }
 
@@ -32,7 +38,7 @@ export interface AgentMessage {
  * For simplicity in this implementation, we'll allow them to have a partial schema.
  */
 export interface TransportMessage {
-    type: "IDENTIFY" | "AGENT_CONNECTED" | "AGENT_DISCONNECTED"
+    type: "IDENTIFY" | "AGENT_CONNECTED" | "AGENT_DISCONNECTED" | "WORKSPACE_CONNECTED" | "WORKSPACE_DISCONNECTED"
     payload?: any
 }
 

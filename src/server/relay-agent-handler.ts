@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto"
 import type { AgentHandler, WebSocketMessage } from "./types.js"
 
 /**
@@ -11,18 +12,13 @@ import type { AgentHandler, WebSocketMessage } from "./types.js"
 export class RelayAgentHandler implements AgentHandler {
     private static uiClients: Set<(msg: WebSocketMessage) => void> = new Set()
     private static agentClient: ((msg: WebSocketMessage) => void) | null = null
+    private static workspaceClient: ((msg: WebSocketMessage) => void) | null = null
 
     private currentSend: ((msg: WebSocketMessage) => void) | null = null
-    private role: "ui" | "agent" | null = null
+    private role: "ui" | "agent" | "vhl_workspace" | null = null
 
     onConnect(send: (msg: WebSocketMessage) => void) {
         this.currentSend = send
-        // Notify new UI connection about agent status (Transport-only)
-        if (RelayAgentHandler.agentClient) {
-            send({ type: "AGENT_CONNECTED" })
-        } else {
-            send({ type: "AGENT_DISCONNECTED" })
-        }
     }
 
     async onMessage(msg: WebSocketMessage, send: (msg: WebSocketMessage) => void) {
@@ -33,16 +29,29 @@ export class RelayAgentHandler implements AgentHandler {
 
         if (this.role === "ui") {
             // UI (Runtime) -> Agent (Backend)
-            // Rule: Runtime emits HUMAN_INPUT, REFERENCE_UPLOADED, INTERRUPT_REQUEST
             if (RelayAgentHandler.agentClient) {
                 RelayAgentHandler.agentClient(msg)
             } else {
                 send({ type: "ERROR", payload: { message: "No agent client connected", scope: "runtime", severity: "error" } } as any)
             }
+        } else if (this.role === "vhl_workspace") {
+            // Workspace Client -> Agent (Backend)
+            if (RelayAgentHandler.agentClient) {
+                RelayAgentHandler.agentClient(msg)
+            } else {
+                send({ type: "ERROR", payload: { message: "No agent client connected", scope: "vhl_workspace", severity: "error" } } as any)
+            }
         } else if (this.role === "agent") {
-            // Agent (Backend) -> all UIs (Runtime)
-            // Rule: Backend emits STATE_TRANSITION, EVALUATION_UPDATE, ARTIFACT_UPDATED, etc.
-            RelayAgentHandler.uiClients.forEach(uiSend => uiSend(msg))
+            // Agent (Backend) -> UI (Runtime) or Workspace Client
+            if (msg.type === "WORKSPACE_DOWNLOAD" || msg.type === "WORKSPACE_UPLOAD") {
+                if (RelayAgentHandler.workspaceClient) {
+                    RelayAgentHandler.workspaceClient(msg)
+                } else {
+                    send({ type: "ERROR", payload: { message: "No workspace client connected", scope: "backend", severity: "error" } } as any)
+                }
+            } else {
+                RelayAgentHandler.uiClients.forEach(uiSend => uiSend(msg))
+            }
         } else {
             // Unidentified client
             send({ type: "ERROR", payload: { message: "Please IDENTIFY yourself first", scope: "runtime", severity: "fatal" } } as any)
@@ -54,12 +63,44 @@ export class RelayAgentHandler implements AgentHandler {
             this.role = "ui"
             RelayAgentHandler.uiClients.add(send)
             console.log("RelayAgentHandler: UI client identified")
+
+            // Notify new UI connection about agent status (Transport-only)
+            if (RelayAgentHandler.agentClient) {
+                send({ type: "AGENT_CONNECTED" })
+            } else {
+                send({ type: "AGENT_DISCONNECTED" })
+            }
+
+            if (RelayAgentHandler.workspaceClient) {
+                send({ type: "WORKSPACE_CONNECTED" })
+            } else {
+                send({ type: "WORKSPACE_DISCONNECTED" })
+            }
+            
         } else if (role === "agent") {
             this.role = "agent"
             RelayAgentHandler.agentClient = send
             console.log("RelayAgentHandler: Agent client identified")
             // Notify all UIs that agent is connected
             RelayAgentHandler.uiClients.forEach(uiSend => uiSend({ type: "AGENT_CONNECTED" }))
+
+            // Notify agent about workspace status
+            if (RelayAgentHandler.workspaceClient) {
+                send({ id: randomUUID() ,type: "WORKSPACE_CONNECTED", source: "backend", timestamp: new Date().toISOString()})
+            } else {
+                send({ id: randomUUID(), type: "WORKSPACE_DISCONNECTED", source: "backend", timestamp: new Date().toISOString()})
+            }
+
+        } else if (role === "vhl_workspace") {
+            this.role = "vhl_workspace"
+            RelayAgentHandler.workspaceClient = send
+            console.log("RelayAgentHandler: Workspace client identified")
+
+            // Notify agent and all UIs that workspace client is connected
+            if (RelayAgentHandler.agentClient) {
+                RelayAgentHandler.agentClient({ type: "WORKSPACE_CONNECTED" })
+            }
+            RelayAgentHandler.uiClients.forEach(uiSend => uiSend({ type: "WORKSPACE_CONNECTED" }))
         }
     }
 
@@ -71,6 +112,14 @@ export class RelayAgentHandler implements AgentHandler {
             console.log("RelayAgentHandler: Agent client disconnected")
             // Notify all UIs that agent is gone
             RelayAgentHandler.uiClients.forEach(uiSend => uiSend({ type: "AGENT_DISCONNECTED" }))
+        } else if (this.role === "vhl_workspace") {
+            RelayAgentHandler.workspaceClient = null
+            console.log("RelayAgentHandler: Workspace client disconnected")
+            // Notify agent and UIs that workspace is gone
+            if (RelayAgentHandler.agentClient) {
+                RelayAgentHandler.agentClient({ type: "WORKSPACE_DISCONNECTED" })
+            }
+            RelayAgentHandler.uiClients.forEach(uiSend => uiSend({ type: "WORKSPACE_DISCONNECTED" }))
         }
     }
 }
