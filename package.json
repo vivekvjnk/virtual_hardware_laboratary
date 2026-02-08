@@ -10,6 +10,7 @@
     "start": "node dist/index.js",
     "start:vap": "tsx src/vap/vapIndex.ts",
     "start:ws": "tsx src/server/wsIndex.ts",
+    "start:workspace": "tsx src/workspace/index.ts",
     "test": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand",
     "clean": "rm -rf dist"
   },

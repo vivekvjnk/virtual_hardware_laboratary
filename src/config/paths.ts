@@ -75,3 +75,11 @@ export const CIRCUITS_TEMP_DIR = path.join(CIRCUITS_DIR, ".tmp");
  * Used by VAP to store evaluation logs and artifacts.
  */
 export const EVAL_RESULTS_DIR = path.join(PROJECT_ROOT, "eval_results");
+
+/**
+ * Workspace directory.
+ * 
+ * Default location for the workspace folder.
+ * This is easily configurable via environment variable.
+ */
+export const WORKSPACE_DIR = process.env.VHL_WORKSPACE_DIR || path.join(PROJECT_ROOT, "workspace");
