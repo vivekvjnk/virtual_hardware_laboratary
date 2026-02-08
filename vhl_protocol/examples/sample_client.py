@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from vhl_protocol import VHLWebSocketClient, EventType, BaseEvent
+from client.client import VHLWebSocketClient, EventType, BaseEvent
 
 logging.basicConfig(level=logging.INFO)
 

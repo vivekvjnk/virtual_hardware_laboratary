@@ -11,3 +11,16 @@ utils/data/*
 iterations/*
 logs/*
 **.egg-info**
+ana_workspace/*
+ana/ana_agent/ana_worker_2/results/30e5a480-9f70-426d-a33c-238dd4d58f97/results.zip
+ana/ana_agent/ana_worker_2/results/4e394813-fbc3-48d2-92a6-969c74e1f136/results.zip
+ana/ana_agent/ana_worker_2/results/30e5a480-9f70-426d-a33c-238dd4d58f97/results/eval.log
+ana/ana_agent/ana_worker_2/results/4e394813-fbc3-48d2-92a6-969c74e1f136/results/eval.log
+ana/ana_agent/ana_worker_2/results/53539012-02c8-4978-a169-5dc57be4a95a/results.zip
+ana/ana_agent/ana_worker_2/results/53539012-02c8-4978-a169-5dc57be4a95a/results/eval.log
+ana/ana_agent/ana_worker_2/results/5afa913e-fe6c-4d84-bf19-05e317529912/results.zip
+ana/ana_agent/ana_worker_2/results/5afa913e-fe6c-4d84-bf19-05e317529912/results/eval.log
+ana/ana_agent/ana_worker_2/results/6380a2e8-9874-40f8-90d9-04c226d198e3/results.zip
+ana/ana_agent/ana_worker_2/results/6380a2e8-9874-40f8-90d9-04c226d198e3/results/eval.log
+ana/ana_agent/ana_worker_2/results/e676cae5-4ddc-479d-9828-97cd4b226f28/results.zip
+ana/ana_agent/ana_worker_2/results/e676cae5-4ddc-479d-9828-97cd4b226f28/results/eval.log

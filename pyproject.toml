@@ -13,6 +13,7 @@ dependencies = [
     "ana",
     "ana-mcp-server",
     "vhl-protocol",
+    "aosm",
 ]
 
 [tool.uv.workspace]
@@ -22,6 +23,7 @@ members = [
     "ana-mcp-server",
     "ana",
     "vhl_protocol",
+    "aosm",
 ]
 
 [tool.uv.sources]
@@ -30,3 +32,4 @@ openhands-tools = { workspace = true }
 ana-mcp-server = { workspace = true }
 ana = { workspace = true }
 vhl-protocol = { workspace = true }
+aosm = { workspace = true }

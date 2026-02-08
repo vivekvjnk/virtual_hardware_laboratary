@@ -34,7 +34,7 @@ class BaseEvent(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     type: EventType
     artifact_id: Optional[str] = None
-    timestamp: str = Field(default_factory=lambda: datetime.utcnow().isoformat() + "Z")
+    timestamp: str = Field(default_factory=lambda: datetime.utcnow().isoformat() + "Z") # ISO-8601
     source: EventSource
     payload: Dict[str, Any] = Field(default_factory=dict)
 

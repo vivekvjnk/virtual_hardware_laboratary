@@ -4,7 +4,7 @@ import logging
 from typing import Optional, Callable, Dict, Any, Awaitable, List
 from pydantic import BaseModel
 import websockets
-from vhl_protocol.models import (
+from ..models import (
     BaseEvent, EventType, EventSource,
     HumanInputPayload, StateTransitionPayload,
     EvaluationUpdatePayload, ArtifactUpdatedPayload,
@@ -122,7 +122,7 @@ class VHLWebSocketClient:
             while True:
                 event = await self._send_queue.get()
                 try:
-                    if self._ws and self._ws.open:
+                    if self._ws and (self._ws.state == websockets.protocol.State.OPEN):
                         await self._ws.send(event.model_dump_json(by_alias=True))
                         logger.debug(f"Sent event: {event.type}")
                     else:
