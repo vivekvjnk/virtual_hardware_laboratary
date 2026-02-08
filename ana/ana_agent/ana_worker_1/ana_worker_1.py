@@ -142,16 +142,19 @@ def run_ana_w1_agent(workspace:str,scud_path: str, schematic_images_path: str = 
         # Find any tsx file in previous iteration dir, assume only one tsx file exists
         prev_tsx_files = list(Path(previous_iteration_dir).glob("*.tsx"))
         if prev_tsx_files:
-            prev_tsx_file_path = prev_tsx_files[0]
+            prev_tsx_file_path = prev_tsx_files[0] # TODO : If required, add support for multiple tsx files later
             logger.info(f"ANA-W1: Found previous circuit tsx file: {prev_tsx_file_path}. It will be made available to the agent.")
-            
             user_message += f"Please use the previous circuit file '{prev_tsx_file_path}' as a reference for error correction."
-            prev_eval_log_files = Path(previous_iteration_dir, "evaluation_results")
-            user_message += f"You may refer to previous evaluation results located at '{prev_eval_log_files}' for understanding previous errors."
         
         else:
             logger.error(f"ANA-W1: No previous circuit tsx file found in {previous_iteration_dir}. Proceeding without it.")
             raise FileNotFoundError(f"No .tsx file found in previous iteration directory: {previous_iteration_dir}")
+        
+        prev_eval_log_files = Path(previous_iteration_dir, "evaluation_results")
+        if prev_eval_log_files:
+            user_message += f"You may refer to previous evaluation results located at '{prev_eval_log_files}' for understanding previous errors."
+        else: 
+            logger.warning(f"ANA-W1: No previous evaluation results found in {prev_eval_log_files}")
     else:
         logger.info(f"ANA-W1: First iteration. Entering synthesis mode.")
         

@@ -1,5 +1,6 @@
 import os
 import logging
+import shutil
 from pathlib import Path
 from typing import List, Optional
 
@@ -24,6 +25,29 @@ class IterationManager:
         
         logger.info(f"[Iteration Manager] Started Iteration: {iteration_id} in {iteration_dir}")
         self._setup_symlinks()
+        return iteration_dir
+
+    def prepare_iteration_with_files(self, iteration_id: str, source_file) -> str:
+        """Creates a new iteration directory and copies specified files into it."""
+        # Validate all files exist before starting
+        # for file_path in source_files:
+        if not os.path.exists(source_file):
+            logger.error(f"[Iteration Manager] Source file not found: {source_file}")
+            raise FileNotFoundError(f"Source file not found: {source_file}")
+
+        iteration_dir = self.start_new_iteration(iteration_id)
+
+        # for file_path in source_files:
+        dest_path = os.path.join(iteration_dir, self.circuit_name)
+        
+        # If the destination already exists (e.g. a symlink from _setup_symlinks), 
+        # remove it first to avoid overwriting symlink targets.
+        if os.path.lexists(dest_path):
+            os.remove(dest_path)
+            
+        shutil.copy2(source_file, dest_path)
+        logger.info(f"[Iteration Manager] Copied {source_file} to {dest_path}")
+
         return iteration_dir
 
     def _setup_symlinks(self):
@@ -67,6 +91,9 @@ class IterationManager:
         else:
             raise FileNotFoundError(f"Pin mapping file not found at {pin_mapping_src}")
 
+    def is_first_iteration(self) -> bool :
+        return len(self.iteration_ids)>1
+    
     def get_previous_iteration_dir(self) -> Optional[str]:
         if len(self.iteration_ids) < 2:
             return None

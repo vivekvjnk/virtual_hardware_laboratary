@@ -119,6 +119,12 @@ class AOSM:
 
     async def _handle_prepare_ana_run(self, event: BaseEvent):
         logger.info("[AOSM] Preparing ANA run...")
+        # TODO 
+        # 1. Send message to workspace client to prepare and upload workspace
+        # 2. Wait for confirmation that workspace zip is uploaded to object storage and get reference
+        # 3. Download the workspace zip, extract it and prepare ANA workspace directory
+        # 4. Transition to TRIGGER_ANA once workspace is ready
+        
         # Translate message to structured observation
         await self.transition_to(AOSMState.TRIGGER_ANA, "ANA run prepared")
 

@@ -5,6 +5,7 @@ import json
 import sys
 from typing import Optional, Dict, Any, List
 from pathlib import Path
+import uuid
 
 from ana_agent.observer import ObserverAgent, ObserverMode
 from ana_agent.ana_worker_1 import run_ana_w1_agent
@@ -17,7 +18,12 @@ from ana_agent.state_machine.iteration_manager import IterationManager
 logger = logging.getLogger(__name__)
 
 class ANADStateMachine:
-    def __init__(self, max_auto_fixes: int = 3):
+    def __init__(self, max_auto_fixes: int = 3, circuit_code_path:str=None, observations:List[str]=None):
+        # TODO Done: ANA state machine can be initialized with a circuit code path
+        # This allows stateless circuit code correction and manipulation.
+        # Caller can inject the circuit code path. __init__ function should propagate the path to handle_init through message passing.
+        # Caller can also inject observations list to the function. This list will be passed through messages to the state machine.
+
         self.state = State.INIT
         # Inputs/Observations - Now handled via current_message for transparency
         self.max_auto_fixes = max_auto_fixes
@@ -35,8 +41,10 @@ class ANADStateMachine:
             "state_id": State.INIT,
             "from_state_id": None,
             "auto_fix_count": 0,
-            "observations": []
+            "observations": observations if observations else []
         }
+        if circuit_code_path:
+            self.current_message.update({"circuit_code_path": circuit_code_path})
 
         # State Transition Table
         self.transition_table = {
@@ -123,7 +131,20 @@ class ANADStateMachine:
         logger.info(f"[ANA-D SM] State: INIT. Triggered from: {message.get('from_state_id')}\n{"*"*30}\n{message}\n{"*"*30}")
         result_msg = message.copy()
         
-        iteration_id = hex(int(time.time()))[2:]
+
+        observations = message.get("observations",[])
+        circuit_code_path = message.get("circuit_code_path",None)
+        
+        # TODO v2 : If this is the first iteration and message contains non empty observation list and circuit code path, 
+        # this is a special case triggered by user messages from UI. Create a new iteration directory with the circuit code in it.
+        # This handling should be done only once, for the very first iteration with non empty observation list and not None circuit code path.
+        if self.iteration_manager.is_first_iteration() and (len(observations)>0) and circuit_code_path:
+            last_iteration_id = str(uuid.uuid4()).split("-")[0][:8] # First 8 characters of UUID
+            self.iteration_manager.prepare_iteration_with_files(source_files=circuit_code_path,iteration_id=last_iteration_id)
+            # Remove the circuit code path from message. This is no longer required.
+            result_msg.pop("circuit_code_path") 
+
+        iteration_id = str(uuid.uuid4()).split("-")[0][:8]
         self.iteration_manager.start_new_iteration(iteration_id)
         
         # INIT handler is responsible for clearing the iteration-specific state
@@ -142,8 +163,14 @@ class ANADStateMachine:
         result_msg = message.copy()
         result_msg["state_id"] = State.OBSERVE
         
-        if len(self.iteration_manager.iteration_ids) < 2:
-            logger.info("[ANA-D SM] First iteration. Skipping observation.")
+        if self.iteration_manager.is_first_iteration():
+            if (len(observations)>0): # Triggered directly through user message
+                result_msg.update({
+                    "intent_status": "violated",
+                    "observations": observations,
+                    "error_class" : "LOCAL"
+                })
+            logger.info(f"[ANA-D SM] First iteration. Observations: {observations}")
             return result_msg
 
         previous_dir = self.iteration_manager.get_previous_iteration_dir()
@@ -249,12 +276,6 @@ class ANADStateMachine:
     def _handle_trigger_w1(self, message: Dict[str, Any]) -> Dict[str, Any]:
         logger.info(f"[ANA-D SM] State: TRIGGER_W1. Triggered from: {message.get('from_state_id')}\n{"*"*30}\n{message}\n{"*"*30}")
         
-        # If last state is not PREPARE_FIX, ANA-W1 is in error correction mode
-        # In this mode, ANA-W1 should use different system prompt. 
-        # Previous iteration artefacts, specifically evaluation results and circuit tsx file, should be made available.
-        previous_state = message.get("from_state_id")
-
-        logger.info(f"[ANA-D SM] State: TRIGGER_W1. Invoking ANA-W1...")
         result_msg = message.copy()
         result_msg["state_id"] = State.TRIGGER_W1
         
@@ -265,21 +286,25 @@ class ANADStateMachine:
         try:
             scud_path = self.iteration_manager.get_scud_path()
             schematic_images_path = os.path.join(self.iteration_manager.current_iteration_dir, "schematic_images")
-
-
-            # NOTE: Branching logic based on previous state
-            # Any path other than from PREPARE_FIX means synthesis mode
-            # system prompt selection and previous artefact usage is handled inside run_ana_w1_agent
             observations = result_msg.get("observations", [])
-            if previous_state == State.PREPARE_FIX:
+
+
+
+            # NOTE: Instead of "previous state" based conditional branching, lets use observation list for decision making
+            # If there are any observations in the observation list, this is definitely an error correction iteration
+            # It is the responsibility of previous states to ensure existence of previous iteration directory and its contents.
+            # There are perceivably two operating modes for ANA-W1. Error correction and Synthesis. 
+            # If observations are present and previous iteration directory is not none, 
+            # ANA-W1 is triggered in Error Correction mode. Otherwise Synthesis mode
+            if len(observations)>0 and (previous_iter_dir:=self.iteration_manager.get_previous_iteration_dir()):
                 logger.info("[ANA-D SM] ANA-W1 in error correction mode (triggered from PREPARE_FIX).")
                 run_ana_w1_agent(
                     workspace=str(self.iteration_manager.current_iteration_dir),
-                    previous_iteration_dir=self.iteration_manager.get_previous_iteration_dir(),
                     schematic_images_path=schematic_images_path,
                     scud_path=scud_path,
                     circuit_name=self.circuit_name,
-                    observations=observations
+                    observations=observations,
+                    previous_iteration_dir=previous_iter_dir,
                 )
             else:
                 logger.info("[ANA-D SM] ANA-W1 in synthesis mode (not triggered from PREPARE_FIX).")

@@ -27,6 +27,8 @@ class EventType(str, Enum):
     IDENTIFY = "IDENTIFY"
     AGENT_CONNECTED = "AGENT_CONNECTED"
     AGENT_DISCONNECTED = "AGENT_DISCONNECTED"
+    WORKSPACE_CONNECTED = "WORKSPACE_CONNECTED"
+    WORKSPACE_DISCONNECTED = "WORKSPACE_DISCONNECTED"
 
 class BaseEvent(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
@@ -36,7 +38,7 @@ class BaseEvent(BaseModel):
     artifact_id: Optional[str] = None
     timestamp: str = Field(default_factory=lambda: datetime.utcnow().isoformat() + "Z") # ISO-8601
     source: EventSource
-    payload: Dict[str, Any] = Field(default_factory=dict)
+    payload: Optional[Dict[str, Any]] = Field(default_factory=dict)
 
 # Payload models
 
