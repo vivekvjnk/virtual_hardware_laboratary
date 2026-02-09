@@ -1,7 +1,13 @@
 import asyncio
 import logging
 import json
+import os
+import zipfile
+import tempfile
+import shutil
+import boto3
 from typing import Optional, Dict, Any, List
+from pathlib import Path
 from state_machine.states import AOSMState
 from vhl_protocol.client.client import VHLWebSocketClient
 from vhl_protocol.models import BaseEvent, EventType, EventSource
@@ -25,6 +31,18 @@ class AOSM:
             "observations": []
         }
         self.event_queue = asyncio.Queue()
+        self.workspace_root = Path("ana_workspace")
+        self.workspace_root.mkdir(exist_ok=True)
+        
+        # Minio configuration (should ideally be from env)
+        self.s3_client = boto3.client(
+            's3',
+            endpoint_url=os.getenv("MINIO_ENDPOINT", "http://localhost:9000"),
+            aws_access_key_id=os.getenv("MINIO_ACCESS_KEY", "minioadmin"),
+            aws_secret_access_key=os.getenv("MINIO_SECRET_KEY", "supersecretpassword"),
+            config=boto3.session.Config(signature_version='s3v4')
+        )
+        self.bucket_name = os.getenv("MINIO_BUCKET", "vhl")
 
     async def start(self):
         """Starts AOSM and the WebSocket client."""
@@ -74,25 +92,41 @@ class AOSM:
         self.state = next_state
         logger.info(f"Transitioning: {from_state.name} -> {next_state.name} (Reason: {reason})")
         
+        # Update current message
+        self.current_message["state_id"] = next_state
+
         # Notify the UI/Protocol layer
         await self.ws_client.emit_state_transition(
             from_state=from_state.name,
             to_state=next_state.name,
             reason=reason
         )
+        
+        # Push an internal transition event to the queue to trigger any "on_enter" logic
+        # or immediate next steps in the state machine loop.
+        await self.event_queue.put(BaseEvent(
+            type=EventType.STATE_TRANSITION,
+            source=EventSource.BACKEND,
+            payload={
+                "from": from_state.name,
+                "to": next_state.name,
+                "reason": reason
+            }
+        ))
+        
 
     # --- State Handlers ---
 
     async def _handle_idle(self, event: BaseEvent):
         if event.type == EventType.REFERENCE_UPLOADED:
             await self.transition_to(AOSMState.BOOTSTRAP_PIPELINE, "New schematic uploaded")
-            await self._run_bootstrap()
         elif event.type == EventType.HUMAN_INPUT:
             await self.transition_to(AOSMState.INTENT_CLASSIFY, "User message received")
 
     async def _handle_bootstrap_pipeline(self, event: BaseEvent):
-        # Pipeline execution is asynchronous; we might receive internal signals or just wait
-        pass
+        # We trigger the bootstrap logic upon entering this state.
+        if event.type == EventType.STATE_TRANSITION:
+            await self._run_bootstrap()
 
     async def _handle_wait_for_ana(self, event: BaseEvent):
         if event.type == EventType.EVALUATION_UPDATE:
@@ -116,21 +150,79 @@ class AOSM:
         logger.info("[AOSM] Classifying intent...")
         # Transition to PREPARE_ANA_RUN or WAIT_FOR_USER if ambiguous
         await self.transition_to(AOSMState.PREPARE_ANA_RUN, "Intent classified as modification")
+        # Request workspace client to prepare and upload workspace
+        await self.ws_client.emit_workspace_upload(message="Preparing workspace for modification run")
 
     async def _handle_prepare_ana_run(self, event: BaseEvent):
         logger.info("[AOSM] Preparing ANA run...")
-        # TODO 
-        # 1. Send message to workspace client to prepare and upload workspace
-        # 2. Wait for confirmation that workspace zip is uploaded to object storage and get reference
-        # 3. Download the workspace zip, extract it and prepare ANA workspace directory
-        # 4. Transition to TRIGGER_ANA once workspace is ready
         
-        # Translate message to structured observation
-        await self.transition_to(AOSMState.TRIGGER_ANA, "ANA run prepared")
+        if event.type in [EventType.WORKSPACE_SYNC_COMPLETE]:
+            logger.info(f"[AOSM] Received workspace upload confirmation: {event}")
+            reference_id = event.artifact_id
+            if not reference_id:
+                logger.error("[AOSM] No artifact_id provided in WORKSPACE_UPLOAD event")
+                await self.transition_to(AOSMState.ERROR_PRESENTED, "Missing workspace reference")
+                return
+
+            try:
+                # 3. Download the workspace zip, extract and store circuit code under a predefined directory
+                circuit_path = await self._download_and_extract_workspace(reference_id)
+                logger.info(f"[AOSM] Circuit code extracted to: {circuit_path}")
+                
+                # Update current message with the circuit path for the next states
+                self.current_message["circuit_code_path"] = str(circuit_path)
+                
+                # 4. Transition to TRIGGER_ANA once workspace is ready
+                await self.transition_to(AOSMState.TRIGGER_ANA, "Workspace ready for ANA run")
+            except Exception as e:
+                logger.error(f"[AOSM] Failed to prepare workspace: {e}", exc_info=True)
+                await self.transition_to(AOSMState.ERROR_PRESENTED, f"Workspace preparation failed: {str(e)}")
+        else:
+            logger.info(f"[AOSM] Still waiting for workspace upload (Received: {event.type})")
+
+    async def _download_and_extract_workspace(self, reference_id: str) -> Path:
+        """Downloads the workspace zip and extracts the circuit file."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_zip = Path(temp_dir) / "workspace.zip"
+            
+            # Download from Minio
+            logger.info(f"Downloading {reference_id} from bucket {self.bucket_name}...")
+            await asyncio.to_thread(
+                self.s3_client.download_file, 
+                self.bucket_name, 
+                reference_id, 
+                str(temp_zip)
+            )
+            
+            # Extract
+            extract_dir = Path(temp_dir) / "extracted"
+            extract_dir.mkdir()
+            with zipfile.ZipFile(temp_zip, 'r') as zip_ref:
+                zip_ref.extractall(extract_dir)
+            
+            # Find the circuit .tsx file
+            # For now, we assume there's a .tsx file or we take the first one found
+            tsx_files = list(extract_dir.glob("**/*.tsx"))
+            if not tsx_files:
+                raise FileNotFoundError("No .tsx circuit file found in workspace zip")
+            
+            # Pick the first one (or we could have more logic here)
+            source_tsx = tsx_files[0]
+            
+            # Store in predefined directory
+            dest_dir = self.workspace_root / "current_run"
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            dest_tsx = dest_dir / source_tsx.name
+            
+            shutil.copy2(source_tsx, dest_tsx)
+            return dest_tsx
 
     async def _handle_trigger_ana(self, event: BaseEvent):
-        logger.info("[AOSM] Triggering ANA-D...")
-        # Start ANA-D process
+        if event.type == EventType.STATE_TRANSITION:
+            logger.info(f"[AOSM] Triggering ANA-D on state entry.")
+            # Start ANA-D process
+        # NOTE: Temporary code to stop execution here.
+        raise "Reached trigger_ana"
         await self.transition_to(AOSMState.WAIT_FOR_ANA, "ANA-D started")
 
     async def _handle_cancel_pipeline(self, event: BaseEvent):

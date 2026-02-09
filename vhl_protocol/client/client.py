@@ -9,7 +9,7 @@ from ..models import (
     HumanInputPayload, StateTransitionPayload,
     EvaluationUpdatePayload, ArtifactUpdatedPayload,
     AuthorityRequiredPayload, ErrorPayload,
-    IdentifyPayload
+    IdentifyPayload, WorkspacePayload
 )
 
 logger = logging.getLogger(__name__)
@@ -174,6 +174,14 @@ class VHLWebSocketClient:
     async def emit_error(self, scope: str, severity: str, message: str):
         payload = ErrorPayload(scope=scope, severity=severity, message=message)
         await self.emit(EventType.ERROR, payload)
+
+    async def emit_workspace_upload(self, message: str = "Requesting workspace upload"):
+        payload = WorkspacePayload(message=message)
+        await self.emit(EventType.WORKSPACE_UPLOAD, payload)
+
+    async def emit_workspace_download(self, reference_id: str, storage_path: str, filename: str):
+        payload = WorkspacePayload(reference_id=reference_id, storage_path=storage_path, filename=filename)
+        await self.emit(EventType.WORKSPACE_DOWNLOAD, payload)
 
     # --- Helper methods for Runtime -> Backend events ---
 

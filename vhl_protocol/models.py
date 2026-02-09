@@ -9,6 +9,7 @@ VHL_PROTOCOL_VERSION = "0.1"
 class EventSource(str, Enum):
     RUNTIME = "runtime"
     BACKEND = "backend"
+    WORKSPACE = "vhl_workspace"
 
 class EventType(str, Enum):
     # Runtime -> Backend (Observation Events)
@@ -22,6 +23,11 @@ class EventType(str, Enum):
     ARTIFACT_UPDATED = "ARTIFACT_UPDATED"
     AUTHORITY_REQUIRED = "AUTHORITY_REQUIRED"
     ERROR = "ERROR"
+
+    # Workspace Management
+    WORKSPACE_DOWNLOAD = "WORKSPACE_DOWNLOAD"
+    WORKSPACE_UPLOAD = "WORKSPACE_UPLOAD"
+    WORKSPACE_SYNC_COMPLETE = "WORKSPACE_SYNC_COMPLETE"
     
     # Transport-Only (Relay Layer)
     IDENTIFY = "IDENTIFY"
@@ -84,6 +90,12 @@ class ErrorPayload(BaseModel):
 
 class IdentifyPayload(BaseModel):
     role: str # ui | agent
+
+class WorkspacePayload(BaseModel):
+    reference_id: Optional[str] = None
+    storage_path: Optional[str] = None
+    filename: Optional[str] = None
+    message: Optional[str] = None
 
 class AgentPresencePayload(BaseModel):
     agent_id: Optional[str] = None

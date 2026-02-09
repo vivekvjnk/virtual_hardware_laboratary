@@ -399,11 +399,19 @@ class ANADStateMachine:
     def cleanup(self):
         self.mcp_manager.cleanup()
 
+    def run(self):
+        """Runs the state machine loop until a terminal state or HIL_WAIT is reached."""
+        logger.info("--- Starting State Machine ---")
+        while not self.is_terminal() and self.state != State.HIL_WAIT:
+            self.step()
+
+        if self.state == State.EXIT_SUCCESS:
+            logger.info("Simulation Finished: SUCCESS")
+        elif self.state == State.HIL_WAIT:
+            logger.info("State Machine paused at HIL_WAIT. Awaiting user input.")
+        elif self.state == State.EXIT_ABORT:
+            logger.info("Simulation Finished: ABORTED")
+
 if __name__ == "__main__":
     sm = ANADStateMachine(max_auto_fixes=5)
-    logger.info("--- Starting State Machine ---")
-    while not sm.is_terminal() and sm.state != State.HIL_WAIT:
-        sm.step()
-    
-    if sm.state == State.EXIT_SUCCESS:
-        logger.info("Simulation Finished: SUCCESS")
+    sm.run()
