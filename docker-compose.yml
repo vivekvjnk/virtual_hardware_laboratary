@@ -9,12 +9,12 @@ services:
       - "8081:8081"
       - "1080:1080" # Port for Agent WebSocket Server
       - "3020:3020" # Port for tscircuit
-      - "9000:9000" # port for Minio 
+      # - "9000:9000" # port for Minio 
     networks:
       - vhl-network
     volumes:
-      - vhl-lib:/app/lib
-      - vhl-circuits:/app/circuits
+      - vhl-lib:/app/workspace/lib
+      - vhl-circuits:/app/circuits # Obsolete, delete later
     environment:
       - VHL_TRANSPORT=http
       - PORT=8080
@@ -23,6 +23,21 @@ services:
       # Add your MinIO connection details here for your code to use
       - MINIO_ENDPOINT=minio
     restart: unless-stopped
+
+  minio:
+    image: quay.io/minio/minio:latest
+    container_name: minio
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: supersecretpassword
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    networks:
+      - vhl-network
+    volumes:
+      - .db/data:/data
+    command: server --console-address ":9001" /data
 
 networks:
   vhl-network:

@@ -24,9 +24,46 @@ WS_CLIENT_PID=$!
 
 # Start tscircuit in background
 echo "Starting tscircuit..."
-tsci dev workspace/blinking-led-board.tsx &
+
+
+
+cd workspace/
+# Use expect to handle the interactive prompts
+expect <<DONE
+  set timeout -1
+  spawn tsci init
+  
+  # 1. Handle the update prompt
+  expect {
+    "Would you like to update now?" {
+      send "n\r"
+      exp_continue
+    }
+    # 2. Handle the initialization prompt
+    "Do you want to initialize a new project in the current directory?" {
+      send "y\r"
+      exp_continue
+    }
+    # 3. Handle the package name (Enter for default)
+    "Package name" {
+      send "\r"
+      exp_continue
+    }
+    # 4. AI assistance
+    "Would you like to set up tscircuit AI skill for enhanced AI assistance?" {
+      send "n\r"
+    }
+
+  }
+  expect eof
+DONE
+
+echo "Starting tsci dev..."
+
+tsci dev bq79616_eval_board.tsx &
 TSCI_PID=$!
 
+cd ../
 # Wait for any process to exit
 wait -n $LIBRARY_PID $VAP_PID $WS_SERVER_PID $WS_CLIENT_PID $TSCI_PID
 
