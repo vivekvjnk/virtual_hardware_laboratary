@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "VHL Agentic Orchestration State Machine"
 dependencies = [
     "vhl-protocol",
+    "ana",
 ]
 
 [build-system]

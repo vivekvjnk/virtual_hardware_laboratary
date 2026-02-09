@@ -19,3 +19,9 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["ana_agent*"]
+
+
+[tool.uv.sources]
+ana_worker_1 = {workspace = true}
+ana_worker_2 = {workspace = true}
+state_machine = {workspace = true}

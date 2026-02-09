@@ -12,6 +12,8 @@ from state_machine.states import AOSMState
 from vhl_protocol.client.client import VHLWebSocketClient
 from vhl_protocol.models import BaseEvent, EventType, EventSource
 
+from ana_agent.state_machine import ANADStateMachine
+
 logger = logging.getLogger(__name__)
 
 class AOSM:
@@ -86,7 +88,7 @@ class AOSM:
         else:
             logger.warning(f"No handler defined for state {self.state}")
 
-    async def transition_to(self, next_state: AOSMState, reason: str = ""):
+    async def transition_to(self, next_state: AOSMState, reason: str = "", payload: Optional[Dict[str, Any]] = None):
         """Transitions to a new state and emits a state transition event."""
         from_state = self.state
         self.state = next_state
@@ -102,26 +104,34 @@ class AOSM:
             reason=reason
         )
         
-        # Push an internal transition event to the queue to trigger any "on_enter" logic
-        # or immediate next steps in the state machine loop.
-        await self.event_queue.put(BaseEvent(
-            type=EventType.STATE_TRANSITION,
-            source=EventSource.BACKEND,
+        if payload:
+            payload["from"] = from_state.name
+            payload["to"] = next_state.name
+            payload["reason"] = reason
+        else:
             payload={
                 "from": from_state.name,
                 "to": next_state.name,
                 "reason": reason
             }
+        
+        # Push an internal transition event to the queue to trigger any "on_enter" logic
+        # or immediate next steps in the state machine loop.
+        await self.event_queue.put(BaseEvent(
+            type=EventType.STATE_TRANSITION,
+            source=EventSource.BACKEND,
+            payload=payload
         ))
         
 
     # --- State Handlers ---
 
     async def _handle_idle(self, event: BaseEvent):
+        logger.info(f"[AOSM] In IDLE state... Event: {event}")
         if event.type == EventType.REFERENCE_UPLOADED:
             await self.transition_to(AOSMState.BOOTSTRAP_PIPELINE, "New schematic uploaded")
         elif event.type == EventType.HUMAN_INPUT:
-            await self.transition_to(AOSMState.INTENT_CLASSIFY, "User message received")
+            await self.transition_to(AOSMState.INTENT_CLASSIFY, "User message received", payload=event.payload)
 
     async def _handle_bootstrap_pipeline(self, event: BaseEvent):
         # We trigger the bootstrap logic upon entering this state.
@@ -139,6 +149,7 @@ class AOSM:
             await self.transition_to(AOSMState.ERROR_PRESENTED, f"System error: {event.payload.get('message')}")
 
     async def _handle_present_result(self, event: BaseEvent):
+        logger.info(f"[AOSM] Presenting results to user... Event: {event}")
         if event.type == EventType.HUMAN_INPUT:
             await self.transition_to(AOSMState.INTENT_CLASSIFY, "User modification requested")
         elif event.type == EventType.REFERENCE_UPLOADED:
@@ -147,9 +158,12 @@ class AOSM:
     async def _handle_intent_classify(self, event: BaseEvent):
         # In a real scenario, an agent would classify the intent here.
         # For the wireframe, we assume valid modification request.
-        logger.info("[AOSM] Classifying intent...")
+        logger.info(f"[AOSM] Classifying intent...\n event: {event}")
+        # Add user message to the current message observations
+        self.current_message["observations"].append(event.payload.get("content", "No message provided"))
+        logger.info(f"[AOSM] Current message: {self.current_message}")
         # Transition to PREPARE_ANA_RUN or WAIT_FOR_USER if ambiguous
-        await self.transition_to(AOSMState.PREPARE_ANA_RUN, "Intent classified as modification")
+        await self.transition_to(AOSMState.PREPARE_ANA_RUN, "Intent classified as modification", payload=event.payload)
         # Request workspace client to prepare and upload workspace
         await self.ws_client.emit_workspace_upload(message="Preparing workspace for modification run")
 
@@ -173,7 +187,7 @@ class AOSM:
                 self.current_message["circuit_code_path"] = str(circuit_path)
                 
                 # 4. Transition to TRIGGER_ANA once workspace is ready
-                await self.transition_to(AOSMState.TRIGGER_ANA, "Workspace ready for ANA run")
+                await self.transition_to(AOSMState.TRIGGER_ANA, "Workspace ready for ANA run", payload=event.payload)
             except Exception as e:
                 logger.error(f"[AOSM] Failed to prepare workspace: {e}", exc_info=True)
                 await self.transition_to(AOSMState.ERROR_PRESENTED, f"Workspace preparation failed: {str(e)}")
@@ -220,9 +234,21 @@ class AOSM:
     async def _handle_trigger_ana(self, event: BaseEvent):
         if event.type == EventType.STATE_TRANSITION:
             logger.info(f"[AOSM] Triggering ANA-D on state entry.")
-            # Start ANA-D process
-        # NOTE: Temporary code to stop execution here.
-        raise "Reached trigger_ana"
+            # Create ANA-D state machine instance with the circuit code path 
+            circuit_code_path = self.current_message.get("circuit_code_path")
+            observations = event.payload.get("content", "").split("\n") 
+            logger.info(f"[AOSM-TRIGGER ANA]: Circuit code path: {circuit_code_path}, observations: {observations}")
+
+            if not circuit_code_path:
+                logger.error("[AOSM] No circuit code path found in current message for ANA-D")
+                await self.transition_to(AOSMState.ERROR_PRESENTED, "Missing circuit code for ANA run")
+                return
+            ana_sm = ANADStateMachine(circuit_code_path=circuit_code_path, observations=observations)
+            ana_sm.run()
+        else:
+            raise ValueError(f"Unexpected event type in TRIGGER_ANA state: {event.type}")
+        
+        
         await self.transition_to(AOSMState.WAIT_FOR_ANA, "ANA-D started")
 
     async def _handle_cancel_pipeline(self, event: BaseEvent):

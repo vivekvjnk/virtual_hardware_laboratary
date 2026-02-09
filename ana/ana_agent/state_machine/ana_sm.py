@@ -29,6 +29,7 @@ class ANADStateMachine:
         self.max_auto_fixes = max_auto_fixes
         
         # Project Info
+        # TODO : Make project info configurable
         self.circuit_name: str = "bq79616_eval_board"
         self.workspace = Path(os.getcwd()) / "ana_workspace" / f"{self.circuit_name}_project"
 
