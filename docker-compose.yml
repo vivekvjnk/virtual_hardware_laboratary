@@ -8,7 +8,8 @@ services:
       - "8080:8080"
       - "8081:8081"
       - "1080:1080" # Port for Agent WebSocket Server
-      - "3020:3020" # Port for tscircuit 
+      - "3020:3020" # Port for tscircuit
+      - "9000:9000" # port for Minio 
     networks:
       - vhl-network
     volumes:

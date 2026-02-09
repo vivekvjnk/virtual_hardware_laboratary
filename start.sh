@@ -16,8 +16,19 @@ echo "Starting Agent WebSocket Server..."
 node dist/server/wsIndex.js &
 WS_SERVER_PID=$!
 
+
+# Start Workspace WebSocket Client in background
+echo "Starting Workspace WebSocket Client..."
+node dist/workspace/index.js &
+WS_CLIENT_PID=$!
+
+# Start tscircuit in background
+echo "Starting tscircuit..."
+tsci dev workspace/blinking-led-board.tsx &
+TSCI_PID=$!
+
 # Wait for any process to exit
-wait -n $LIBRARY_PID $VAP_PID $WS_SERVER_PID
+wait -n $LIBRARY_PID $VAP_PID $WS_SERVER_PID $WS_CLIENT_PID $TSCI_PID
 
 # Exit with status of process that exited first
 exit $?

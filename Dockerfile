@@ -34,16 +34,20 @@ RUN pnpm install --frozen-lockfile
 
 COPY tsconfig.json ./
 COPY src ./src
+COPY dist/runframe ./runframe
+COPY workspace ./workspace
+
 RUN pnpm build
 
 # 6. Directory setup for volumes
-RUN mkdir -p /app/lib /app/circuits
+RUN mkdir -p /app/lib /app/circuits  
 
 # Environment variables
 ENV VHL_TRANSPORT=http \
     PORT=8080 \
     VAP_PORT=8081 \
-    VHL_LIBRARY_DIR=/app/lib
+    VHL_LIBRARY_DIR=/app/lib \
+    RUNFRAME_STANDALONE_FILE_PATH=/app/runframe/standalone.min.js
 
 EXPOSE 8080 8081
 VOLUME ["/app/lib", "/app/circuits"]

@@ -91,9 +91,9 @@ export class WorkspaceClient {
         }
     }
 
-    private async handleWorkspaceDownload(msg: AgentMessage) {
+    private async handleWorkspaceUpload(msg: AgentMessage) {
         try {
-            console.log("[WorkspaceClient] Processing WORKSPACE_DOWNLOAD");
+            console.log("[WorkspaceClient] Processing WORKSPACE_UPLOAD");
             const requestId = msg.id;
 
             // Ensure bucket exists
@@ -130,21 +130,21 @@ export class WorkspaceClient {
             await fs.unlink(zipPath).catch(() => { });
 
         } catch (err: any) {
-            console.error("[WorkspaceClient] Download failed:", err);
-            this.sendError("WORKSPACE_DOWNLOAD_FAILED", err.message);
+            console.error("[WorkspaceClient] Upload failed:", err);
+            this.sendError("WORKSPACE_UPLOAD_FAILED", err.message);
         }
     }
 
-    private async handleWorkspaceUpload(msg: AgentMessage) {
+    private async handleWorkspaceDownload(msg: AgentMessage) {
         try {
-            console.log("[WorkspaceClient] Processing WORKSPACE_UPLOAD");
+            console.log("[WorkspaceClient] Processing WORKSPACE_DOWNLOAD");
             const artifactId = msg.artifact_id;
             if (!artifactId) {
                 throw new Error("No artifact_id provided in WORKSPACE_UPLOAD message");
             }
 
             // 1. Pull from MinIO
-            const tempDir = path.join(TEMP_DIR, `upload_${randomUUID()}`);
+            const tempDir = path.join(TEMP_DIR, `download_${randomUUID()}`);
             console.log(`[WorkspaceClient] Pulling artifact ${artifactId} to ${tempDir}`);
             const localZipPath = await pullObject(artifactId, tempDir);
 
@@ -165,18 +165,18 @@ export class WorkspaceClient {
                 source: "vhl_workspace",
                 payload: {
                     status: "success",
-                    operation: "upload"
+                    operation: "download"
                 }
             };
             this.send(response);
-            console.log("[WorkspaceClient] Upload and sync complete");
+            console.log("[WorkspaceClient] Download and sync complete");
 
             // Cleanup
             await fs.rm(tempDir, { recursive: true, force: true }).catch(() => { });
 
         } catch (err: any) {
-            console.error("[WorkspaceClient] Upload failed:", err);
-            this.sendError("WORKSPACE_UPLOAD_FAILED", err.message);
+            console.error("[WorkspaceClient] Download failed:", err);
+            this.sendError("WORKSPACE_DOWNLOAD_FAILED", err.message);
         }
     }
 
