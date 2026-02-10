@@ -48,7 +48,8 @@ ENV VHL_TRANSPORT=http \
     PORT=8080 \
     VAP_PORT=8081 \
     VHL_LIBRARY_DIR=/app/lib \
-    RUNFRAME_STANDALONE_FILE_PATH=/app/runframe/standalone.min.js
+    RUNFRAME_STANDALONE_FILE_PATH=/app/runframe/standalone.min.js\
+    TSCI_SKIP_CLI_UPDATE=true
 
 EXPOSE 8080 8081
 VOLUME ["/app/lib", "/app/circuits"]

@@ -14,7 +14,6 @@ import { spawn } from "child_process";
 import { Decision } from "./state.js";
 import * as fs from "fs/promises";
 import * as path from "path";
-import { compressDirectory } from "../utils/archive.js";
 import { prepareMetadata } from "./metadata.js";
 
 export interface EvaluationResult {
@@ -22,7 +21,6 @@ export interface EvaluationResult {
     logs: string[];
     timedOut: boolean;
     metadata?: Record<string, any>;
-    resultsZipPath?: string;
     eval_status?: "Success" | "Error";
 }
 
@@ -111,15 +109,11 @@ export function evaluateCircuit(
                 eval_status = "Success";
             }
 
-            const zipPath = `${resultsDir}.zip`;
-            await compressDirectory(resultsDir, zipPath);
-
             resolve({
                 decision,
                 logs,
                 timedOut,
                 metadata,
-                resultsZipPath: zipPath,
                 eval_status
             });
         });
