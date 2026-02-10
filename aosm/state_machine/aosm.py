@@ -25,8 +25,7 @@ class AOSM:
         self.state = AOSMState.IDLE
         self.ws_client = VHLWebSocketClient(
             url=ws_url,
-            role="agent",
-            on_event_received=self._handle_ws_event
+            role="agent"
         )
         self.current_message: Dict[str, Any] = {
             "state_id": self.state,
@@ -35,6 +34,8 @@ class AOSM:
         self.event_queue = asyncio.Queue()
         self.workspace_root = Path("ana_workspace")
         self.workspace_root.mkdir(exist_ok=True)
+        self.active_ana_sm: Optional[ANADStateMachine] = None
+        self._main_loop_task: Optional[asyncio.Task] = None
         
         # Minio configuration (should ideally be from env)
         self.s3_client = boto3.client(
@@ -49,12 +50,16 @@ class AOSM:
     async def start(self):
         """Starts AOSM and the WebSocket client."""
         logger.info("Starting AOSM...")
+        self.ws_client.add_subscriber(self._handle_ws_event)
         await self.ws_client.start()
-        asyncio.create_task(self._main_loop())
+        self._main_loop_task = asyncio.create_task(self._main_loop())
 
     async def stop(self):
         """Stops AOSM and the WebSocket client."""
         logger.info("Stopping AOSM...")
+        self.ws_client.remove_subscriber(self._handle_ws_event)
+        if self._main_loop_task:
+            self._main_loop_task.cancel()
         await self.ws_client.stop()
 
     async def _handle_ws_event(self, event: BaseEvent):
@@ -243,12 +248,13 @@ class AOSM:
                 logger.error("[AOSM] No circuit code path found in current message for ANA-D")
                 await self.transition_to(AOSMState.ERROR_PRESENTED, "Missing circuit code for ANA run")
                 return
-            ana_sm = ANADStateMachine(
+            self.active_ana_sm = ANADStateMachine(
                 circuit_code_path=circuit_code_path, 
                 observations=observations,
                 ws_client=self.ws_client
             )
-            await ana_sm.run()
+            # Run the ANA-D state machine in a background task to keep AOSM responsive
+            asyncio.create_task(self.active_ana_sm.run())
         else:
             raise ValueError(f"Unexpected event type in TRIGGER_ANA state: {event.type}")
         

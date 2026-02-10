@@ -9,7 +9,8 @@ from ..models import (
     HumanInputPayload, StateTransitionPayload,
     EvaluationUpdatePayload, ArtifactUpdatedPayload,
     AuthorityRequiredPayload, ErrorPayload,
-    IdentifyPayload, WorkspacePayload
+    IdentifyPayload, WorkspacePayload,
+    VAPInitPayload, VAPStatusPayload
 )
 
 logger = logging.getLogger(__name__)
@@ -32,6 +33,9 @@ class VHLWebSocketClient:
         self._is_running = False
         self._send_queue = asyncio.Queue()
         self._connect_task = None
+        self._subscribers: List[Callable[[BaseEvent], Awaitable[None]]] = []
+        if on_event_received:
+            self._subscribers.append(on_event_received)
 
     async def start(self):
         """Starts the client and identification loop in a background task."""
@@ -109,8 +113,12 @@ class VHLWebSocketClient:
                     event = BaseEvent.model_validate(data)
                     logger.debug(f"Received event: {event.type}")
                     
-                    if self.on_event_received:
-                        await self.on_event_received(event)
+                    # Notify all subscribers
+                    for subscriber in self._subscribers:
+                        try:
+                            await subscriber(event)
+                        except Exception as e:
+                            logger.error(f"Error in subscriber callback: {e}")
                 except Exception as e:
                     logger.error(f"Error parsing received event: {e}. Data: {message}")
         except websockets.ConnectionClosed:
@@ -152,6 +160,38 @@ class VHLWebSocketClient:
             payload=payload.model_dump(by_alias=True)
         )
         await self._send_queue.put(event)
+        return event
+
+    def add_subscriber(self, callback: Callable[[BaseEvent], Awaitable[None]]):
+        if callback not in self._subscribers:
+            self._subscribers.append(callback)
+
+    def remove_subscriber(self, callback: Callable[[BaseEvent], Awaitable[None]]):
+        if callback in self._subscribers:
+            self._subscribers.remove(callback)
+
+    async def wait_for_event(
+        self, 
+        event_type: EventType, 
+        filter_func: Optional[Callable[[BaseEvent], bool]] = None, 
+        timeout: float = 300.0
+    ) -> BaseEvent:
+        """Utility to wait for a specific event to occur."""
+        queue = asyncio.Queue()
+        
+        async def subscriber(event: BaseEvent):
+            if event.type == event_type:
+                if filter_func is None or filter_func(event):
+                    await queue.put(event)
+        
+        self.add_subscriber(subscriber)
+        try:
+            return await asyncio.wait_for(queue.get(), timeout=timeout)
+        except asyncio.TimeoutError:
+            logger.error(f"Timed out waiting for event {event_type}")
+            raise
+        finally:
+            self.remove_subscriber(subscriber)
 
     # --- Helper methods for Backend -> Runtime events ---
 
@@ -188,3 +228,13 @@ class VHLWebSocketClient:
     async def emit_human_input(self, content: str, intent: str = "freeform", context_refs: List[str] = None):
         payload = HumanInputPayload(content=content, intent=intent, context_refs=context_refs or [])
         await self.emit(EventType.HUMAN_INPUT, payload)
+
+    # --- VAP Helpers ---
+
+    async def emit_vap_init(self, circuit_name: str, blob_id: str):
+        payload = VAPInitPayload(circuit_name=circuit_name, blob_id=blob_id)
+        return await self.emit(EventType.VAP_INIT, payload)
+
+    async def emit_vap_status(self, task_id: str, decision: str = "UNDECIDED", status: str = "running"):
+        payload = VAPStatusPayload(task_id=task_id, decision=decision, eval_status=status)
+        return await self.emit(EventType.VAP_STATUS, payload)

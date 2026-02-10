@@ -36,6 +36,10 @@ class EventType(str, Enum):
     WORKSPACE_CONNECTED = "WORKSPACE_CONNECTED"
     WORKSPACE_DISCONNECTED = "WORKSPACE_DISCONNECTED"
 
+    # VAP Orchestration
+    VAP_INIT = "VAP_INIT"
+    VAP_STATUS = "VAP_STATUS"
+
 class BaseEvent(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     
@@ -100,3 +104,15 @@ class WorkspacePayload(BaseModel):
 class AgentPresencePayload(BaseModel):
     agent_id: Optional[str] = None
     status: str # connected | disconnected
+
+class VAPInitPayload(BaseModel):
+    circuit_name: str
+    blob_id: str
+
+class VAPStatusPayload(BaseModel):
+    task_id: str
+    eval_status: Optional[str] = None
+    decision: Optional[str] = None
+    results: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None

@@ -352,10 +352,9 @@ class ANADStateMachine:
         result_msg = message.copy()
         result_msg["state_id"] = State.TRIGGER_W2
         
-        agent = ANA_validation_agent()
+        agent = ANA_validation_agent(ws_client=self.ws_client)
         try:
-            result = await asyncio.to_thread(
-                agent.validate_circuit,
+            result = await agent.validate_circuit(
                 self.circuit_name, 
                 workspace=self.iteration_manager.current_iteration_dir
             )
