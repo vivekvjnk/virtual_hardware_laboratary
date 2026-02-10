@@ -15,11 +15,12 @@ from ana_agent.ana_worker_2.agent import ANA_validation_agent
 from ana_agent.state_machine.states import State
 from ana_agent.state_machine.mcp_manager import MCPManager
 from ana_agent.state_machine.iteration_manager import IterationManager
+from vhl_protocol.client.client import VHLWebSocketClient
 
 logger = logging.getLogger(__name__)
 
 class ANADStateMachine:
-    def __init__(self, max_auto_fixes: int = 3, circuit_code_path:str=None, observations:List[str]=None):
+    def __init__(self, max_auto_fixes: int = 3, circuit_code_path: str = None, observations: List[str] = None, ws_client: Optional[VHLWebSocketClient] = None):
         # TODO Done: ANA state machine can be initialized with a circuit code path
         # This allows stateless circuit code correction and manipulation.
         # Caller can inject the circuit code path. __init__ function should propagate the path to handle_init through message passing.
@@ -28,6 +29,7 @@ class ANADStateMachine:
         self.state = State.INIT
         # Inputs/Observations - Now handled via current_message for transparency
         self.max_auto_fixes = max_auto_fixes
+        self.ws_client = ws_client
         
         # Project Info
         # TODO : Make project info configurable
@@ -185,7 +187,8 @@ class ANADStateMachine:
         
         observer = ObserverAgent()
         try:
-            result = observer.observe(
+            result = await asyncio.to_thread(
+                observer.observe,
                 mode=ObserverMode("validation_error"),
                 iteration_dir=previous_dir,
             )
@@ -197,7 +200,7 @@ class ANADStateMachine:
             observer.close()
         
         logger.info("[ANA-D SM Observe] Awaiting commit from Observer Agent via MCP...")
-        observation_mcp = self.mcp_manager.poll_for_observation()
+        observation_mcp = await asyncio.to_thread(self.mcp_manager.poll_for_observation)
 
         if observation_mcp:
             payload = observation_mcp["message"]["payload"]
@@ -305,7 +308,8 @@ class ANADStateMachine:
             # ANA-W1 is triggered in Error Correction mode. Otherwise Synthesis mode
             if len(observations)>0 and (previous_iter_dir:=self.iteration_manager.get_previous_iteration_dir()):
                 logger.info("[ANA-D SM] ANA-W1 in error correction mode (triggered from PREPARE_FIX).")
-                run_ana_w1_agent(
+                await asyncio.to_thread(
+                    run_ana_w1_agent,
                     workspace=str(self.iteration_manager.current_iteration_dir),
                     schematic_images_path=schematic_images_path,
                     scud_path=scud_path,
@@ -315,7 +319,8 @@ class ANADStateMachine:
                 )
             else:
                 logger.info("[ANA-D SM] ANA-W1 in synthesis mode (not triggered from PREPARE_FIX).")
-                run_ana_w1_agent(
+                await asyncio.to_thread(
+                    run_ana_w1_agent,
                     workspace=str(self.iteration_manager.current_iteration_dir),
                     schematic_images_path=schematic_images_path,
                     scud_path=scud_path,
@@ -349,7 +354,8 @@ class ANADStateMachine:
         
         agent = ANA_validation_agent()
         try:
-            result = agent.validate_circuit(
+            result = await asyncio.to_thread(
+                agent.validate_circuit,
                 self.circuit_name, 
                 workspace=self.iteration_manager.current_iteration_dir
             )

@@ -243,8 +243,12 @@ class AOSM:
                 logger.error("[AOSM] No circuit code path found in current message for ANA-D")
                 await self.transition_to(AOSMState.ERROR_PRESENTED, "Missing circuit code for ANA run")
                 return
-            ana_sm = ANADStateMachine(circuit_code_path=circuit_code_path, observations=observations)
-            ana_sm.run()
+            ana_sm = ANADStateMachine(
+                circuit_code_path=circuit_code_path, 
+                observations=observations,
+                ws_client=self.ws_client
+            )
+            await ana_sm.run()
         else:
             raise ValueError(f"Unexpected event type in TRIGGER_ANA state: {event.type}")
         
