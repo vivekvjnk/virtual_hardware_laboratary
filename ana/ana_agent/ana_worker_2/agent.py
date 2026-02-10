@@ -7,7 +7,8 @@ from typing import Dict, Any
 
 from openhands.sdk import get_logger
 from ana_agent.ana_worker_2.utils.object_store import MinioObjectStore
-from ana_agent.ana_worker_2.utils.mcp_utils import MCPInvoker
+from vhl_protocol.client.client import VHLWebSocketClient
+from vhl_protocol.models import EventType
 
 # Configure logger
 logger = get_logger(__name__)
@@ -22,13 +23,12 @@ class ANA_validation_agent:
     3. Poll for evaluation status.
     4. Collect and extract evaluation results.
     """
-    def __init__(self, mcp_url: str = "http://localhost:8081/mcp", minio_url: str = "http://127.0.0.1:9000"):
-        self.mcp_url = mcp_url
+    def __init__(self, ws_client: VHLWebSocketClient, minio_url: str = "http://127.0.0.1:9000"):
+        self.ws_client = ws_client
         self.minio_url = minio_url
         self.object_store = MinioObjectStore(endpoint_url=minio_url)
-        self.invoker = MCPInvoker(mcp_url)
 
-    def validate_circuit(self, circuit_name: str,workspace: str) -> Dict[str, Any]:
+    async def validate_circuit(self, circuit_name: str, workspace: str) -> Dict[str, Any]:
         """
         Process the circuit file: upload to object store, invoke VAP, poll for status, and collect results.
         """
@@ -64,21 +64,15 @@ class ANA_validation_agent:
 
         # 2. Invoke VAP with the circuit object id
         logger.info(f"Step 2: Invoking VAP for circuit: {circuit_name}")
-        init_result = self.invoker.call_tool("VAP_init", {
-            "circuit_name": circuit_name,
-            "blob_id": blob_id
-        })
+        await self.ws_client.emit_vap_init(circuit_name, blob_id)
         
-        try:
-            init_data = json.loads(init_result)
-        except json.JSONDecodeError:
-            raise RuntimeError(f"Failed to parse VAP_init response: {init_result}")
+        # Wait for the initial VAP_STATUS to get task_id
+        init_response = await self.ws_client.wait_for_event(
+            EventType.VAP_STATUS,
+            filter_func=lambda e: e.payload.get("task_id") is not None
+        )
         
-        #TODO: task id should be input to mcp server
-        task_id = init_data.get("task_id")
-        if not task_id:
-            raise RuntimeError(f"Failed to initialize VAP: {init_result}")
-        
+        task_id = init_response.payload.get("task_id")
         logger.info(f"VAP initialized with task_id: {task_id}")
 
         # 3. Poll for status of the evaluation
@@ -88,15 +82,13 @@ class ANA_validation_agent:
         status = "unknown"
         
         while True:
-            status_result = self.invoker.call_tool("VAP_status", {"task_id": task_id})
-            try:
-                status_data = json.loads(status_result)
-            except json.JSONDecodeError:
-                logger.warning(f"Failed to parse VAP_status response: {status_result}")
-                time.sleep(2)
-                continue
+            status_event = await self.ws_client.wait_for_event(
+                EventType.VAP_STATUS,
+                filter_func=lambda e: e.payload.get("task_id") == task_id
+            )
+            status_data = status_event.payload
             
-            logger.info(f"Polled status: {status_data}")
+            logger.info(f"Received status event: {status_data}")
             status = status_data.get("eval_status", "unknown")
             decision = status_data.get("decision", "N/A")
             
@@ -104,7 +96,6 @@ class ANA_validation_agent:
             logger.info(f"VAP status for {task_id}: {status}")
             
             evaluation_metadata = status_data.get("metadata", {})
-
             
             if decision == "ACCEPT":
                 logger.info("VAP evaluation completed successfully.")
@@ -115,13 +106,10 @@ class ANA_validation_agent:
                 logger.warning(f"VAP evaluation failed: {error_msg}")
                 break
             elif decision == "UNDECIDED":
-                logger.info("VAP evaluation still in progress. Continuing to poll...")
-                # Continue polling; this is the only expected case to continue polling
+                logger.info("VAP evaluation still in progress. Waiting for next update...")
             else:
-                logger.error(f"Unknown decision '{decision}' received. Continuing to poll...")
+                logger.error(f"Unknown decision '{decision}' received.")
                 raise RuntimeError(f"Unknown decision '{decision}' received from VAP.")
-            
-            time.sleep(2)
 
         # 4. Once evaluation is complete, collect evaluation results
         logger.info("Step 4: Collecting evaluation results...")
@@ -171,8 +159,7 @@ class ANA_validation_agent:
 
     def close(self):
         """Cleanup resources."""
-        if hasattr(self, 'invoker'):
-            self.invoker.close()
+        pass
 
 if __name__ == "__main__":
     # Simple CLI for testing
