@@ -6,6 +6,7 @@ import { WORKSPACE_DIR, TEMP_DIR } from "../config/paths.js";
 import { pushObject, pullObject, ensureBucket } from "../utils/minio.js";
 import { compressDirectory, decompressZip, runPredefinedOperations } from "./fileOperations.js";
 import type { WebSocketMessage, AgentMessage } from "../server/types.js";
+import { runtime } from "../vap/runtime.js";
 
 export class WorkspaceClient {
     private ws: WebSocket | null = null;
@@ -84,6 +85,12 @@ export class WorkspaceClient {
                 break;
             case "WORKSPACE_UPLOAD":
                 await this.handleWorkspaceUpload(msg as AgentMessage);
+                break;
+            case "VAP_INIT":
+                await this.handleVapInit(msg as AgentMessage);
+                break;
+            case "VAP_STATUS":
+                await this.handleVapStatus(msg as AgentMessage);
                 break;
             default:
                 // Ignore other messages
@@ -177,6 +184,60 @@ export class WorkspaceClient {
         } catch (err: any) {
             console.error("[WorkspaceClient] Download failed:", err);
             this.sendError("WORKSPACE_DOWNLOAD_FAILED", err.message);
+        }
+    }
+
+    private async handleVapInit(msg: AgentMessage) {
+        try {
+            console.log("[WorkspaceClient] Processing VAP_INIT");
+            const { circuit_name, blob_id } = msg.payload;
+            if (!circuit_name || !blob_id) {
+                throw new Error("Missing circuit_name or blob_id in VAP_INIT payload");
+            }
+
+            const result = await runtime.startEvaluation(circuit_name, blob_id);
+
+            const response: AgentMessage = {
+                id: randomUUID(),
+                type: "VAP_INIT_COMPLETE",
+                artifact_id: null,
+                timestamp: new Date().toISOString(),
+                source: "vhl_workspace",
+                payload: result
+            };
+            this.send(response);
+            console.log(`[WorkspaceClient] VAP_INIT complete. Task ID: ${result.task_id}`);
+
+        } catch (err: any) {
+            console.error("[WorkspaceClient] VAP_INIT failed:", err);
+            this.sendError("VAP_INIT_FAILED", err.message);
+        }
+    }
+
+    private async handleVapStatus(msg: AgentMessage) {
+        try {
+            console.log("[WorkspaceClient] Processing VAP_STATUS");
+            const { task_id } = msg.payload;
+            if (!task_id) {
+                throw new Error("Missing task_id in VAP_STATUS payload");
+            }
+
+            const result = await runtime.getStatus(task_id);
+
+            const response: AgentMessage = {
+                id: randomUUID(),
+                type: "VAP_STATUS_REPORT",
+                artifact_id: null,
+                timestamp: new Date().toISOString(),
+                source: "vhl_workspace",
+                payload: result
+            };
+            this.send(response);
+            console.log(`[WorkspaceClient] VAP_STATUS_REPORT sent for Task ID: ${task_id}`);
+
+        } catch (err: any) {
+            console.error("[WorkspaceClient] VAP_STATUS failed:", err);
+            this.sendError("VAP_STATUS_FAILED", err.message);
         }
     }
 

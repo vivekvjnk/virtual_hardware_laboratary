@@ -43,7 +43,8 @@ export class RelayAgentHandler implements AgentHandler {
             }
         } else if (this.role === "agent") {
             // Agent (Backend) -> UI (Runtime) or Workspace Client
-            if (msg.type === "WORKSPACE_DOWNLOAD" || msg.type === "WORKSPACE_UPLOAD") {
+            if (msg.type === "WORKSPACE_DOWNLOAD" || msg.type === "WORKSPACE_UPLOAD" ||
+                msg.type === "VAP_INIT" || msg.type === "VAP_STATUS") {
                 if (RelayAgentHandler.workspaceClient) {
                     RelayAgentHandler.workspaceClient(msg)
                 } else {
@@ -76,7 +77,7 @@ export class RelayAgentHandler implements AgentHandler {
             } else {
                 send({ type: "WORKSPACE_DISCONNECTED" })
             }
-            
+
         } else if (role === "agent") {
             this.role = "agent"
             RelayAgentHandler.agentClient = send
@@ -86,9 +87,9 @@ export class RelayAgentHandler implements AgentHandler {
 
             // Notify agent about workspace status
             if (RelayAgentHandler.workspaceClient) {
-                send({ id: randomUUID() ,type: "WORKSPACE_CONNECTED", source: "backend", timestamp: new Date().toISOString()})
+                send({ id: randomUUID(), type: "WORKSPACE_CONNECTED", source: "backend", timestamp: new Date().toISOString() })
             } else {
-                send({ id: randomUUID(), type: "WORKSPACE_DISCONNECTED", source: "backend", timestamp: new Date().toISOString()})
+                send({ id: randomUUID(), type: "WORKSPACE_DISCONNECTED", source: "backend", timestamp: new Date().toISOString() })
             }
 
         } else if (role === "vhl_workspace") {

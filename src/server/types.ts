@@ -22,6 +22,11 @@ export type EventType =
     | "AGENT_DISCONNECTED"
     | "WORKSPACE_CONNECTED"
     | "WORKSPACE_DISCONNECTED"
+    // VAP (VHL ANA Process)
+    | "VAP_INIT"
+    | "VAP_INIT_COMPLETE"
+    | "VAP_STATUS"
+    | "VAP_STATUS_REPORT"
 
 export interface AgentMessage {
     id: string
