@@ -65,8 +65,8 @@ class MCPManager:
             try:
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                     s.settimeout(1)
-                s.connect(("127.0.0.1", 8001))
-                logger.info("[MCP Manager] MCP Server is running on port 8001.")
+                    s.connect(("127.0.0.1", 8001))
+                    logger.info("[MCP Manager] MCP Server is running on port 8001.")
                 return
             except (ConnectionRefusedError, socket.timeout):
                 time.sleep(1)

@@ -1,4 +1,5 @@
 import logging
+import asyncio
 import time
 import os
 import json
@@ -64,7 +65,7 @@ class ANADStateMachine:
         # MCP Setup
         self.mcp_manager.ensure_server_running()
 
-    def step(self, event: Optional[str] = None, data: Optional[Dict[str, Any]] = None):
+    async def step(self, event: Optional[str] = None, data: Optional[Dict[str, Any]] = None):
         """Executes one step of the state machine using message passing framework."""
         logger.info(f"Stepping from state: {self.state}")
         
@@ -95,7 +96,7 @@ class ANADStateMachine:
 
         # Execute handler and get result message describing the CURRENT node's execution
         # All handlers now receive and return the message for transparency
-        result_message = handler(message)
+        result_message = await handler(message)
         
         # Explicit logic to decide the transition
         next_state = self._get_next_state(self.state, result_message)
@@ -128,7 +129,7 @@ class ANADStateMachine:
         # 2. Default explicit transitions logic
         return self.transition_table.get(current_state, current_state)
 
-    def _handle_init(self, message: Dict[str, Any]) -> Dict[str, Any]:
+    async def _handle_init(self, message: Dict[str, Any]) -> Dict[str, Any]:
         logger.info(f"[ANA-D SM] State: INIT. Triggered from: {message.get('from_state_id')}\n{"*"*30}\n{message}\n{"*"*30}")
         result_msg = message.copy()
         
@@ -159,23 +160,28 @@ class ANADStateMachine:
         
         return result_msg
 
-    def _handle_observe(self, message: Dict[str, Any]) -> Dict[str, Any]:
-        logger.info(f"[ANA-D SM] State: OBSERVE. Triggered from: {message.get('from_state_id')}\n{"*"*30}\n{message}\n{"*"*30}")
+    async def _handle_observe(self, message: Dict[str, Any]) -> Dict[str, Any]:
+        logger.info(f"[ANA-D SM Observe] State: OBSERVE. Triggered from: {message.get('from_state_id')}\n{"*"*30}\n{message}\n{"*"*30}")
         result_msg = message.copy()
         result_msg["state_id"] = State.OBSERVE
         
         if self.iteration_manager.is_first_iteration():
-            if (len(observations)>0): # Triggered directly through user message
-                result_msg.update({
-                    "intent_status": "violated",
-                    "observations": observations,
-                    "error_class" : "LOCAL"
-                })
-            logger.info(f"[ANA-D SM] First iteration. Observations: {observations}")
+            logger.info("[ANA-D SM Observe] First iteration. Skipping observation of previous iteration.")
+            return result_msg
+        
+        observations = result_msg.get("observations", [])
+        # Check if result message contain intent_status or error_class. If not, observe is triggered from user message
+        if (len(observations)>0) and ("intent_status" not in result_msg and "error_class" not in result_msg): # Triggered directly through user message
+            result_msg.update({
+                "intent_status": "violated",
+                "observations": observations,
+                "error_class" : "LOCAL"
+            })
+            logger.info(f"[ANA-D SM Observe] First iteration through user message. Observations: {observations}")
             return result_msg
 
         previous_dir = self.iteration_manager.get_previous_iteration_dir()
-        logger.info(f"[ANA-D SM] Observing previous iteration: {previous_dir}")
+        logger.info(f"[ANA-D SM Observe] Observing previous iteration: {previous_dir}")
         
         observer = ObserverAgent()
         try:
@@ -183,14 +189,14 @@ class ANADStateMachine:
                 mode=ObserverMode("validation_error"),
                 iteration_dir=previous_dir,
             )
-            logger.info(f"[ANA-D SM] Observation Result: {json.dumps(result, indent=2)}")
+            logger.info(f"[ANA-D SM Observe] Observation Result: {json.dumps(result, indent=2)}")
         except Exception as e:
             logger.exception(f"Error during observation: {e}")
             sys.exit(1)
         finally:
             observer.close()
         
-        logger.info("[ANA-D SM] Awaiting commit from Observer Agent via MCP...")
+        logger.info("[ANA-D SM Observe] Awaiting commit from Observer Agent via MCP...")
         observation_mcp = self.mcp_manager.poll_for_observation()
 
         if observation_mcp:
@@ -219,14 +225,14 @@ class ANADStateMachine:
                 "observations": observations,
                 "error_class" : error_class
             })
-            logger.info(f"[ANA-D SM] Added observation: {observation_str}")
+            logger.info(f"[ANA-D SM Observe] Added observation: {observation_str}")
         else:
             # Clear status if no observation found
             result_msg.pop("intent_status", None)
         
         return result_msg
 
-    def _handle_authorize(self, message: Dict[str, Any]) -> Dict[str, Any]:
+    async def _handle_authorize(self, message: Dict[str, Any]) -> Dict[str, Any]:
         logger.info(f"[ANA-D SM] State: AUTHORIZE. Triggered from: {message.get('from_state_id')}\n{"*"*30}\n{message}\n{"*"*30}")
         
         result_msg = message.copy()
@@ -267,14 +273,14 @@ class ANADStateMachine:
         result_msg["proposed_next_state"] = proposed_next
         return result_msg
 
-    def _handle_prepare_fix(self, message: Dict[str, Any]) -> Dict[str, Any]:
+    async def _handle_prepare_fix(self, message: Dict[str, Any]) -> Dict[str, Any]:
         logger.info(f"[ANA-D SM] State: PREPARE_FIX. Triggered from: {message.get('from_state_id')}\n{"*"*30}\n{message}\n{"*"*30}")
         
         result_msg = message.copy()
         result_msg["state_id"] = State.PREPARE_FIX
         return result_msg
 
-    def _handle_trigger_w1(self, message: Dict[str, Any]) -> Dict[str, Any]:
+    async def _handle_trigger_w1(self, message: Dict[str, Any]) -> Dict[str, Any]:
         logger.info(f"[ANA-D SM] State: TRIGGER_W1. Triggered from: {message.get('from_state_id')}\n{"*"*30}\n{message}\n{"*"*30}")
         
         result_msg = message.copy()
@@ -331,12 +337,12 @@ class ANADStateMachine:
             return result_msg
 
 
-    def _handle_wait_w1(self, message: Dict[str, Any]) -> Dict[str, Any]:
+    async def _handle_wait_w1(self, message: Dict[str, Any]) -> Dict[str, Any]:
         result_msg = message.copy()
         result_msg["state_id"] = State.WAIT_W1
         return result_msg
 
-    def _handle_trigger_w2(self, message: Dict[str, Any]) -> Dict[str, Any]:
+    async def _handle_trigger_w2(self, message: Dict[str, Any]) -> Dict[str, Any]:
         logger.info(f"[ANA-D SM] State: TRIGGER_W2. Triggered from: {message.get('from_state_id')}\n{"*"*30}\n{message}\n{"*"*30}")
         result_msg = message.copy()
         result_msg["state_id"] = State.TRIGGER_W2
@@ -359,18 +365,18 @@ class ANADStateMachine:
         finally:
             agent.close()
 
-    def _handle_wait_vap(self, message: Dict[str, Any]) -> Dict[str, Any]:
+    async def _handle_wait_vap(self, message: Dict[str, Any]) -> Dict[str, Any]:
         result_msg = message.copy()
         result_msg["state_id"] = State.WAIT_VAP
         return result_msg
 
-    def _handle_prepare_hil(self, message: Dict[str, Any]) -> Dict[str, Any]:
+    async def _handle_prepare_hil(self, message: Dict[str, Any]) -> Dict[str, Any]:
         logger.info(f"[ANA-D SM] State: PREPARE_HIL. Triggered from: {message.get('from_state_id')}\n{"*"*30}\n{message}\n{"*"*30}")
         result_msg = message.copy()
         result_msg["state_id"] = State.PREPARE_HIL
         return result_msg
 
-    def _handle_hil_wait(self, message: Dict[str, Any]) -> Dict[str, Any]:
+    async def _handle_hil_wait(self, message: Dict[str, Any]) -> Dict[str, Any]:
         logger.info(f"[ANA-D SM] State: HIL_WAIT. Triggered from: {message.get('from_state_id')}\n{"*"*30}\n{message}\n{"*"*30}")
         result_msg = message.copy()
         result_msg["state_id"] = State.HIL_WAIT
@@ -400,11 +406,11 @@ class ANADStateMachine:
     def cleanup(self):
         self.mcp_manager.cleanup()
 
-    def run(self):
+    async def run(self):
         """Runs the state machine loop until a terminal state or HIL_WAIT is reached."""
         logger.info("--- Starting State Machine ---")
         while not self.is_terminal() and self.state != State.HIL_WAIT:
-            self.step()
+            await self.step()
 
         if self.state == State.EXIT_SUCCESS:
             logger.info("Simulation Finished: SUCCESS")
@@ -415,4 +421,4 @@ class ANADStateMachine:
 
 if __name__ == "__main__":
     sm = ANADStateMachine(max_auto_fixes=5)
-    sm.run()
+    asyncio.run(sm.run())

@@ -236,7 +236,7 @@ class AOSM:
             logger.info(f"[AOSM] Triggering ANA-D on state entry.")
             # Create ANA-D state machine instance with the circuit code path 
             circuit_code_path = self.current_message.get("circuit_code_path")
-            observations = event.payload.get("content", "").split("\n") 
+            observations = self.current_message.get("observations", [])
             logger.info(f"[AOSM-TRIGGER ANA]: Circuit code path: {circuit_code_path}, observations: {observations}")
 
             if not circuit_code_path:
