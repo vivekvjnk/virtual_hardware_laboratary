@@ -13,6 +13,8 @@ export class WorkspaceClient {
     private serverUrl: string;
     private workspaceDir: string;
     private reconnectTimer: NodeJS.Timeout | null = null;
+    private vapStatusInterval: NodeJS.Timeout | null = null;
+    private activeVapTaskId: string | null = null;
 
     constructor(serverUrl: string, workspaceDir: string = WORKSPACE_DIR) {
         this.serverUrl = serverUrl;
@@ -32,6 +34,9 @@ export class WorkspaceClient {
                     clearTimeout(this.reconnectTimer);
                     this.reconnectTimer = null;
                 }
+                if (this.activeVapTaskId) {
+                    this.startVapStatusReporting(this.activeVapTaskId);
+                }
                 resolve();
             });
 
@@ -46,6 +51,10 @@ export class WorkspaceClient {
 
             this.ws.on("close", () => {
                 console.log("[WorkspaceClient] Connection closed. Retrying in 5s...");
+                if (this.vapStatusInterval) {
+                    clearInterval(this.vapStatusInterval);
+                    this.vapStatusInterval = null;
+                }
                 this.scheduleReconnect();
             });
 
@@ -88,9 +97,6 @@ export class WorkspaceClient {
                 break;
             case "VAP_INIT":
                 await this.handleVapInit(msg as AgentMessage);
-                break;
-            case "VAP_STATUS":
-                await this.handleVapStatus(msg as AgentMessage);
                 break;
             default:
                 // Ignore other messages
@@ -208,36 +214,71 @@ export class WorkspaceClient {
             this.send(response);
             console.log(`[WorkspaceClient] VAP_INIT complete. Task ID: ${result.task_id}`);
 
+            this.activeVapTaskId = result.task_id;
+            this.startVapStatusReporting(result.task_id);
+
         } catch (err: any) {
             console.error("[WorkspaceClient] VAP_INIT failed:", err);
             this.sendError("VAP_INIT_FAILED", err.message);
         }
     }
 
-    private async handleVapStatus(msg: AgentMessage) {
-        try {
-            console.log("[WorkspaceClient] Processing VAP_STATUS");
-            const { task_id } = msg.payload;
-            if (!task_id) {
-                throw new Error("Missing task_id in VAP_STATUS payload");
+    private startVapStatusReporting(taskId: string) {
+        if (this.vapStatusInterval) {
+            clearInterval(this.vapStatusInterval);
+        }
+
+        console.log(`[WorkspaceClient] Starting status reporting for task: ${taskId}`);
+
+        this.vapStatusInterval = setInterval(() => {
+            try {
+                const status = runtime.getStatus(taskId);
+
+                const response: AgentMessage = {
+                    id: randomUUID(),
+                    type: "VAP_STATUS_REPORT",
+                    artifact_id: null,
+                    timestamp: new Date().toISOString(),
+                    source: "vhl_workspace",
+                    payload: status
+                };
+                this.send(response);
+
+                if (status.state === "Default") {
+                    console.log(`[WorkspaceClient] Evaluation complete for task: ${taskId}. Stopping status reporting.`);
+                    if (this.vapStatusInterval) {
+                        clearInterval(this.vapStatusInterval);
+                        this.vapStatusInterval = null;
+                    }
+                    this.activeVapTaskId = null;
+                }
+            } catch (err: any) {
+                console.error("[WorkspaceClient] Error in VAP status reporting:", err);
+                if (this.vapStatusInterval) {
+                    clearInterval(this.vapStatusInterval);
+                    this.vapStatusInterval = null;
+                }
             }
+        }, 2000); // Report every 2 seconds
+    }
 
-            const result = await runtime.getStatus(task_id);
-
-            const response: AgentMessage = {
+    private async handleVapStatus(msg: AgentMessage) {
+        // Polling is deprecated, but we'll keep the method for internal consistency 
+        // or if a manual poll is requested. Currently it's removed from handleMessage.
+        try {
+            const { task_id } = msg.payload;
+            if (!task_id) return;
+            const result = runtime.getStatus(task_id);
+            this.send({
                 id: randomUUID(),
                 type: "VAP_STATUS_REPORT",
                 artifact_id: null,
                 timestamp: new Date().toISOString(),
                 source: "vhl_workspace",
                 payload: result
-            };
-            this.send(response);
-            console.log(`[WorkspaceClient] VAP_STATUS_REPORT sent for Task ID: ${task_id}`);
-
-        } catch (err: any) {
-            console.error("[WorkspaceClient] VAP_STATUS failed:", err);
-            this.sendError("VAP_STATUS_FAILED", err.message);
+            });
+        } catch (err) {
+            console.error("[WorkspaceClient] Manual VAP status check failed:", err);
         }
     }
 
