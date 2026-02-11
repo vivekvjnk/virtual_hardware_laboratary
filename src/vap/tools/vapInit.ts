@@ -1,25 +1,41 @@
-/**
- * VAP_init Tool
- * 
- * Starts a new VAP evaluation process.
- */
-
+import { randomUUID } from "crypto";
 import { runtime } from "../runtime.js";
-import { pullAndWriteProvisional, createResultsFolder } from "../../workspace/fileOperations.js";
+import { createResultsFolder } from "../../workspace/fileOperations.js";
+import { OverlayManager } from "../../utils/overlay.js";
+import { pullObject } from "../../utils/minio.js";
+import { TEMP_DIR } from "../../config/paths.js";
+import fs from "fs/promises";
+import path from "path";
 
 export async function vapInit(circuit_name: string, blob_id: string) {
+    const taskId = randomUUID();
     const datetime = new Date().toISOString().replace(/[:.]/g, "-");
 
-    // Perform setup (Authority: Workspace File Operations)
-    const provisionalPath = await pullAndWriteProvisional(blob_id, circuit_name);
+    // 1. Mount OverlayFS
+    const paths = await OverlayManager.mount(taskId);
+
+    // 2. Pull circuit code from MinIO to a temporary location
+    const tempPullDir = path.join(TEMP_DIR, `pull_${taskId}`);
+    await fs.mkdir(tempPullDir, { recursive: true });
+    const localPath = await pullObject(blob_id, tempPullDir);
+
+    // 3. Inject circuit into the upper directory
+    const relativeTsxPath = `circuits/${circuit_name}.tsx`;
+    await OverlayManager.syncToUpper(localPath, relativeTsxPath, taskId);
+
+    // Cleanup temp pull dir
+    await fs.rm(tempPullDir, { recursive: true, force: true }).catch(() => { });
+
     const resultsDir = await createResultsFolder(blob_id, datetime);
 
     // Call runtime with required arguments
     return await runtime.startEvaluation(
         circuit_name,
-        provisionalPath,
+        relativeTsxPath,
         resultsDir,
+        paths.merged,
         blob_id,
-        datetime
+        datetime,
+        taskId
     );
 }

@@ -1,21 +1,23 @@
 import { randomUUID } from "crypto";
 import * as fs from "fs/promises";
+import * as path from "path";
 import {
-    pullAndWriteProvisional,
     createResultsFolder,
-    finalizeCircuit,
-    cleanupCircuit,
     compressDirectory
 } from "./fileOperations.js";
-import { pushObject } from "../utils/minio.js";
+import { pushObject, pullObject } from "../utils/minio.js";
 import { AgentMessage } from "../server/types.js";
 import { runtime, VAPStatus } from "../vap/runtime.js";
 import { WorkspaceSender, VapContext } from "./types.js";
+import { OverlayManager } from "../utils/overlay.js";
+import { TEMP_DIR } from "../config/paths.js";
 
 export async function handleVapInit(
     msg: AgentMessage,
     sender: WorkspaceSender
 ): Promise<{ taskId: string, context: VapContext }> {
+    let taskId = randomUUID();
+    let paths: any = null;
     try {
         console.log("[Workspace] Processing VAP_INIT");
         const { circuit_name, blob_id } = msg.payload;
@@ -24,17 +26,33 @@ export async function handleVapInit(
         }
 
         const datetime = new Date().toISOString().replace(/[:.]/g, "-");
-        console.log(`[Workspace] Setting up directories for circuit: ${circuit_name} (datetime: ${datetime})`);
+        console.log(`[Workspace] Setting up OverlayFS for circuit: ${circuit_name} (Task: ${taskId})`);
 
-        const provisionalPath = await pullAndWriteProvisional(blob_id, circuit_name);
+        // 1. Mount OverlayFS
+        paths = await OverlayManager.mount(taskId);
+
+        // 2. Pull circuit code from MinIO to a temporary location
+        const tempPullDir = path.join(TEMP_DIR, `pull_${taskId}`);
+        await fs.mkdir(tempPullDir, { recursive: true });
+        const localPath = await pullObject(blob_id, tempPullDir);
+
+        // 3. Inject circuit into the upper directory
+        const relativeTsxPath = `circuits/${circuit_name}.tsx`;
+        await OverlayManager.syncToUpper(localPath, relativeTsxPath, taskId);
+
+        // Cleanup temp pull dir
+        await fs.rm(tempPullDir, { recursive: true, force: true }).catch(() => { });
+
         const resultsDir = await createResultsFolder(blob_id, datetime);
 
         const result = await runtime.startEvaluation(
             circuit_name,
-            provisionalPath,
+            relativeTsxPath,
             resultsDir,
+            paths.merged,
             blob_id,
-            datetime
+            datetime,
+            taskId
         );
 
         sender.send({
@@ -64,6 +82,9 @@ export async function handleVapInit(
 
     } catch (err: any) {
         console.error("[Workspace] VAP_INIT failed:", err);
+        if (taskId) {
+            await OverlayManager.cleanup(taskId).catch(() => { });
+        }
         sender.sendError("VAP_INIT_FAILED", err.message);
         throw err;
     }
@@ -80,11 +101,10 @@ export async function finalizeVapTask(
 
     try {
         if (status.decision === "ACCEPT") {
-            console.log(`[Workspace] Finalizing circuit: ${circuit_name}`);
-            await finalizeCircuit(circuit_name);
+            console.log(`[Workspace] Committing changes for task ${taskId}`);
+            await OverlayManager.commit(taskId);
         } else {
-            console.log(`[Workspace] Cleaning up circuit: ${circuit_name}`);
-            await cleanupCircuit(circuit_name);
+            console.log(`[Workspace] Rejecting changes for task ${taskId}`);
         }
 
         const zipPath = `${results_dir}.zip`;
@@ -115,5 +135,10 @@ export async function finalizeVapTask(
     } catch (err: any) {
         console.error(`[Workspace] Failed to finalize VAP task ${taskId}:`, err);
         sender.sendError("VAP_FINALIZE_FAILED", err.message);
+    } finally {
+        console.log(`[Workspace] Cleaning up OverlayFS for task ${taskId}`);
+        await OverlayManager.cleanup(taskId).catch((e) => {
+            console.warn(`[Workspace] Cleanup failed for task ${taskId}:`, e);
+        });
     }
 }

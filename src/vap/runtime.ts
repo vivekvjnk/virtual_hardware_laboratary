@@ -55,10 +55,12 @@ export class VAPRuntime {
      */
     public async startEvaluation(
         circuitName: string,
-        provisionalPath: string,
+        relativeTsxPath: string,
         resultsDir: string,
+        mergedDir: string,
         blobId: string,
-        datetime: string
+        datetime: string,
+        taskId?: string
     ): Promise<{ task_id: string; state: ProcessState }> {
         // 1. Check state and transition
         console.log(`[VAP] Starting evaluation for circuit: ${circuitName}`);
@@ -66,7 +68,7 @@ export class VAPRuntime {
         console.log(`[VAP] State transitioned to: ${this.processState}`);
 
         // 2. Initialize new task
-        this.activeTaskId = randomUUID();
+        this.activeTaskId = taskId || randomUUID();
         this.activeCircuitName = circuitName;
         this.logState = createLogState();
         this.controlState = createControlState();
@@ -77,7 +79,7 @@ export class VAPRuntime {
 
         // 3. Start background evaluation
         console.log(`[VAP] Spawning background evaluation task`);
-        this.runEvaluation(provisionalPath, circuitName, resultsDir, this.activeBlobId, this.activeDatetime);
+        this.runEvaluation(relativeTsxPath, circuitName, resultsDir, mergedDir, this.activeBlobId, this.activeDatetime);
 
         console.log(`[VAP] Evaluation task started, returning task ID: ${this.activeTaskId}`);
         return {
@@ -89,11 +91,11 @@ export class VAPRuntime {
     /**
      * Run evaluation in background
      */
-    private async runEvaluation(provisionalPath: string, circuitName: string, resultsDir: string, blobId: string, datetime: string) {
+    private async runEvaluation(relativeTsxPath: string, circuitName: string, resultsDir: string, mergedDir: string, blobId: string, datetime: string) {
         try {
             // Execute evaluation
             console.log(`[VAP] Starting evaluation for circuit: ${circuitName}`);
-            const result = await evaluateCircuit(provisionalPath, resultsDir);
+            const result = await evaluateCircuit(relativeTsxPath, resultsDir, mergedDir);
             console.log(`[VAP] Evaluation completed with decision: ${result.decision}`);
 
             // Update logs
