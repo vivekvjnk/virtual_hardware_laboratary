@@ -183,10 +183,10 @@ def run_ana_w1_agent(workspace:str,scud_path: str, schematic_images_path: str = 
         user_message += f"\n\nYou may refer component_pin_mapping.md at '{component_pin_mapping_path}' for component pin mapping information if needed."
     
     if not observations:
-        user_message += "\n\nAll local library components are available under '/app/lib/imports/' in the execution environment. The execution environment is a remote container. Any other path would produce import errors during validation."
+        user_message += "\n\nAll local library components are available under './lib/imports/' in the execution environment. The execution environment is a remote container. Any other path would produce import errors during validation."
     
     # Information on execution environment and the process
-    user_message += "\n\nYou should generate and store tsx circuit file in the current workspace directory. The circuit file will be evaluated by the backend in a a remote execution environment. All the imports in the circuit will be resolved in this execution environment. Libraries are available under /app/lib/imports/ directory in the execution environment."
+    user_message += "\n\nYou should generate and store tsx circuit file in the current workspace directory. The circuit file will be evaluated by the backend in a a remote execution environment. All the imports in the circuit will be resolved in this execution environment. Libraries are available under ./lib/imports/ directory in the execution environment."
 
     
     user_message += f"Ensure the circuit file is named '{circuit_name}.tsx'." if circuit_name else "Ensure the circuit file is named appropriately with a .tsx extension."

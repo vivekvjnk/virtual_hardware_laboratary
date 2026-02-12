@@ -82,7 +82,7 @@ class AOSM:
         """
         Processes a single event and triggers state transitions.
         """
-        logger.info(f"Processing event: {event.type} in state: {self.state}")
+        logger.info(f"Processing event: {event.type} in state: {self.state}\n Payload: {event.payload}")
         
         # Dispatch to handler based on current state and event
         handler_name = f"_handle_{self.state.name.lower()}"
@@ -97,28 +97,26 @@ class AOSM:
         """Transitions to a new state and emits a state transition event."""
         from_state = self.state
         self.state = next_state
-        logger.info(f"Transitioning: {from_state.name} -> {next_state.name} (Reason: {reason})")
+        logger.info(f"[transition_to] Transitioning: {from_state.name} -> {next_state.name} (Reason: {reason})\nPayload: {payload}")
         
         # Update current message
         self.current_message["state_id"] = next_state
 
+        payload.update({
+            "from": from_state.name,
+            "to": next_state.name,
+            "reason": reason
+        })
+
+        logger.info(f"[transition_to] Emitting state transition event with payload: {payload}")
         # Notify the UI/Protocol layer
-        await self.ws_client.emit_state_transition(
-            from_state=from_state.name,
-            to_state=next_state.name,
-            reason=reason
-        )
+        # await self.ws_client.emit_state_transition(
+        #     from_state=from_state.name,
+        #     to_state=next_state.name,
+        #     reason=reason
+        # )
         
-        if payload:
-            payload["from"] = from_state.name
-            payload["to"] = next_state.name
-            payload["reason"] = reason
-        else:
-            payload={
-                "from": from_state.name,
-                "to": next_state.name,
-                "reason": reason
-            }
+        
         
         # Push an internal transition event to the queue to trigger any "on_enter" logic
         # or immediate next steps in the state machine loop.

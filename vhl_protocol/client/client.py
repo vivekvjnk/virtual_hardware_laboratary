@@ -207,9 +207,9 @@ class VHLWebSocketClient:
         payload = StateTransitionPayload(from_state=from_state, to_state=to_state, reason=reason)
         await self.emit(EventType.STATE_TRANSITION, payload)
 
-    async def emit_evaluation_update(self, phase: str, status: str, evidence_refs: List[str] = None):
-        payload = EvaluationUpdatePayload(phase=phase, status=status, evidence_refs=evidence_refs or [])
-        await self.emit(EventType.EVALUATION_UPDATE, payload)
+    async def emit_evaluation_update(self, task_id: str, decision: str ):
+        payload = EvaluationUpdatePayload(task_id=task_id, decision=decision)
+        await self.emit(EventType.VAP_DECISION, payload)
 
     async def emit_artifact_updated(self, artifact_type: str, artifact_version: str, summary: str, artifact_id: str):
         payload = ArtifactUpdatedPayload(artifact_type=artifact_type, artifact_version=artifact_version, summary=summary)
@@ -242,7 +242,3 @@ class VHLWebSocketClient:
     async def emit_vap_init(self, circuit_name: str, blob_id: str):
         payload = VAPInitPayload(circuit_name=circuit_name, blob_id=blob_id)
         return await self.emit(EventType.VAP_INIT, payload)
-
-    async def emit_vap_status(self, task_id: str, decision: str = "UNDECIDED", status: str = "running"):
-        payload = VAPStatusPayload(task_id=task_id, decision=decision, eval_status=status)
-        return await self.emit(EventType.VAP_STATUS, payload)

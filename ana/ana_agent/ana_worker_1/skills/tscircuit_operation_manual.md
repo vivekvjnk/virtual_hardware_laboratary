@@ -80,7 +80,7 @@ Example:
 Components defined elsewhere (e.g., ICs or reusable blocks) may be imported and instantiated.
 
 ```tsx
-import { ControllerIC } from "/app/lib/imports/ControllerIC"
+import { ControllerIC } from "./lib/imports/ControllerIC"
 
 <ControllerIC name="U1" />
 ```
@@ -304,7 +304,7 @@ These components are **already defined** as `.tsx` modules and reside in the pro
 All locally available component libraries are stored under:
 
 ```text
-/app/lib/imports/
+./lib/imports/
 ```
 
 Each component is defined in its own `.tsx` file and exposes **exactly one exported component**.
@@ -316,15 +316,15 @@ Each component is defined in its own `.tsx` file and exposes **exactly one expor
 Use standard TypeScript import syntax with a **absolute path**:
 
 ```ts
-import { LM555 } from "/app/lib/imports/LM555"
+import { LM555 } from "./lib/imports/LM555"
 ```
 
 Multiple components may be imported as needed:
 
 ```ts
-import { LM555 } from "/app/lib/imports/LM555"
-import { IR2110 } from "/app/lib/imports/IR2110"
-import { IRFZ44N } from "/app/lib/imports/IRFZ44N"
+import { LM555 } from "./lib/imports/LM555"
+import { IR2110 } from "./lib/imports/IR2110"
+import { IRFZ44N } from "./lib/imports/IRFZ44N"
 ```
 
 ---

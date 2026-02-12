@@ -39,7 +39,8 @@ class EventType(str, Enum):
     # VAP Orchestration
     VAP_INIT = "VAP_INIT"
     VAP_INIT_COMPLETE = "VAP_INIT_COMPLETE"
-    VAP_STATUS = "VAP_STATUS_REPORT"
+    VAP_STATUS_REPORT = "VAP_STATUS_REPORT"
+    VAP_DECISION = "VAP_DECISION"
 
 class BaseEvent(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
@@ -74,9 +75,8 @@ class StateTransitionPayload(BaseModel):
     reason: str
 
 class EvaluationUpdatePayload(BaseModel):
-    phase: str # validation | compilation
-    status: str # running | pass | fail
-    evidence_refs: List[str] = Field(default_factory=list)
+    task_id: str 
+    decision: str # running | ACCEPT | REJECT
 
 class ArtifactUpdatedPayload(BaseModel):
     artifact_type: str # code | changelog | report

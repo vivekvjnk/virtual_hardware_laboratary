@@ -330,43 +330,28 @@ class ANADStateMachine:
             # There are perceivably two operating modes for ANA-W1. Error correction and Synthesis. 
             # If observations are present and previous iteration directory is not none, 
             # ANA-W1 is triggered in Error Correction mode. Otherwise Synthesis mode
-
-            if 0: # NOTE: Temporarily disable ana_w1 trigger to validate VAP 
-                if len(observations)>0 and (previous_iter_dir:=self.iteration_manager.get_previous_iteration_dir()):
-                    logger.info("[ANA-D SM] ANA-W1 in error correction mode (triggered from PREPARE_FIX).")
-                    await asyncio.to_thread(
-                        run_ana_w1_agent,
-                        workspace=str(self.iteration_manager.current_iteration_dir),
-                        schematic_images_path=schematic_images_path,
-                        scud_path=scud_path,
-                        circuit_name=self.circuit_name,
-                        observations=observations,
-                        previous_iteration_dir=previous_iter_dir,
-                    )
-                else:
-                    logger.info("[ANA-D SM] ANA-W1 in synthesis mode (not triggered from PREPARE_FIX).")
-                    await asyncio.to_thread(
-                        run_ana_w1_agent,
-                        workspace=str(self.iteration_manager.current_iteration_dir),
-                        schematic_images_path=schematic_images_path,
-                        scud_path=scud_path,
-                        circuit_name=self.circuit_name,
-                        observations=observations
-                    )
-            else: # Simply copy circuit code from previous iteration to current iteration for now. This is to validate VAP without waiting for ANA-W1 execution which can be time consuming.
-                previous_iter_dir = self.iteration_manager.get_previous_iteration_dir()
-                if previous_iter_dir is None:
-                    iterations_ids = self.iteration_manager.get_iter_ids()
-                    logger.warning(f"[ANA-D SM] No previous iteration found. Current iteration IDs: {iterations_ids}. Skipping copy of circuit code for TRIGGER_W1.")
-                else:
-                    previous_circuit_tsx = os.path.join(previous_iter_dir, f"{self.circuit_name}.tsx")
-                    current_circuit_tsx = os.path.join(self.iteration_manager.current_iteration_dir, f"{self.circuit_name}.tsx")
-                    if os.path.exists(previous_circuit_tsx):
-                        shutil.copy(previous_circuit_tsx, current_circuit_tsx)
-                        logger.info(f"[ANA-D SM] Copied circuit code from {previous_circuit_tsx} to {current_circuit_tsx} for TRIGGER_W1.")
-                    else:
-                        logger.warning(f"[ANA-D SM] Previous circuit tsx not found at {previous_circuit_tsx}. Skipping copy for TRIGGER_W1.")
-
+            if len(observations)>0 and (previous_iter_dir:=self.iteration_manager.get_previous_iteration_dir()):
+                logger.info("[ANA-D SM] ANA-W1 in error correction mode (triggered from PREPARE_FIX).")
+                await asyncio.to_thread(
+                    run_ana_w1_agent,
+                    workspace=str(self.iteration_manager.current_iteration_dir),
+                    schematic_images_path=schematic_images_path,
+                    scud_path=scud_path,
+                    circuit_name=self.circuit_name,
+                    observations=observations,
+                    previous_iteration_dir=previous_iter_dir,
+                )
+            else:
+                logger.info("[ANA-D SM] ANA-W1 in synthesis mode (not triggered from PREPARE_FIX).")
+                await asyncio.to_thread(
+                    run_ana_w1_agent,
+                    workspace=str(self.iteration_manager.current_iteration_dir),
+                    schematic_images_path=schematic_images_path,
+                    scud_path=scud_path,
+                    circuit_name=self.circuit_name,
+                    observations=observations
+                )
+            
             if not os.path.exists(self.iteration_manager.get_circuit_tsx_path()):
                 logger.error(f"[ANA-D SM] ANA-W1 did not produce circuit file")
                 result_msg["proposed_next_state"] = State.PREPARE_HIL
@@ -399,6 +384,7 @@ class ANADStateMachine:
             )
             vap_decision = result.get("decision")
             result_msg["vap_decision"] = vap_decision
+            result_msg["task_id"] = result.get("task_id")
             logger.info(f"[ANA-D SM] VAP decision: {vap_decision}")
             return result_msg
         except Exception as e:
@@ -458,23 +444,26 @@ class ANADStateMachine:
                 await self.step()
         except Exception as e:
             logger.exception(f"Unexpected error in ANA-D SM run loop: {e}")
+            # Get current task_id
+            task_id = self.current_message.get("task_id", None)
             if self.ws_client:
                 # Notify AOSM of the error and terminal failure
                 await self.ws_client.emit_error(scope="ana-d", severity="critical", message=str(e))
-                await self.ws_client.emit_evaluation_update(phase="ana-d", status="fail")
             return
 
         if self.state == State.EXIT_SUCCESS:
+            task_id = self.current_message.get("task_id", None)
             logger.info("Simulation Finished: SUCCESS")
             if self.ws_client:
-                await self.ws_client.emit_evaluation_update(phase="ana-d", status="pass")
+                logger.info(f"Sending evaluation update for task_id: {task_id}")
+                await self.ws_client.emit_evaluation_update(task_id=task_id, decision="ACCEPT")
         elif self.state == State.HIL_WAIT:
             logger.info("State Machine paused at HIL_WAIT. Awaiting user input.")
             # NOTE: In a real system, we might want to notify AOSM that we are waiting for HIL
         elif self.state == State.EXIT_ABORT:
             logger.info("Simulation Finished: ABORTED")
             if self.ws_client:
-                await self.ws_client.emit_evaluation_update(phase="ana-d", status="fail")
+                await self.ws_client.emit_evaluation_update(task_id=task_id, decision="REJECT")
 
 if __name__ == "__main__":
     sm = ANADStateMachine(max_auto_fixes=5)

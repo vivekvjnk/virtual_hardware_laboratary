@@ -83,7 +83,7 @@ class ANA_validation_agent:
         
         while True:
             status_event = await self.ws_client.wait_for_event(
-                EventType.VAP_STATUS,
+                EventType.VAP_STATUS_REPORT,
                 filter_func=lambda e: e.payload.get("task_id") == task_id
             )
             status_data = status_event.payload
