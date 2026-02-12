@@ -90,23 +90,16 @@ export async function handleVapInit(
     }
 }
 
-export async function finalizeVapTask(
+export async function reportVapResults(
     taskId: string,
     status: VAPStatus,
     context: VapContext,
     sender: WorkspaceSender
 ) {
-    const { circuit_name, results_dir, blob_id, datetime } = context;
-    console.log(`[Workspace] Finalizing task ${taskId}. Decision: ${status.decision}`);
+    const { results_dir, blob_id, datetime } = context;
+    console.log(`[Workspace] Reporting results for task ${taskId}. Evaluation status: ${status.eval_status}`);
 
     try {
-        if (status.decision === "ACCEPT") {
-            console.log(`[Workspace] Committing changes for task ${taskId}`);
-            await COWWorkspaceManager.commit(taskId);
-        } else {
-            console.log(`[Workspace] Rejecting changes for task ${taskId}`);
-        }
-
         const zipPath = `${results_dir}.zip`;
         const objectName = `${blob_id}_${datetime}_eval_results.zip`;
 
@@ -128,13 +121,33 @@ export async function finalizeVapTask(
             source: "vhl_workspace",
             payload: status
         });
-        console.log(`[Workspace] Task ${taskId} finalized and results uploaded.`);
+        console.log(`[Workspace] Task ${taskId} results reported and uploaded. Waiting for agent decision.`);
 
         await fs.unlink(zipPath).catch(() => { });
 
     } catch (err: any) {
-        console.error(`[Workspace] Failed to finalize VAP task ${taskId}:`, err);
-        sender.sendError("VAP_FINALIZE_FAILED", err.message);
+        console.error(`[Workspace] Failed to report VAP results for task ${taskId}:`, err);
+        sender.sendError("VAP_REPORT_FAILED", err.message);
+    }
+}
+
+export async function handleVapDecision(
+    taskId: string,
+    decision: "ACCEPT" | "REJECT",
+    sender: WorkspaceSender
+) {
+    console.log(`[Workspace] Handling agent decision for task ${taskId}: ${decision}`);
+
+    try {
+        if (decision === "ACCEPT") {
+            console.log(`[Workspace] Committing changes for task ${taskId}`);
+            await COWWorkspaceManager.commit(taskId);
+        } else {
+            console.log(`[Workspace] Rejecting changes for task ${taskId}`);
+        }
+    } catch (err: any) {
+        console.error(`[Workspace] Failed to apply decision for task ${taskId}:`, err);
+        sender.sendError("VAP_DECISION_APPLY_FAILED", err.message);
     } finally {
         console.log(`[Workspace] Cleaning up COW workspace for task ${taskId}`);
         await COWWorkspaceManager.cleanup(taskId).catch((e) => {

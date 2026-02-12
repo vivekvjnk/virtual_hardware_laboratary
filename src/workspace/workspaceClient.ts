@@ -5,7 +5,7 @@ import type { WebSocketMessage, AgentMessage } from "../server/types.js";
 import { runtime } from "../vap/runtime.js";
 import { WorkspaceSender, VapContext } from "./types.js";
 import { handleWorkspaceUpload, handleWorkspaceDownload } from "./syncHandlers.js";
-import { handleVapInit, finalizeVapTask } from "./vapHandlers.js";
+import { handleVapInit, reportVapResults, handleVapDecision } from "./vapHandlers.js";
 
 export class WorkspaceClient implements WorkspaceSender {
     private ws: WebSocket | null = null;
@@ -116,6 +116,15 @@ export class WorkspaceClient implements WorkspaceSender {
                 this.startVapStatusReporting(taskId, context);
                 break;
             }
+            case "VAP_DECISION": {
+                const { task_id, decision } = (msg as AgentMessage).payload;
+                if (!task_id || !decision) {
+                    this.sendError("VAP_DECISION_INVALID", "Missing task_id or decision in VAP_DECISION");
+                    break;
+                }
+                await handleVapDecision(task_id, decision, this);
+                break;
+            }
             default:
                 break;
         }
@@ -133,14 +142,14 @@ export class WorkspaceClient implements WorkspaceSender {
                 const status = runtime.getStatus(taskId);
 
                 if (status.state === "Default" && status.task_id === taskId) {
-                    console.log(`[WorkspaceClient] Evaluation complete for task: ${taskId}. Performing post-processing...`);
+                    console.log(`[WorkspaceClient] Evaluation complete for task: ${taskId}. Reporting results...`);
 
                     if (this.vapStatusInterval) {
                         clearInterval(this.vapStatusInterval);
                         this.vapStatusInterval = null;
                     }
 
-                    await finalizeVapTask(taskId, status, context, this);
+                    await reportVapResults(taskId, status, context, this);
                     this.activeVapTaskId = null;
                     this.activeVapContext = null;
                     return;

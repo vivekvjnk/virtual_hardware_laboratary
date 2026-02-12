@@ -27,6 +27,7 @@ export type EventType =
     | "VAP_INIT_COMPLETE"
     | "VAP_STATUS"
     | "VAP_STATUS_REPORT"
+    | "VAP_DECISION"
 
 export interface AgentMessage {
     id: string
