@@ -68,7 +68,7 @@ class ANA_validation_agent:
         
         # Wait for the initial VAP_STATUS to get task_id
         init_response = await self.ws_client.wait_for_event(
-            EventType.VAP_STATUS,
+            EventType.VAP_INIT_COMPLETE,
             filter_func=lambda e: e.payload.get("task_id") is not None
         )
         

@@ -13,6 +13,15 @@ class IterationManager:
         self.iteration_ids: List[str] = []
         self.current_iteration_id: Optional[str] = None
         self.current_iteration_dir: Optional[str] = None
+        self._is_first_iteration = True
+
+    def is_first_iteration(self) -> bool:
+        return self._is_first_iteration
+
+    def set_first_iteration(self):
+        self._is_first_iteration = True
+    def reset_first_iteration(self):
+        self._is_first_iteration = False
 
     def start_new_iteration(self, iteration_id: str) -> str:
         """Creates a new iteration directory and sets up symlinks."""
@@ -38,7 +47,7 @@ class IterationManager:
         iteration_dir = self.start_new_iteration(iteration_id)
 
         # for file_path in source_files:
-        dest_path = os.path.join(iteration_dir, self.circuit_name)
+        dest_path = os.path.join(iteration_dir, f"{self.circuit_name}.tsx")
         
         # If the destination already exists (e.g. a symlink from _setup_symlinks), 
         # remove it first to avoid overwriting symlink targets.
@@ -91,15 +100,16 @@ class IterationManager:
         else:
             raise FileNotFoundError(f"Pin mapping file not found at {pin_mapping_src}")
 
-    def is_first_iteration(self) -> bool :
-        return len(self.iteration_ids)>1
-    
+    def get_number_of_iterations(self) -> int:
+        return len(self.iteration_ids)
+
     def get_previous_iteration_dir(self) -> Optional[str]:
         if len(self.iteration_ids) < 2:
             return None
         prev_id = self.iteration_ids[-2]
         return os.path.join(self.workspace, "iterations", prev_id)
-
+    def get_iter_ids(self) -> List[str]:
+        return self.iteration_ids
     def get_scud_path(self) -> str:
         scud_files = [f for f in os.listdir(self.current_iteration_dir) if f.endswith(".scud")]
         if not scud_files:

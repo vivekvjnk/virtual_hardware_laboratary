@@ -38,7 +38,8 @@ class EventType(str, Enum):
 
     # VAP Orchestration
     VAP_INIT = "VAP_INIT"
-    VAP_STATUS = "VAP_STATUS"
+    VAP_INIT_COMPLETE = "VAP_INIT_COMPLETE"
+    VAP_STATUS = "VAP_STATUS_REPORT"
 
 class BaseEvent(BaseModel):
     model_config = ConfigDict(populate_by_name=True)

@@ -1,5 +1,6 @@
 import logging
 import asyncio
+import shutil
 import time
 import os
 import json
@@ -56,12 +57,12 @@ class ANADStateMachine:
             State.OBSERVE: State.AUTHORIZE,
             State.PREPARE_FIX: State.TRIGGER_W1,
             State.TRIGGER_W1: State.TRIGGER_W2,
-            State.WAIT_W1: State.TRIGGER_W2,
             State.TRIGGER_W2: State.INIT,
-            State.WAIT_VAP: State.INIT,
             State.PREPARE_HIL: State.HIL_WAIT,
-            # HIL_WAIT defaults to itself if no proposal (waiting for input)
             State.HIL_WAIT: State.HIL_WAIT
+            # State.WAIT_VAP: State.INIT, # Obsolete state, Delete in next refactor
+            # State.WAIT_W1: State.TRIGGER_W2, # Obsolete state, Delete in next refactor
+            # HIL_WAIT defaults to itself if no proposal (waiting for input)
         }
 
         # MCP Setup
@@ -139,15 +140,28 @@ class ANADStateMachine:
         observations = message.get("observations",[])
         circuit_code_path = message.get("circuit_code_path",None)
         
-        # TODO v2 : If this is the first iteration and message contains non empty observation list and circuit code path, 
-        # this is a special case triggered by user messages from UI. Create a new iteration directory with the circuit code in it.
-        # This handling should be done only once, for the very first iteration with non empty observation list and not None circuit code path.
-        if self.iteration_manager.is_first_iteration() and (len(observations)>0) and circuit_code_path:
+        if self.iteration_manager.is_first_iteration():
+            logger.info(f"[ANA-D SM INIT] First iteration. Observations: {observations}, Circuit Code Path: {circuit_code_path}")
+            if num_iterations := self.iteration_manager.get_number_of_iterations() > 0:
+                logger.warning(f"[ANA-D SM INIT] Completed first iteration. Resetting first iteration flag. Current iteration count: {num_iterations}")
+                self.iteration_manager.reset_first_iteration()
+
+        # NOTE: Out of the 3 conditions checked here, 
+        #       - is_first_iteration and len(observations)>0 are the authoritative decision makers
+        #       - If Both these conditions are true, we are in user triggered error correction cycle.
+        # TODO: As of now, ANA state machine accept observations and circuit_code_path from AOSM. Then we move the circuit code from the given path to a local iteration directory. From the perspective of every other states in ANA-D state machine, this is just another iteration with some observations. This is a temporary workaround until we derive stable project directory structure and file management strategy. 
+        # Hence the additional conditional logic based on circuit_code_path can be removed without any side effects in future refactor.
+        # Check how many iterations are present in iteration manager
+        if (self.iteration_manager.is_first_iteration()) and (len(observations)>0) and (circuit_code_path is not None):
             last_iteration_id = str(uuid.uuid4()).split("-")[0][:8] # First 8 characters of UUID
-            self.iteration_manager.prepare_iteration_with_files(source_files=circuit_code_path,iteration_id=last_iteration_id)
+            logger.info(f"[ANA-D SM INIT] First iteration with user-provided circuit code and observations. Preparing iteration directory with provided circuit code. Iteration ID: {last_iteration_id}")
+            self.iteration_manager.prepare_iteration_with_files(source_file=circuit_code_path,iteration_id=last_iteration_id)
+            # Set first iteration flag to true for downstream states
             # Remove the circuit code path from message. This is no longer required.
             result_msg.pop("circuit_code_path") 
-
+        else: # Debug observability
+            logger.info(f"[ANA-D SM INIT] Starting new iteration without user-provided circuit code. Observations: {observations}, Circuit Code Path: {circuit_code_path}, First Iteration: {self.iteration_manager.is_first_iteration()}")
+        
         iteration_id = str(uuid.uuid4()).split("-")[0][:8]
         self.iteration_manager.start_new_iteration(iteration_id)
         
@@ -167,20 +181,30 @@ class ANADStateMachine:
         result_msg = message.copy()
         result_msg["state_id"] = State.OBSERVE
         
+        observations = result_msg.get("observations", [])
+        
         if self.iteration_manager.is_first_iteration():
             logger.info("[ANA-D SM Observe] First iteration. Skipping observation of previous iteration.")
+            
+            # Check if result message contain intent_status or error_class. If not, observe is triggered from user message
+            if (len(observations)>0) and ("intent_status" not in result_msg and "error_class" not in result_msg): # Triggered directly through user message
+                result_msg.update({
+                    "intent_status": "violated",
+                    "observations": observations,
+                    "error_class" : "LOCAL"
+                })
+                logger.info(f"[ANA-D SM Observe] First iteration through user message. Observations: {observations}")
             return result_msg
         
-        observations = result_msg.get("observations", [])
-        # Check if result message contain intent_status or error_class. If not, observe is triggered from user message
-        if (len(observations)>0) and ("intent_status" not in result_msg and "error_class" not in result_msg): # Triggered directly through user message
+        if("ACCEPT"== result_msg.get("vap_decision")):
+            logger.info(f"[ANA-D SM Observe] Previous iteration had vap_decision status: {result_msg.get("vap_decision")}.")
+            # For now we don't implement intent level analysis on the circuit code. Instead let the user decide if intent is satisfied or not.
             result_msg.update({
-                "intent_status": "violated",
-                "observations": observations,
-                "error_class" : "LOCAL"
-            })
-            logger.info(f"[ANA-D SM Observe] First iteration through user message. Observations: {observations}")
+                    "intent_status": "satisfied",
+                    "observations": observations,
+                })
             return result_msg
+
 
         previous_dir = self.iteration_manager.get_previous_iteration_dir()
         logger.info(f"[ANA-D SM Observe] Observing previous iteration: {previous_dir}")
@@ -306,27 +330,42 @@ class ANADStateMachine:
             # There are perceivably two operating modes for ANA-W1. Error correction and Synthesis. 
             # If observations are present and previous iteration directory is not none, 
             # ANA-W1 is triggered in Error Correction mode. Otherwise Synthesis mode
-            if len(observations)>0 and (previous_iter_dir:=self.iteration_manager.get_previous_iteration_dir()):
-                logger.info("[ANA-D SM] ANA-W1 in error correction mode (triggered from PREPARE_FIX).")
-                await asyncio.to_thread(
-                    run_ana_w1_agent,
-                    workspace=str(self.iteration_manager.current_iteration_dir),
-                    schematic_images_path=schematic_images_path,
-                    scud_path=scud_path,
-                    circuit_name=self.circuit_name,
-                    observations=observations,
-                    previous_iteration_dir=previous_iter_dir,
-                )
-            else:
-                logger.info("[ANA-D SM] ANA-W1 in synthesis mode (not triggered from PREPARE_FIX).")
-                await asyncio.to_thread(
-                    run_ana_w1_agent,
-                    workspace=str(self.iteration_manager.current_iteration_dir),
-                    schematic_images_path=schematic_images_path,
-                    scud_path=scud_path,
-                    circuit_name=self.circuit_name,
-                    observations=observations
-                )
+
+            if 0: # NOTE: Temporarily disable ana_w1 trigger to validate VAP 
+                if len(observations)>0 and (previous_iter_dir:=self.iteration_manager.get_previous_iteration_dir()):
+                    logger.info("[ANA-D SM] ANA-W1 in error correction mode (triggered from PREPARE_FIX).")
+                    await asyncio.to_thread(
+                        run_ana_w1_agent,
+                        workspace=str(self.iteration_manager.current_iteration_dir),
+                        schematic_images_path=schematic_images_path,
+                        scud_path=scud_path,
+                        circuit_name=self.circuit_name,
+                        observations=observations,
+                        previous_iteration_dir=previous_iter_dir,
+                    )
+                else:
+                    logger.info("[ANA-D SM] ANA-W1 in synthesis mode (not triggered from PREPARE_FIX).")
+                    await asyncio.to_thread(
+                        run_ana_w1_agent,
+                        workspace=str(self.iteration_manager.current_iteration_dir),
+                        schematic_images_path=schematic_images_path,
+                        scud_path=scud_path,
+                        circuit_name=self.circuit_name,
+                        observations=observations
+                    )
+            else: # Simply copy circuit code from previous iteration to current iteration for now. This is to validate VAP without waiting for ANA-W1 execution which can be time consuming.
+                previous_iter_dir = self.iteration_manager.get_previous_iteration_dir()
+                if previous_iter_dir is None:
+                    iterations_ids = self.iteration_manager.get_iter_ids()
+                    logger.warning(f"[ANA-D SM] No previous iteration found. Current iteration IDs: {iterations_ids}. Skipping copy of circuit code for TRIGGER_W1.")
+                else:
+                    previous_circuit_tsx = os.path.join(previous_iter_dir, f"{self.circuit_name}.tsx")
+                    current_circuit_tsx = os.path.join(self.iteration_manager.current_iteration_dir, f"{self.circuit_name}.tsx")
+                    if os.path.exists(previous_circuit_tsx):
+                        shutil.copy(previous_circuit_tsx, current_circuit_tsx)
+                        logger.info(f"[ANA-D SM] Copied circuit code from {previous_circuit_tsx} to {current_circuit_tsx} for TRIGGER_W1.")
+                    else:
+                        logger.warning(f"[ANA-D SM] Previous circuit tsx not found at {previous_circuit_tsx}. Skipping copy for TRIGGER_W1.")
 
             if not os.path.exists(self.iteration_manager.get_circuit_tsx_path()):
                 logger.error(f"[ANA-D SM] ANA-W1 did not produce circuit file")
