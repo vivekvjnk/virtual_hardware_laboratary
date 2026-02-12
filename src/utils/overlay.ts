@@ -41,7 +41,7 @@ export class OverlayManager {
         // Note: Use sudo as mounting requires privileges.
         // Use -o index=off to avoid issues on some filesystems if needed, 
         // but standard overlay options should work.
-        const mountCmd = `sudo mount -t overlay overlay -o lowerdir=${WORKSPACE_DIR},upperdir=${paths.upper},workdir=${paths.work} ${paths.merged}`;
+        const mountCmd = `mount -t overlay overlay -o lowerdir=${WORKSPACE_DIR},upperdir=${paths.upper},workdir=${paths.work} ${paths.merged}`;
 
         try {
             execSync(mountCmd, { stdio: "inherit" });
@@ -64,7 +64,7 @@ export class OverlayManager {
             // Check if it is actually mounted before trying to unmount
             const mounts = execSync("mount").toString();
             if (mounts.includes(paths.merged)) {
-                execSync(`sudo umount ${paths.merged}`, { stdio: "inherit" });
+                execSync(`umount ${paths.merged}`, { stdio: "inherit" });
             }
         } catch (error) {
             console.warn(`Warning: Failed to unmount ${paths.merged}:`, error);
@@ -92,7 +92,7 @@ export class OverlayManager {
         // Sync upperdir to lowerdir (WORKSPACE_DIR)
         // cp -a preserves permissions and recurses. 
         // We use . to copy the contents of upper into WORKSPACE_DIR
-        const commitCmd = `sudo cp -a ${paths.upper}/. ${WORKSPACE_DIR}/`;
+        const commitCmd = `cp -a ${paths.upper}/. ${WORKSPACE_DIR}/`;
         try {
             execSync(commitCmd, { stdio: "inherit" });
         } catch (error) {

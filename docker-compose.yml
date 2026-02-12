@@ -23,6 +23,10 @@ services:
       # Add your MinIO connection details here for your code to use
       - MINIO_ENDPOINT=minio
     restart: unless-stopped
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - apparmor:unconfined
 
   minio:
     image: quay.io/minio/minio:latest
