@@ -44,7 +44,7 @@ export class RelayAgentHandler implements AgentHandler {
         } else if (this.role === "agent") {
             // Agent (Backend) -> UI (Runtime) or Workspace Client
             if (msg.type === "WORKSPACE_DOWNLOAD" || msg.type === "WORKSPACE_UPLOAD" ||
-                msg.type === "VAP_INIT" || msg.type === "VAP_STATUS") {
+                msg.type === "VAP_INIT" || msg.type === "VAP_DECISION") {
                 if (RelayAgentHandler.workspaceClient) {
                     RelayAgentHandler.workspaceClient(msg)
                 } else {
