@@ -104,6 +104,14 @@ class VHLWebSocketClient:
         await self._ws.send(identify_event.model_dump_json(by_alias=True))
         logger.info(f"Sent IDENTIFY as {self.role}")
 
+    async def _notify_subscribers(self, event: BaseEvent):
+        """Notifies all registered subscribers of an event."""
+        for subscriber in self._subscribers:
+            try:
+                await subscriber(event)
+            except Exception as e:
+                logger.error(f"Error in subscriber callback: {e}")
+
     async def _receive_loop(self):
         """Listens for messages from the WebSocket."""
         try:
@@ -114,11 +122,7 @@ class VHLWebSocketClient:
                     logger.debug(f"Received event: {event.type}")
                     
                     # Notify all subscribers
-                    for subscriber in self._subscribers:
-                        try:
-                            await subscriber(event)
-                        except Exception as e:
-                            logger.error(f"Error in subscriber callback: {e}")
+                    await self._notify_subscribers(event)
                 except Exception as e:
                     logger.error(f"Error parsing received event: {e}. Data: {message}")
         except websockets.ConnectionClosed:
@@ -149,6 +153,8 @@ class VHLWebSocketClient:
         Suitable for replaying or custom events.
         """
         await self._send_queue.put(event)
+        # Also notify local subscribers
+        await self._notify_subscribers(event)
 
     async def emit(self, event_type: EventType, payload: BaseModel, artifact_id: Optional[str] = None):
         """Creates and enqueues an event for delivery."""
@@ -160,6 +166,8 @@ class VHLWebSocketClient:
             payload=payload.model_dump(by_alias=True)
         )
         await self._send_queue.put(event)
+        # Also notify local subscribers
+        await self._notify_subscribers(event)
         return event
 
     def add_subscriber(self, callback: Callable[[BaseEvent], Awaitable[None]]):

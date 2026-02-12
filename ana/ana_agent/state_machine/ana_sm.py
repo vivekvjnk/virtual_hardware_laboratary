@@ -453,15 +453,28 @@ class ANADStateMachine:
     async def run(self):
         """Runs the state machine loop until a terminal state or HIL_WAIT is reached."""
         logger.info("--- Starting State Machine ---")
-        while not self.is_terminal() and self.state != State.HIL_WAIT:
-            await self.step()
+        try:
+            while not self.is_terminal() and self.state != State.HIL_WAIT:
+                await self.step()
+        except Exception as e:
+            logger.exception(f"Unexpected error in ANA-D SM run loop: {e}")
+            if self.ws_client:
+                # Notify AOSM of the error and terminal failure
+                await self.ws_client.emit_error(scope="ana-d", severity="critical", message=str(e))
+                await self.ws_client.emit_evaluation_update(phase="ana-d", status="fail")
+            return
 
         if self.state == State.EXIT_SUCCESS:
             logger.info("Simulation Finished: SUCCESS")
+            if self.ws_client:
+                await self.ws_client.emit_evaluation_update(phase="ana-d", status="pass")
         elif self.state == State.HIL_WAIT:
             logger.info("State Machine paused at HIL_WAIT. Awaiting user input.")
+            # NOTE: In a real system, we might want to notify AOSM that we are waiting for HIL
         elif self.state == State.EXIT_ABORT:
             logger.info("Simulation Finished: ABORTED")
+            if self.ws_client:
+                await self.ws_client.emit_evaluation_update(phase="ana-d", status="fail")
 
 if __name__ == "__main__":
     sm = ANADStateMachine(max_auto_fixes=5)

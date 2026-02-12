@@ -159,7 +159,8 @@ class AOSM:
             await self.transition_to(AOSMState.INTENT_CLASSIFY, "User modification requested")
         elif event.type == EventType.REFERENCE_UPLOADED:
             await self.transition_to(AOSMState.BOOTSTRAP_PIPELINE, "New upload during review")
-
+        # elif event.type == EventType.STATE_TRANSITION:
+        #     # Read the evaluation status from event payload. If it is pass, 
     async def _handle_intent_classify(self, event: BaseEvent):
         # In a real scenario, an agent would classify the intent here.
         # For the wireframe, we assume valid modification request.
