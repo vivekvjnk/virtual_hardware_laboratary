@@ -12,21 +12,15 @@ services:
       # - "9000:9000" # port for Minio 
     networks:
       - vhl-network
-    volumes:
-      - vhl-lib:/app/workspace/lib
-      - vhl-circuits:/app/circuits # Obsolete, delete later
+    
     environment:
       - VHL_TRANSPORT=http
       - PORT=8080
       - VAP_PORT=8081
       - VHL_LIBRARY_DIR=/app/lib
-      # Add your MinIO connection details here for your code to use
+      # Add MinIO connection details here
       - MINIO_ENDPOINT=minio
     restart: unless-stopped
-    cap_add:
-      - SYS_ADMIN
-    security_opt:
-      - apparmor:unconfined
 
   minio:
     image: quay.io/minio/minio:latest
@@ -46,9 +40,3 @@ services:
 networks:
   vhl-network:
     external: true
-
-volumes:
-  vhl-lib:
-    driver: local
-  vhl-circuits:
-    driver: local

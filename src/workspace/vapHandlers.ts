@@ -9,7 +9,7 @@ import { pushObject, pullObject } from "../utils/minio.js";
 import { AgentMessage } from "../server/types.js";
 import { runtime, VAPStatus } from "../vap/runtime.js";
 import { WorkspaceSender, VapContext } from "./types.js";
-import { OverlayManager } from "../utils/overlay.js";
+import { COWWorkspaceManager } from "../utils/cowWorkspace.js";
 import { TEMP_DIR } from "../config/paths.js";
 
 export async function handleVapInit(
@@ -26,19 +26,19 @@ export async function handleVapInit(
         }
 
         const datetime = new Date().toISOString().replace(/[:.]/g, "-");
-        console.log(`[Workspace] Setting up OverlayFS for circuit: ${circuit_name} (Task: ${taskId})`);
+        console.log(`[Workspace] Setting up COW workspace for circuit: ${circuit_name} (Task: ${taskId})`);
 
-        // 1. Mount OverlayFS
-        paths = await OverlayManager.mount(taskId);
+        // 1. Create COW Workspace (hardlink clone)
+        paths = await COWWorkspaceManager.createEvaluationWorkspace(taskId);
 
         // 2. Pull circuit code from MinIO to a temporary location
         const tempPullDir = path.join(TEMP_DIR, `pull_${taskId}`);
         await fs.mkdir(tempPullDir, { recursive: true });
         const localPath = await pullObject(blob_id, tempPullDir);
 
-        // 3. Inject circuit into the upper directory
-        const relativeTsxPath = `circuits/${circuit_name}.tsx`;
-        await OverlayManager.syncToUpper(localPath, relativeTsxPath, taskId);
+        // 3. Inject circuit into the evaluation workspace (breaks hardlink)
+        const relativeTsxPath = `${circuit_name}.tsx`;
+        await COWWorkspaceManager.injectProvisionalFile(localPath, relativeTsxPath, taskId);
 
         // Cleanup temp pull dir
         await fs.rm(tempPullDir, { recursive: true, force: true }).catch(() => { });
@@ -49,7 +49,7 @@ export async function handleVapInit(
             circuit_name,
             relativeTsxPath,
             resultsDir,
-            paths.merged,
+            paths.taskRoot,
             blob_id,
             datetime,
             taskId
@@ -83,7 +83,7 @@ export async function handleVapInit(
     } catch (err: any) {
         console.error("[Workspace] VAP_INIT failed:", err);
         if (taskId) {
-            await OverlayManager.cleanup(taskId).catch(() => { });
+            await COWWorkspaceManager.cleanup(taskId).catch(() => { });
         }
         sender.sendError("VAP_INIT_FAILED", err.message);
         throw err;
@@ -102,7 +102,7 @@ export async function finalizeVapTask(
     try {
         if (status.decision === "ACCEPT") {
             console.log(`[Workspace] Committing changes for task ${taskId}`);
-            await OverlayManager.commit(taskId);
+            await COWWorkspaceManager.commit(taskId);
         } else {
             console.log(`[Workspace] Rejecting changes for task ${taskId}`);
         }
@@ -136,8 +136,8 @@ export async function finalizeVapTask(
         console.error(`[Workspace] Failed to finalize VAP task ${taskId}:`, err);
         sender.sendError("VAP_FINALIZE_FAILED", err.message);
     } finally {
-        console.log(`[Workspace] Cleaning up OverlayFS for task ${taskId}`);
-        await OverlayManager.cleanup(taskId).catch((e) => {
+        console.log(`[Workspace] Cleaning up COW workspace for task ${taskId}`);
+        await COWWorkspaceManager.cleanup(taskId).catch((e) => {
             console.warn(`[Workspace] Cleanup failed for task ${taskId}:`, e);
         });
     }

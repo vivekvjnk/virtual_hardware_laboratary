@@ -52,7 +52,6 @@ ENV VHL_TRANSPORT=http \
     TSCI_SKIP_CLI_UPDATE=true
 
 EXPOSE 8080 8081
-VOLUME ["/app/lib", "/app/circuits"]
 
 COPY start.sh ./
 RUN chmod +x start.sh

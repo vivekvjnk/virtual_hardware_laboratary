@@ -85,8 +85,8 @@ export const EVAL_RESULTS_DIR = path.join(PROJECT_ROOT, "eval_results");
 export const WORKSPACE_DIR = process.env.VHL_WORKSPACE_DIR || path.join(PROJECT_ROOT, "workspace");
 
 /**
- * Overlay evaluation root.
+ * Evaluation root.
  * 
- * Used for OverlayFS mounts during evaluation.
+ * Used for hardlink-based COW workspaces during evaluation.
  */
-export const OVERLAY_ROOT = path.join(PROJECT_ROOT, ".vhl_eval");
+export const EVAL_ROOT = path.join(PROJECT_ROOT, ".vhl_eval");

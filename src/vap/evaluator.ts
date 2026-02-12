@@ -27,16 +27,16 @@ export interface EvaluationResult {
 /**
  * Evaluate a circuit file using tsci eval
  * 
- * @param tsxPath - Path to the .tsx circuit file relative to mergedDir
+ * @param tsxPath - Path to the .tsx circuit file relative to evalDir
  * @param resultsDir - Directory to store evaluation results
- * @param mergedDir - OverlayFS merged directory (CWD for evaluation)
+ * @param evalDir - Evaluation COW workspace directory (CWD for evaluation)
  * @param timeoutMs - Timeout in milliseconds (default: 30000)
  * @returns EvaluationResult
  */
 export function evaluateCircuit(
     tsxPath: string,
     resultsDir: string,
-    mergedDir: string,
+    evalDir: string,
     timeoutMs: number = 300000
 ): Promise<EvaluationResult> {
     return new Promise((resolve) => {
@@ -47,7 +47,7 @@ export function evaluateCircuit(
 
         const proc = spawn("tsci", ["build", tsxPath], {
             stdio: "pipe",
-            cwd: mergedDir,
+            cwd: evalDir,
             env: {
                 ...process.env,
                 CI: "true",

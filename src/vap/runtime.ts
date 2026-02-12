@@ -57,7 +57,7 @@ export class VAPRuntime {
         circuitName: string,
         relativeTsxPath: string,
         resultsDir: string,
-        mergedDir: string,
+        evalDir: string,
         blobId: string,
         datetime: string,
         taskId?: string
@@ -79,7 +79,7 @@ export class VAPRuntime {
 
         // 3. Start background evaluation
         console.log(`[VAP] Spawning background evaluation task`);
-        this.runEvaluation(relativeTsxPath, circuitName, resultsDir, mergedDir, this.activeBlobId, this.activeDatetime);
+        this.runEvaluation(relativeTsxPath, circuitName, resultsDir, evalDir, this.activeBlobId, this.activeDatetime);
 
         console.log(`[VAP] Evaluation task started, returning task ID: ${this.activeTaskId}`);
         return {
@@ -91,11 +91,11 @@ export class VAPRuntime {
     /**
      * Run evaluation in background
      */
-    private async runEvaluation(relativeTsxPath: string, circuitName: string, resultsDir: string, mergedDir: string, blobId: string, datetime: string) {
+    private async runEvaluation(relativeTsxPath: string, circuitName: string, resultsDir: string, evalDir: string, blobId: string, datetime: string) {
         try {
             // Execute evaluation
             console.log(`[VAP] Starting evaluation for circuit: ${circuitName}`);
-            const result = await evaluateCircuit(relativeTsxPath, resultsDir, mergedDir);
+            const result = await evaluateCircuit(relativeTsxPath, resultsDir, evalDir);
             console.log(`[VAP] Evaluation completed with decision: ${result.decision}`);
 
             // Update logs
