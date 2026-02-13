@@ -5,7 +5,7 @@ from typing import Optional, Callable, Dict, Any, Awaitable, List
 from pydantic import BaseModel
 import websockets
 from ..models import (
-    BaseEvent, EventType, EventSource,
+    BaseEvent, EventType, EventSource, HILRequestPayload,
     HumanInputPayload, StateTransitionPayload,
     EvaluationUpdatePayload, ArtifactUpdatedPayload,
     AuthorityRequiredPayload, ErrorPayload,
@@ -242,3 +242,8 @@ class VHLWebSocketClient:
     async def emit_vap_init(self, circuit_name: str, blob_id: str):
         payload = VAPInitPayload(circuit_name=circuit_name, blob_id=blob_id)
         return await self.emit(EventType.VAP_INIT, payload)
+
+    # Helper for HIL
+    async def emit_status_update(self, status: str, message: Optional[str] = None):
+        payload = HILRequestPayload(reason=status, message=message)
+        await self.emit(EventType.HIL_REQUEST, payload)

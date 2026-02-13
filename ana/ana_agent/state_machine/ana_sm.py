@@ -280,12 +280,15 @@ class ANADStateMachine:
             if error_class == "LOCAL" and auto_fix_count < self.max_auto_fixes:
                 proposed_next = State.PREPARE_FIX
             else:
+                err_msg = "VAP detected non-local error" if error_class != "LOCAL" else "VAP failed repeated auto-fix attempts for local error"
+                result_msg["hil_wait_packet"] = {"reason":"ANA_HIL_REQUIRED", "message": err_msg}
                 proposed_next = State.PREPARE_HIL
             
         elif vap_decision == "ACCEPT":
             if intent_status == "satisfied":
                 proposed_next = State.EXIT_SUCCESS
             else:
+                result_msg["hil_wait_packet"] = {"reason":"ANA_HIL_REQUIRED", "message": "VAP accepted the circuit but intent is not fully satisfied. Human intervention required to decide if intent violation is acceptable or not."}
                 proposed_next = State.PREPARE_HIL
 
         elif vap_decision == "UNDECIDED":
@@ -354,14 +357,15 @@ class ANADStateMachine:
             
             if not os.path.exists(self.iteration_manager.get_circuit_tsx_path()):
                 logger.error(f"[ANA-D SM] ANA-W1 did not produce circuit file")
+                result_msg["hil_wait_packet"] = {"reason":"ANA_ERROR", "message": "ANA-W1 did not produce circuit file"}
                 result_msg["proposed_next_state"] = State.PREPARE_HIL
                 return result_msg
-            
             # Now clear the observation list. ana_w1 successfully consumed observations
             result_msg["observations"] = []
             return result_msg
         except Exception as e:
             logger.error(f"Error in TRIGGER_W1: {e}")
+            result_msg["hil_wait_packet"] = {"reason":"ANA_ERROR", "message": f"Error in TRIGGER_W1: {e}"}
             result_msg["proposed_next_state"] = State.PREPARE_HIL
             return result_msg
 
@@ -393,19 +397,20 @@ class ANADStateMachine:
         logger.info(f"[ANA-D SM] State: PREPARE_HIL. Triggered from: {message.get('from_state_id')}\n{"*"*30}\n{message}\n{"*"*30}")
         result_msg = message.copy()
         result_msg["state_id"] = State.PREPARE_HIL
-        
+        hil_packet = result_msg.get("hil_wait_packet", None)
+        if not hil_packet:
+            logger.warning("[ANA-D SM] No HIL packet found in message. Using default packet.")
+            hil_packet = {"reason":"ANA_HIL_REQUIRED", "message": "Unknown reason. Human intervention required."}
+
         if self.parent_notify:
-            logger.info("[ANA-D SM] Notifying parent of HIL requirement.")
-            # Trigger parent notify with message event and data
-            # Use data from message if available, else default to state info
+            logger.info(f"[ANA-D SM] Notifying parent of HIL requirement. HIL packet content: {hil_packet}")
+            
             await self.parent_notify(
-                event="HIL_REQUEST", 
-                data={
-                    "state": "PREPARE_HIL",
-                    "observations": message.get("observations", [])
+                payload={
+                    "from_state": message.get("from_state_id"),
+                    **hil_packet
                 }
             )
-
         result_msg["proposed_next_state"] = State.HIL_WAIT
         return result_msg
 

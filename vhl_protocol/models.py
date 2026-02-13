@@ -24,6 +24,7 @@ class EventType(str, Enum):
     ARTIFACT_UPDATED = "ARTIFACT_UPDATED"
     AUTHORITY_REQUIRED = "AUTHORITY_REQUIRED"
     ERROR = "ERROR"
+    HIL_REQUEST = "HIL_REQUEST"
 
     # Workspace Management
     WORKSPACE_DOWNLOAD = "WORKSPACE_DOWNLOAD"
@@ -121,3 +122,7 @@ class VAPStatusPayload(BaseModel):
     results: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
+
+class HILRequestPayload(BaseModel):
+    reason: str
+    message: Optional[str] = None

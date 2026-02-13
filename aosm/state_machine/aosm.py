@@ -129,15 +129,15 @@ class AOSM:
         ))
         
 
-    async def _parent_notify(self, event: str, data: Dict[str, Any]):
+    async def _parent_notify(self, payload: Dict[str, Any]):
         """
         Callback passed to child state machines (like ANA) to notify AOSM of events.
         """
-        logger.info(f"[AOSM] Received parent notification: {event} with data: {data}")
+        logger.info(f"[AOSM] Received parent notification with payload: {payload}")
         await self.event_queue.put(BaseEvent(
             type=EventType.ANA_NOTIFY,
             source=EventSource.ANA,
-            payload={"event": event, "data": data}
+            payload=payload
         ))
 
     # --- State Handlers ---
@@ -154,41 +154,7 @@ class AOSM:
         if event.type == EventType.STATE_TRANSITION:
             await self._run_bootstrap()
 
-    async def _handle_wait_for_ana(self, event: BaseEvent):
-        if event.type == EventType.EVALUATION_UPDATE:
-            status = event.payload.get("status")
-            if status in ["pass", "fail"]:
-                await self.transition_to(AOSMState.PRESENT_RESULT, f"ANA finished with status: {status}")
-        elif event.type == EventType.INTERRUPT_REQUEST:
-            await self.transition_to(AOSMState.CANCEL_PIPELINE, "User interrupted execution")
-        elif event.type == EventType.ERROR:
-            await self.transition_to(AOSMState.ERROR_PRESENTED, f"System error: {event.payload.get('message')}")
-        elif event.type == EventType.ANA_NOTIFY:
-            # Handle notification from ANA (e.g., HIL_REQUEST)
-            ana_event = event.payload.get("event")
-            ana_data = event.payload.get("data")
-            logger.info(f"[AOSM-WAIT_FOR_ANA] ANA notification: {ana_event}")
-            
-            if ana_event == "HIL_REQUEST":
-                # Maybe notify UI that HIL is required
-                await self.ws_client.emit_status_update(
-                    status="waiting_for_input",
-                    message="ANA requires human assistance"
-                )
-        elif event.type == EventType.HUMAN_INPUT:
-            # Relaying human input to ANA's inbox
-            if self.ana_inbox:
-                logger.info(f"[AOSM-WAIT_FOR_ANA] Relaying human input to ANA: {event.payload}")
-                content = event.payload.get("content", "")
-                
-                # Check for abort command
-                if content.lower() == "abort":
-                    await self.ana_inbox.put({"event": "abort", "data": None})
-                else:
-                    await self.ana_inbox.put({"event": "human_response", "data": content})
-            else:
-                logger.warning("[AOSM-WAIT_FOR_ANA] Received human input but ANA inbox is not initialized")
-
+    
     async def _handle_present_result(self, event: BaseEvent):
         logger.info(f"[AOSM] Presenting results to user... Event: {event}")
         if event.type == EventType.HUMAN_INPUT:
@@ -302,6 +268,49 @@ class AOSM:
         
         
         await self.transition_to(AOSMState.WAIT_FOR_ANA, "ANA-D started")
+
+    async def _handle_wait_for_ana(self, event: BaseEvent):
+        if event.type == EventType.EVALUATION_UPDATE:
+            status = event.payload.get("status")
+            if status in ["pass", "fail"]:
+                await self.transition_to(AOSMState.PRESENT_RESULT, f"ANA finished with status: {status}")
+        elif event.type == EventType.INTERRUPT_REQUEST:
+            await self.transition_to(AOSMState.CANCEL_PIPELINE, "User interrupted execution")
+        elif event.type == EventType.ERROR:
+            await self.transition_to(AOSMState.ERROR_PRESENTED, f"System error: {event.payload.get('message')}")
+            
+        elif event.type == EventType.ANA_NOTIFY:
+            # Handle notification from ANA (e.g., HIL_REQUEST)
+            logger.info(f"[AOSM-WAIT_FOR_ANA] ANA notification: {event.payload}")
+            
+            ana_event = event.payload.get("reason")
+            if ana_event == "ANA_HIL_REQUIRED":
+                # Maybe notify UI that HIL is required
+                await self.ws_client.emit_status_update(
+                    status="waiting_for_input",
+                    message=event.payload.get("message")
+                )
+            elif ana_event == "ANA_ERROR":
+                await self.ws_client.emit_status_update(
+                    status="ana_error",
+                    message=event.payload.get("message")
+                )
+            else:
+                raise ValueError(f"Unknown ANA notification reason: {ana_event}")
+            
+        elif event.type == EventType.HUMAN_INPUT:
+            # Relaying human input to ANA's inbox
+            if self.ana_inbox:
+                logger.info(f"[AOSM-WAIT_FOR_ANA] Relaying human input to ANA: {event.payload}")
+                content = event.payload.get("content", "")
+                
+                # Check for abort command
+                if content.lower() == "abort":
+                    await self.ana_inbox.put({"event": "abort", "data": None})
+                else:
+                    await self.ana_inbox.put({"event": "human_response", "data": content})
+            else:
+                logger.warning("[AOSM-WAIT_FOR_ANA] Received human input but ANA inbox is not initialized")
 
     async def _handle_cancel_pipeline(self, event: BaseEvent):
         logger.info("[AOSM] Cleaning up cancelled pipeline...")
