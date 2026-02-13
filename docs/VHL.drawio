@@ -1,4 +1,4 @@
-<mxfile host="app.diagrams.net" agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36" version="29.2.4" pages="2">
+<mxfile host="app.diagrams.net" agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36" version="29.3.8" pages="3">
   <diagram name="Image_to_Schematic" id="vQIdIdGx5W2JUs-OrPZq">
     <mxGraphModel dx="2247" dy="1033" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
       <root>
@@ -468,6 +468,158 @@
         </mxCell>
         <mxCell id="QSC5CXH05-FMWUgincoG-1" parent="1" style="text;html=1;whiteSpace=wrap;overflow=hidden;rounded=0;" value="&lt;h1 style=&quot;margin-top: 0px;&quot;&gt;Review agent result analysis&lt;/h1&gt;&lt;p&gt;&lt;span style=&quot;font-size: 18px;&quot;&gt;Implemented and tested basic review agent workflow&lt;/span&gt;&lt;/p&gt;&lt;p&gt;&lt;span style=&quot;font-size: 18px;&quot;&gt;First impressions:&lt;/span&gt;&lt;/p&gt;&lt;p&gt;&lt;span style=&quot;font-size: 18px;&quot;&gt;1. Review agent is not capturing wrong mappings as expected.&amp;nbsp;&lt;/span&gt;&lt;/p&gt;&lt;p&gt;&lt;span style=&quot;font-size: 18px;&quot;&gt;&lt;span style=&quot;white-space: pre;&quot;&gt;&#x9;&lt;/span&gt;- Tried with Gemini-2.5-flash and Gemini-3.0-pro.&amp;nbsp;&lt;br&gt;&lt;/span&gt;&lt;/p&gt;&lt;p&gt;&lt;span style=&quot;font-size: 18px;&quot;&gt;&lt;span style=&quot;white-space: pre;&quot;&gt;&#x9;&lt;/span&gt;- Flash model failed to identify the missing node connections for BAT. It could resolve issues related to R121. But differential changes are minimal.&amp;nbsp;&lt;br&gt;&lt;/span&gt;&lt;/p&gt;&lt;p&gt;&lt;span style=&quot;font-size: 18px;&quot;&gt;&lt;span style=&quot;white-space: pre;&quot;&gt;&#x9;&lt;/span&gt;- Gemini-3.0-pro failed to respond properly for the above example image.&lt;br&gt;&lt;/span&gt;&lt;/p&gt;&lt;p&gt;&lt;span style=&quot;font-size: 18px;&quot;&gt;02_s27 : This sub-circuit belongs to the BQ79616 ic. There are few mistakes(ones mentioned above) in the extracted SPICE code for this module. Yet review agent failed to identify those mistakes, rather Gemini-3-pro response was not proper.&amp;nbsp;&lt;/span&gt;&lt;/p&gt;&lt;p&gt;&lt;span style=&quot;font-size: 18px;&quot;&gt;01_s39 : Minor updates after review agent. No breaking errors detected&lt;/span&gt;&lt;/p&gt;&lt;p&gt;&lt;span style=&quot;font-size: 18px;&quot;&gt;03_s40 : Schematic contain confusing mistake. Resolved the error originated from this mistake. Not major.&lt;/span&gt;&lt;/p&gt;&lt;p&gt;&lt;span style=&quot;font-size: 18px;&quot;&gt;04_s39 : Review agent removed all the pin numbering. Undesirable outcome. Happened because review agent is unaware of pin conventions&lt;/span&gt;&lt;/p&gt;&lt;p&gt;&lt;span style=&quot;font-size: 18px;&quot;&gt;05_s30 : Review agent resolved one major mistake in the SPICE code. R119 resistor connections were wrong. Agent corrected this. But agent modified pin names of ISO07342 ic without any strong reason&lt;/span&gt;&lt;/p&gt;&lt;p&gt;&lt;span style=&quot;font-size: 18px;&quot;&gt;- Identified one key missing instruction as part of the Schematic extraction prompt. Right now, we don&#39;t specify how node names has to be defined. Since the schematic focuses on system level view, we should consider net names which are present in the schematic nets as the first class persons. Pin names as part of IC definition should be considered as the last resort. If no net name is available for a node, then only use IC pin names as node names&lt;/span&gt;&lt;/p&gt;&lt;p&gt;&lt;span style=&quot;font-size: 18px;&quot;&gt;&lt;br&gt;&lt;/span&gt;&lt;/p&gt;&lt;p&gt;&lt;span style=&quot;font-size: 18px;&quot;&gt;Based on the above results, we decided to move further without a Review agent at this stage. Most of the issues related to the SPICE extraction may get resolved as we could start using Gemini-3-flash(once it releases). Spending extra time and resources for a review agent at this stage doesn&#39;t seem to give much differential gain. Hence proceeding without review agent. Code will be archived for later use, if we encounter a strong use case for the review agent.&lt;/span&gt;&lt;/p&gt;" vertex="1">
           <mxGeometry height="861" width="885" x="-545" y="1599" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="p8VHDGuhp1Q1nzmeFoV4" name="Page-3">
+    <mxGraphModel dx="1515" dy="1005" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="vboGAVjiUlIMCi5jDz-B-9" edge="1" parent="1" source="vboGAVjiUlIMCi5jDz-B-1" style="edgeStyle=none;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=12;startSize=8;endSize=8;" target="vboGAVjiUlIMCi5jDz-B-2" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="vboGAVjiUlIMCi5jDz-B-1" parent="1" style="ellipse;whiteSpace=wrap;html=1;" value="Init" vertex="1">
+          <mxGeometry height="80" width="120" x="-210" y="140" as="geometry" />
+        </mxCell>
+        <mxCell id="vboGAVjiUlIMCi5jDz-B-10" edge="1" parent="1" source="vboGAVjiUlIMCi5jDz-B-2" style="edgeStyle=none;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=12;startSize=8;endSize=8;" target="vboGAVjiUlIMCi5jDz-B-3" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="vboGAVjiUlIMCi5jDz-B-2" parent="1" style="ellipse;whiteSpace=wrap;html=1;" value="Observe" vertex="1">
+          <mxGeometry height="80" width="120" x="-1" y="140" as="geometry" />
+        </mxCell>
+        <mxCell id="vboGAVjiUlIMCi5jDz-B-8" edge="1" parent="1" source="vboGAVjiUlIMCi5jDz-B-3" style="edgeStyle=none;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;startSize=8;endSize=8;" target="vboGAVjiUlIMCi5jDz-B-4">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="410" y="160" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="vboGAVjiUlIMCi5jDz-B-12" edge="1" parent="1" source="vboGAVjiUlIMCi5jDz-B-3" style="edgeStyle=none;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0;entryDx=0;entryDy=0;fontSize=12;startSize=8;endSize=8;" target="vboGAVjiUlIMCi5jDz-B-11">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="280" y="250" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="vboGAVjiUlIMCi5jDz-B-14" edge="1" parent="1" source="vboGAVjiUlIMCi5jDz-B-3" style="edgeStyle=none;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontSize=12;startSize=8;endSize=8;" target="vboGAVjiUlIMCi5jDz-B-13">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="vboGAVjiUlIMCi5jDz-B-16" edge="1" parent="1" source="vboGAVjiUlIMCi5jDz-B-3" style="edgeStyle=none;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;startSize=8;endSize=8;" target="vboGAVjiUlIMCi5jDz-B-15">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="260" y="60" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="vboGAVjiUlIMCi5jDz-B-3" parent="1" style="ellipse;whiteSpace=wrap;html=1;" value="Authorise" vertex="1">
+          <mxGeometry height="80" width="120" x="210" y="140" as="geometry" />
+        </mxCell>
+        <mxCell id="vboGAVjiUlIMCi5jDz-B-7" edge="1" parent="1" source="vboGAVjiUlIMCi5jDz-B-4" style="edgeStyle=none;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=12;startSize=8;endSize=8;" target="vboGAVjiUlIMCi5jDz-B-5" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="vboGAVjiUlIMCi5jDz-B-4" parent="1" style="ellipse;whiteSpace=wrap;html=1;" value="Trigger W1" vertex="1">
+          <mxGeometry height="80" width="120" x="490" y="70" as="geometry" />
+        </mxCell>
+        <mxCell id="vboGAVjiUlIMCi5jDz-B-6" edge="1" parent="1" source="vboGAVjiUlIMCi5jDz-B-5" style="edgeStyle=none;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontSize=12;startSize=8;endSize=8;" target="vboGAVjiUlIMCi5jDz-B-1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="440" y="-260" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="vboGAVjiUlIMCi5jDz-B-5" parent="1" style="ellipse;whiteSpace=wrap;html=1;" value="Trigger W2" vertex="1">
+          <mxGeometry height="80" width="120" x="700" y="70" as="geometry" />
+        </mxCell>
+        <mxCell id="vboGAVjiUlIMCi5jDz-B-19" edge="1" parent="1" source="vboGAVjiUlIMCi5jDz-B-11" style="edgeStyle=none;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;startSize=8;endSize=8;" target="vboGAVjiUlIMCi5jDz-B-18">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="430" y="350" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="vboGAVjiUlIMCi5jDz-B-11" parent="1" style="ellipse;whiteSpace=wrap;html=1;" value="Prepare HIL" vertex="1">
+          <mxGeometry height="80" width="120" x="290" y="270" as="geometry" />
+        </mxCell>
+        <mxCell id="vboGAVjiUlIMCi5jDz-B-13" parent="1" style="ellipse;whiteSpace=wrap;html=1;" value="Exit Success" vertex="1">
+          <mxGeometry height="80" width="120" x="90" y="310" as="geometry" />
+        </mxCell>
+        <mxCell id="vboGAVjiUlIMCi5jDz-B-17" edge="1" parent="1" source="vboGAVjiUlIMCi5jDz-B-15" style="edgeStyle=none;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0;entryDx=0;entryDy=0;fontSize=12;startSize=8;endSize=8;" target="vboGAVjiUlIMCi5jDz-B-4">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="490" y="50" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="vboGAVjiUlIMCi5jDz-B-15" parent="1" style="ellipse;whiteSpace=wrap;html=1;" value="Prepare fix" vertex="1">
+          <mxGeometry height="80" width="120" x="330" y="10" as="geometry" />
+        </mxCell>
+        <mxCell id="vboGAVjiUlIMCi5jDz-B-21" edge="1" parent="1" source="vboGAVjiUlIMCi5jDz-B-18" style="edgeStyle=none;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.953;entryY=0.745;entryDx=0;entryDy=0;fontSize=12;startSize=8;endSize=8;entryPerimeter=0;" target="vboGAVjiUlIMCi5jDz-B-3">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="460" y="220" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="vboGAVjiUlIMCi5jDz-B-23" edge="1" parent="1" source="vboGAVjiUlIMCi5jDz-B-18" style="edgeStyle=none;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontSize=12;startSize=8;endSize=8;" target="vboGAVjiUlIMCi5jDz-B-22">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="440" y="400" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="vboGAVjiUlIMCi5jDz-B-31" connectable="0" parent="vboGAVjiUlIMCi5jDz-B-23" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=12;" value="Communication" vertex="1">
+          <mxGeometry relative="1" x="0.2373" y="6" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="vboGAVjiUlIMCi5jDz-B-18" parent="1" style="ellipse;whiteSpace=wrap;html=1;" value="HIL Wait" vertex="1">
+          <mxGeometry height="80" width="120" x="460" y="300" as="geometry" />
+        </mxCell>
+        <mxCell id="vboGAVjiUlIMCi5jDz-B-20" edge="1" parent="1" source="vboGAVjiUlIMCi5jDz-B-18" style="edgeStyle=none;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=12;startSize=8;endSize=8;" target="vboGAVjiUlIMCi5jDz-B-18">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="vboGAVjiUlIMCi5jDz-B-27" edge="1" parent="1" source="vboGAVjiUlIMCi5jDz-B-22" style="edgeStyle=none;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;startSize=8;endSize=8;exitX=0.25;exitY=1;exitDx=0;exitDy=0;" target="vboGAVjiUlIMCi5jDz-B-26">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="400" y="550" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="vboGAVjiUlIMCi5jDz-B-22" parent="1" style="rounded=1;whiteSpace=wrap;html=1;" value="Present HIL prompt to AOSM" vertex="1">
+          <mxGeometry height="60" width="120" x="370" y="450" as="geometry" />
+        </mxCell>
+        <mxCell id="vboGAVjiUlIMCi5jDz-B-24" parent="1" style="rounded=1;whiteSpace=wrap;html=1;" value="HIL Response" vertex="1">
+          <mxGeometry height="60" width="120" x="550" y="450" as="geometry" />
+        </mxCell>
+        <mxCell id="vboGAVjiUlIMCi5jDz-B-25" edge="1" parent="1" source="vboGAVjiUlIMCi5jDz-B-24" style="edgeStyle=none;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.708;entryY=1.012;entryDx=0;entryDy=0;entryPerimeter=0;fontSize=12;startSize=8;endSize=8;" target="vboGAVjiUlIMCi5jDz-B-18">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="590" y="410" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="vboGAVjiUlIMCi5jDz-B-28" edge="1" parent="1" source="vboGAVjiUlIMCi5jDz-B-26" style="edgeStyle=none;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;fontSize=12;startSize=8;endSize=8;" target="vboGAVjiUlIMCi5jDz-B-24">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="620" y="560" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="vboGAVjiUlIMCi5jDz-B-26" parent="1" style="rounded=1;whiteSpace=wrap;html=1;" value="AOSM Logic" vertex="1">
+          <mxGeometry height="60" width="120" x="450" y="540" as="geometry" />
+        </mxCell>
+        <mxCell id="vboGAVjiUlIMCi5jDz-B-29" parent="1" style="rounded=1;whiteSpace=wrap;html=1;" value="Present results to AOSM" vertex="1">
+          <mxGeometry height="60" width="120" x="10" y="450" as="geometry" />
+        </mxCell>
+        <mxCell id="vboGAVjiUlIMCi5jDz-B-30" edge="1" parent="1" source="vboGAVjiUlIMCi5jDz-B-13" style="edgeStyle=none;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.46;entryY=0.029;entryDx=0;entryDy=0;entryPerimeter=0;fontSize=12;startSize=8;endSize=8;" target="vboGAVjiUlIMCi5jDz-B-29">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="vboGAVjiUlIMCi5jDz-B-32" connectable="0" parent="vboGAVjiUlIMCi5jDz-B-30" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=12;" value="Communication" vertex="1">
+          <mxGeometry relative="1" x="-0.0505" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
         </mxCell>
       </root>
     </mxGraphModel>
