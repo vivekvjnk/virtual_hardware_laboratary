@@ -48,11 +48,31 @@ export class COWWorkspaceManager {
         const paths = this.getTaskPaths(taskId);
         const destPath = path.join(paths.taskRoot, relativePath);
 
-        // Ensure parent directory exists
         await fs.mkdir(path.dirname(destPath), { recursive: true });
 
-        // Overwriting the file breaks the hardlink for this file specifically
+        // 1. Get stats BEFORE the copy (if the file exists)
+        let oldInode = null;
+        try {
+            const oldStats = await fs.stat(destPath);
+            oldInode = oldStats.ino;
+            await fs.unlink(destPath);
+        } catch (e) {
+            // File doesn't exist yet, which is fine
+        }
+
+        // 2. Perform the copy
         await fs.copyFile(srcPath, destPath);
+
+        // 3. Get stats AFTER the copy
+        const srcStats = await fs.stat(srcPath);
+        const destStats = await fs.stat(destPath);
+
+       
+        if (srcStats.ino === destStats.ino) {
+            console.warn(`[WARNING] Files are still HARDLINKED! Changes will leak.`);
+        } else {
+            console.log(`[SUCCESS] Hardlink broken. Destination is now an independent copy.`);
+        }
     }
 
     /**
@@ -99,16 +119,18 @@ export class COWWorkspaceManager {
                                 // Same inode means they are still hardlinked, so no changes
                                 shouldCommit = false;
                             }
+                        } else {
+                            console.log(`[COW] File is new: ${entry.name}`);
                         }
 
                         if (shouldCommit) {
-                            console.log(`[COW] Committing modified file: ${entry.name}`);
                             // Atomic rename strategy:
                             // 1. Copy to a temp file in the target directory
                             const tempPath = `${workspacePath}.tmp.${randomUUID()}`;
                             await fs.copyFile(evalPath, tempPath);
                             // 2. Rename to target path (atomic on most Unix filesystems)
                             await fs.rename(tempPath, workspacePath);
+                            console.log(`[COW] Successfully committed: ${entry.name}`);
                         }
                     } catch (err) {
                         console.error(`[COW] Failed to commit file ${evalPath}:`, err);
