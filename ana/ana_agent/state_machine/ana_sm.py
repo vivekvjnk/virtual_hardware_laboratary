@@ -60,9 +60,6 @@ class ANADStateMachine:
             State.TRIGGER_W2: State.INIT,
             State.PREPARE_HIL: State.HIL_WAIT,
             State.HIL_WAIT: State.HIL_WAIT
-            # State.WAIT_VAP: State.INIT, # Obsolete state, Delete in next refactor
-            # State.WAIT_W1: State.TRIGGER_W2, # Obsolete state, Delete in next refactor
-            # HIL_WAIT defaults to itself if no proposal (waiting for input)
         }
 
         # MCP Setup
@@ -85,9 +82,7 @@ class ANADStateMachine:
             State.AUTHORIZE: self._handle_authorize,
             State.PREPARE_FIX: self._handle_prepare_fix,
             State.TRIGGER_W1: self._handle_trigger_w1,
-            State.WAIT_W1: self._handle_wait_w1,
             State.TRIGGER_W2: self._handle_trigger_w2,
-            State.WAIT_VAP: self._handle_wait_vap,
             State.PREPARE_HIL: self._handle_prepare_hil,
             State.HIL_WAIT: self._handle_hil_wait,
         }
@@ -170,10 +165,7 @@ class ANADStateMachine:
             "state_id": State.INIT,
             "iteration_id": iteration_id,
         })
-        
-        # Clear states from previous iteration
-        # NOTE: We don't clear states here. Instead we should do it from the authorize node
-        
+                
         return result_msg
 
     async def _handle_observe(self, message: Dict[str, Any]) -> Dict[str, Any]:
@@ -365,12 +357,6 @@ class ANADStateMachine:
             result_msg["proposed_next_state"] = State.PREPARE_HIL
             return result_msg
 
-
-    async def _handle_wait_w1(self, message: Dict[str, Any]) -> Dict[str, Any]:
-        result_msg = message.copy()
-        result_msg["state_id"] = State.WAIT_W1
-        return result_msg
-
     async def _handle_trigger_w2(self, message: Dict[str, Any]) -> Dict[str, Any]:
         logger.info(f"[ANA-D SM] State: TRIGGER_W2. Triggered from: {message.get('from_state_id')}\n{"*"*30}\n{message}\n{"*"*30}")
         result_msg = message.copy()
@@ -394,11 +380,6 @@ class ANADStateMachine:
             raise e
         finally:
             agent.close()
-
-    async def _handle_wait_vap(self, message: Dict[str, Any]) -> Dict[str, Any]:
-        result_msg = message.copy()
-        result_msg["state_id"] = State.WAIT_VAP
-        return result_msg
 
     async def _handle_prepare_hil(self, message: Dict[str, Any]) -> Dict[str, Any]:
         logger.info(f"[ANA-D SM] State: PREPARE_HIL. Triggered from: {message.get('from_state_id')}\n{"*"*30}\n{message}\n{"*"*30}")
