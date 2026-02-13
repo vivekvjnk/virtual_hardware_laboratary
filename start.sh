@@ -6,10 +6,6 @@ echo "Starting VHL Library Server..."
 node dist/index.js &
 LIBRARY_PID=$!
 
-# Start VAP Server in background
-echo "Starting VAP Server..."
-node dist/vap/vapIndex.js &
-VAP_PID=$!
 
 # Start Agent WebSocket Server in background
 echo "Starting Agent WebSocket Server..."

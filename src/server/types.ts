@@ -28,6 +28,8 @@ export type EventType =
     | "VAP_STATUS"
     | "VAP_STATUS_REPORT"
     | "VAP_DECISION"
+    // Human In Loop Mangement
+    | "HIL_REQUEST"
 
 export interface AgentMessage {
     id: string
