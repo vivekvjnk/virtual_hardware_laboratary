@@ -168,7 +168,7 @@ def run_ana_w1_agent(workspace:str,scud_path: str, schematic_images_path: str = 
         user_message += "\n\nFollowing observations/suggestions have been proposed for the circuit:\n"
         for i, obs in enumerate(observations):
             user_message += f"{i+1}. {obs}\n"
-        user_message += "\nPlease incorporate these observations into your circuit correction."
+        user_message += "\nPlease correct your circuit based on these observations. If corrections are highly local and targetted, directly apply them on circuit code. You don't have to explore SCUD file or schematic images."
 
         user_message += (
             f"You may refer the SCUD document at '{scud_path}'."

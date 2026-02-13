@@ -21,7 +21,13 @@ from vhl_protocol.client.client import VHLWebSocketClient
 logger = logging.getLogger(__name__)
 
 class ANADStateMachine:
-    def __init__(self, max_auto_fixes: int = 3, circuit_code_path: str = None, observations: List[str] = None, ws_client: Optional[VHLWebSocketClient] = None):
+    def __init__(self, 
+                 max_auto_fixes: int = 3, 
+                 circuit_code_path: str = None, 
+                 observations: List[str] = None, 
+                 ws_client: Optional[VHLWebSocketClient] = None,
+                 parent_notify: Optional[callable] = None,
+                 inbox_queue: Optional[asyncio.Queue] = None):
         # TODO Done: ANA state machine can be initialized with a circuit code path
         # This allows stateless circuit code correction and manipulation.
         # Caller can inject the circuit code path. __init__ function should propagate the path to handle_init through message passing.
@@ -31,6 +37,8 @@ class ANADStateMachine:
         # Inputs/Observations - Now handled via current_message for transparency
         self.max_auto_fixes = max_auto_fixes
         self.ws_client = ws_client
+        self.parent_notify = parent_notify
+        self.inbox_queue = inbox_queue if inbox_queue is not None else asyncio.Queue()
         
         # Project Info
         # TODO : Make project info configurable
@@ -385,6 +393,20 @@ class ANADStateMachine:
         logger.info(f"[ANA-D SM] State: PREPARE_HIL. Triggered from: {message.get('from_state_id')}\n{"*"*30}\n{message}\n{"*"*30}")
         result_msg = message.copy()
         result_msg["state_id"] = State.PREPARE_HIL
+        
+        if self.parent_notify:
+            logger.info("[ANA-D SM] Notifying parent of HIL requirement.")
+            # Trigger parent notify with message event and data
+            # Use data from message if available, else default to state info
+            await self.parent_notify(
+                event="HIL_REQUEST", 
+                data={
+                    "state": "PREPARE_HIL",
+                    "observations": message.get("observations", [])
+                }
+            )
+
+        result_msg["proposed_next_state"] = State.HIL_WAIT
         return result_msg
 
     async def _handle_hil_wait(self, message: Dict[str, Any]) -> Dict[str, Any]:
@@ -392,8 +414,13 @@ class ANADStateMachine:
         result_msg = message.copy()
         result_msg["state_id"] = State.HIL_WAIT
         
-        event = message.get("event")
-        data = message.get("data")
+        logger.info("[ANA-D SM] Waiting for message in inbox queue...")
+        # Wait for message from AOSM via inbox queue
+        inbox_message = await self.inbox_queue.get()
+        logger.info(f"[ANA-D SM] Received message from inbox queue: {inbox_message}")
+        
+        event = inbox_message.get("event")
+        data = inbox_message.get("data")
         
         if event == "human_response":
             logger.info(f"[ANA-D SM] Human responded: {data}")
@@ -409,6 +436,8 @@ class ANADStateMachine:
             result_msg["proposed_next_state"] = State.EXIT_ABORT
             return result_msg
         
+        # If unknown message, stay in HIL_WAIT (but actually we just consumed one item)
+        # Maybe we should put it back or handle it. For now, assume it's one of these.
         return result_msg
 
     def is_terminal(self) -> bool:
@@ -418,10 +447,10 @@ class ANADStateMachine:
         self.mcp_manager.cleanup()
 
     async def run(self):
-        """Runs the state machine loop until a terminal state or HIL_WAIT is reached."""
+        """Runs the state machine loop until a terminal state is reached."""
         logger.info("--- Starting State Machine ---")
         try:
-            while not self.is_terminal() and self.state != State.HIL_WAIT:
+            while not self.is_terminal():
                 await self.step()
         except Exception as e:
             logger.exception(f"Unexpected error in ANA-D SM run loop: {e}")

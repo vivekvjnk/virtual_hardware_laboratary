@@ -35,6 +35,7 @@ class AOSM:
         self.workspace_root = Path("ana_workspace")
         self.workspace_root.mkdir(exist_ok=True)
         self.active_ana_sm: Optional[ANADStateMachine] = None
+        self.ana_inbox: Optional[asyncio.Queue] = None
         self._main_loop_task: Optional[asyncio.Task] = None
         
         # Minio configuration (should ideally be from env)
@@ -127,6 +128,17 @@ class AOSM:
         ))
         
 
+    async def _parent_notify(self, event: str, data: Dict[str, Any]):
+        """
+        Callback passed to child state machines (like ANA) to notify AOSM of events.
+        """
+        logger.info(f"[AOSM] Received parent notification: {event} with data: {data}")
+        await self.event_queue.put(BaseEvent(
+            type=EventType.ANA_NOTIFY,
+            source=EventSource.ANA,
+            payload={"event": event, "data": data}
+        ))
+
     # --- State Handlers ---
 
     async def _handle_idle(self, event: BaseEvent):
@@ -150,6 +162,31 @@ class AOSM:
             await self.transition_to(AOSMState.CANCEL_PIPELINE, "User interrupted execution")
         elif event.type == EventType.ERROR:
             await self.transition_to(AOSMState.ERROR_PRESENTED, f"System error: {event.payload.get('message')}")
+        elif event.type == EventType.ANA_NOTIFY:
+            # Handle notification from ANA (e.g., HIL_REQUEST)
+            ana_event = event.payload.get("event")
+            ana_data = event.payload.get("data")
+            logger.info(f"[AOSM-WAIT_FOR_ANA] ANA notification: {ana_event}")
+            
+            if ana_event == "HIL_REQUEST":
+                # Maybe notify UI that HIL is required
+                await self.ws_client.emit_status_update(
+                    status="waiting_for_input",
+                    message="ANA requires human assistance"
+                )
+        elif event.type == EventType.HUMAN_INPUT:
+            # Relaying human input to ANA's inbox
+            if self.ana_inbox:
+                logger.info(f"[AOSM-WAIT_FOR_ANA] Relaying human input to ANA: {event.payload}")
+                content = event.payload.get("content", "")
+                
+                # Check for abort command
+                if content.lower() == "abort":
+                    await self.ana_inbox.put({"event": "abort", "data": None})
+                else:
+                    await self.ana_inbox.put({"event": "human_response", "data": content})
+            else:
+                logger.warning("[AOSM-WAIT_FOR_ANA] Received human input but ANA inbox is not initialized")
 
     async def _handle_present_result(self, event: BaseEvent):
         logger.info(f"[AOSM] Presenting results to user... Event: {event}")
@@ -247,10 +284,15 @@ class AOSM:
                 logger.error("[AOSM] No circuit code path found in current message for ANA-D")
                 await self.transition_to(AOSMState.ERROR_PRESENTED, "Missing circuit code for ANA run")
                 return
+            # Initialize inbox queue for bidirectional communication
+            self.ana_inbox = asyncio.Queue()
+            
             self.active_ana_sm = ANADStateMachine(
                 circuit_code_path=circuit_code_path, 
                 observations=observations,
-                ws_client=self.ws_client
+                ws_client=self.ws_client,
+                parent_notify=self._parent_notify,
+                inbox_queue=self.ana_inbox
             )
             # Run the ANA-D state machine in a background task to keep AOSM responsive
             asyncio.create_task(self.active_ana_sm.run())

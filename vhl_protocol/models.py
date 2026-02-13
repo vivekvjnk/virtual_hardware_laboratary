@@ -10,6 +10,7 @@ class EventSource(str, Enum):
     RUNTIME = "runtime"
     BACKEND = "backend"
     WORKSPACE = "vhl_workspace"
+    ANA = "ana"
 
 class EventType(str, Enum):
     # Runtime -> Backend (Observation Events)
@@ -41,6 +42,9 @@ class EventType(str, Enum):
     VAP_INIT_COMPLETE = "VAP_INIT_COMPLETE"
     VAP_STATUS_REPORT = "VAP_STATUS_REPORT"
     VAP_DECISION = "VAP_DECISION"
+    
+    # ANA Communication
+    ANA_NOTIFY = "ANA_NOTIFY"
 
 class BaseEvent(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
