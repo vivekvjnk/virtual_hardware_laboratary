@@ -142,7 +142,7 @@ Use to:
 
 ---
 
-### B. BFS-DC Circuit Modification Strategy
+### B. Circuit Modification Strategy
 
 This strategy is **mandatory**.
 
@@ -161,27 +161,17 @@ You must **not**:
 
 ---
 
-## 4. Output Requirements
+## 4. Editing Requirements
 
-You must produce:
-
-* **Exactly one `.tsx` file**
-* Representing the **updated version** of the previous circuit
-
-The output must:
-
-* include all original content **unless explicitly changed**
-* contain only the necessary modifications
-* be syntactically valid and complete
+You must:
+* **Use the file editor tool** to apply the necessary modifications to the existing `.tsx` circuit file.
+* **Perform incremental edits** to update the circuit code without rewriting the entire file from scratch.
+* Ensure the resulting file is syntactically valid and preserves all original functionality not explicitly targeted for change.
 
 Do **not**:
-
-* include explanations
-* include comments about observations
-* include multiple versions
-* output diffs or patches
-
-Your output must be **only the final `.tsx` circuit code**.
+* Provide the full source code in your chat response.
+* Output diffs, patches, or explanations unless the tool use fails.
+* Create a new file if an existing one can be modified.
 
 ---
 
@@ -195,7 +185,6 @@ Your output must be **only the final `.tsx` circuit code**.
 You must **never**:
 
 * abandon unresolved observations
-* change intent to silence errors
 
 Assume:
 

@@ -61,43 +61,6 @@ tools = [
 condenser = LLMSummarizingCondenser(llm=llm_condenser, max_size=80, keep_first=8)
 
 
-# load skill from file
-with open(os.path.join(submodule_root, "skills/bfs-dc.md"), "r") as f:
-    bfs_dc_skill_content = f.read()
-with open(os.path.join(submodule_root, "skills/tscircuit_operation_manual.md"), "r") as f:
-    tscircuit_operation_manual_skill_content = f.read()
-
-agent_context = AgentContext(
-    skills=[
-        Skill(
-            name="bfs-dc.md",
-            content=bfs_dc_skill_content,
-            # source is optional - identifies where the skill came from
-            # You can set it to be the path of a file that contains the skill content
-            source=None,
-            # trigger determines when the skill is active
-            # trigger=None means always active (repo skill)
-            trigger=None,
-        ),
-        Skill(
-            name="tscircuit_operation_manual.md",
-            content=tscircuit_operation_manual_skill_content,
-            # source is optional - identifies where the skill came from
-            # You can set it to be the path of a file that contains the skill content
-            source=None,
-            # trigger determines when the skill is active
-            # trigger=None means always active (repo skill)
-            trigger=None,
-        ),
-
-    ],
-)
-
-# Initialize Agent
-synthesise_system_prompt_path = os.path.join(submodule_root, "ana_w1_synthesise.j2")
-error_correction_system_prompt_path = os.path.join(submodule_root, "ana_w1_error_correction.j2")
-
-
 # Conversation Callback
 llm_messages = []
 def conversation_callback(event: Event):
@@ -116,11 +79,96 @@ def run_ana_w1_agent(workspace:str,scud_path: str, schematic_images_path: str = 
         observations: List of circuit change observations/suggestions (optional)
     """
     logger.info(f"ANA-W1: Starting conversation with SCUD: {scud_path}")
+    with open(os.path.join(submodule_root, "skills/tscircuit_operation_manual.md"), "r") as f:
+        tscircuit_operation_manual_skill_content = f.read()
+
+    skills = [
+        Skill(
+            name="tscircuit_operation_manual.md",
+            content=tscircuit_operation_manual_skill_content,
+            source=None,
+            trigger=None,
+            )
+        ]
+    
+    user_message = ""
+
+    # If previous iteration dir is not provided, agent is in synthesis mode
+    if not previous_iteration_dir: 
+        with open(os.path.join(submodule_root, "skills/bfs-dc.md"), "r") as f:
+            bfs_dc_skill_content = f.read()
+        skills.append(
+            Skill(    # Only add bfs-dc skill in synthesis mode, not in error correction mode
+                name="bfs-dc.md",
+                content=bfs_dc_skill_content,
+                source=None,
+                trigger=None,
+            )
+        )
+        sys_prompt_file_path = os.path.join(submodule_root, "ana_w1_synthesise.j2")
+        
+        logger.info(f"ANA-W1: First iteration. Entering synthesis mode.")
+        user_message = (
+            f"Please process the SCUD file located at '{scud_path}'."
+        )
+    else: # Agent in error correction mode
+        sys_prompt_file_path = os.path.join(submodule_root, "ana_w1_error_correction.j2")
+
+        logger.info(f"ANA-W1: Previous iteration directory provided: {previous_iteration_dir}. Entering error correction mode.")
+        
+        # add user instructions about using previous artifacts
+        # Find any tsx file in previous iteration dir, assume only one tsx file exists
+        circuit_files = list(Path(workspace).glob("*.tsx"))
+        if circuit_files:
+            circuit_file_path = circuit_files[0] # TODO : If required, add support for multiple tsx files later
+            logger.info(f"ANA-W1: Found previous circuit tsx file: {circuit_file_path}. It will be made available to the agent.")
+            user_message += f"There are few issues with the previous circuit. The previous circuit file is copied to your current workspace under '{circuit_file_path}'. Please edit this file to correct the issues."
+        
+        else:
+            raise FileNotFoundError(f"No .tsx file found in previous iteration directory: {workspace}")
+        
+        prev_eval_log_files = Path(previous_iteration_dir, "evaluation_results")
+        prev_eval_log_files_exist = prev_eval_log_files.exists() and list(prev_eval_log_files.glob("*"))
+        if prev_eval_log_files_exist:
+            user_message += f"You may refer to previous evaluation results located at '{prev_eval_log_files}' for understanding previous errors."
+        else: 
+            logger.warning(f"ANA-W1: No previous evaluation results found in {prev_eval_log_files}")
+    
+    
+    if schematic_images_path:
+        user_message += f"\n\nYou may refer to schematic images located at '{schematic_images_path}' for visual clarification. You can use file_editor tool to view these images as needed."
+
+    if component_pin_mapping_path:
+        user_message += f"\n\nYou may refer component_pin_mapping.md at '{component_pin_mapping_path}' for component pin mapping information if needed."
+    
+    # Add observations if provided
+    if observations:
+        logger.info(f"ANA-W1: Adding {len(observations)} observations to user message.")
+
+        user_message += (
+            f"You may refer the SCUD document at '{scud_path}'."
+        )
+        user_message += "\n\nFollowing observations/suggestions have been proposed for the circuit:\n"
+        for i, obs in enumerate(observations):
+            user_message += f"{i+1}. {obs}\n"
+        user_message += "\nPlease correct your circuit based on these observations. If corrections are highly local and targetted, directly apply them on circuit code. You don't have to explore SCUD file or schematic images."
+    else:
+        logger.warning("No observations found. Could be first iteration..")
+        user_message += "\n\nAll local library components are available under './lib/imports/' in the execution environment. The execution environment is a remote container. Any other path would produce import errors during validation."
+        # Information on execution environment and the process
+        user_message += "\n\nYou should generate and store tsx circuit file in the current workspace directory. The circuit file will be evaluated by the backend in a a remote execution environment. All the imports in the circuit will be resolved in this execution environment. Libraries are available under ./lib/imports/ directory in the execution environment."
+
+        
+        user_message += f"Ensure the circuit file is named '{circuit_name}.tsx'." if circuit_name else "Ensure the circuit file is named appropriately with a .tsx extension."
+
+    logger.info(f"Final user message {"*"*100}\n{user_message}")
+
+    agent_context = AgentContext(skills=skills)
     # Initialize Agent
     agent = Agent(
         llm=llm,
         tools=tools,
-        system_prompt_filename=error_correction_system_prompt_path if previous_iteration_dir else synthesise_system_prompt_path,
+        system_prompt_filename=sys_prompt_file_path,
         condenser=condenser,
         agent_context=agent_context,
     )    
@@ -131,68 +179,6 @@ def run_ana_w1_agent(workspace:str,scud_path: str, schematic_images_path: str = 
         workspace=workspace,
     )
     conversation.set_security_analyzer(LLMSecurityAnalyzer())
-    
-    user_message = ""
-
-    # If previous iteration dir is provided, agent is in error correction mode
-    if previous_iteration_dir:
-        logger.info(f"ANA-W1: Previous iteration directory provided: {previous_iteration_dir}. Entering error correction mode.")
-        
-        # add user instructions about using previous artifacts
-        # Find any tsx file in previous iteration dir, assume only one tsx file exists
-        prev_tsx_files = list(Path(previous_iteration_dir).glob("*.tsx"))
-        if prev_tsx_files:
-            prev_tsx_file_path = prev_tsx_files[0] # TODO : If required, add support for multiple tsx files later
-            logger.info(f"ANA-W1: Found previous circuit tsx file: {prev_tsx_file_path}. It will be made available to the agent.")
-            user_message += f"Please use the previous circuit file '{prev_tsx_file_path}' as a reference for error correction."
-        
-        else:
-            logger.error(f"ANA-W1: No previous circuit tsx file found in {previous_iteration_dir}. Proceeding without it.")
-            raise FileNotFoundError(f"No .tsx file found in previous iteration directory: {previous_iteration_dir}")
-        
-        prev_eval_log_files = Path(previous_iteration_dir, "evaluation_results")
-        if prev_eval_log_files:
-            user_message += f"You may refer to previous evaluation results located at '{prev_eval_log_files}' for understanding previous errors."
-        else: 
-            logger.warning(f"ANA-W1: No previous evaluation results found in {prev_eval_log_files}")
-    else:
-        logger.info(f"ANA-W1: First iteration. Entering synthesis mode.")
-        
-        user_message = (
-            f"Please process the SCUD file located at '{scud_path}'."
-        )
-
-    # Add observations if provided
-    if observations:
-        logger.info(f"ANA-W1: Adding {len(observations)} observations to user message.")
-        user_message += "\n\nFollowing observations/suggestions have been proposed for the circuit:\n"
-        for i, obs in enumerate(observations):
-            user_message += f"{i+1}. {obs}\n"
-        user_message += "\nPlease correct your circuit based on these observations. If corrections are highly local and targetted, directly apply them on circuit code. You don't have to explore SCUD file or schematic images."
-
-        user_message += (
-            f"You may refer the SCUD document at '{scud_path}'."
-        )
-    else:
-        logger.warning("No observations found. Could be first iteration..")
-
-    if schematic_images_path:
-        user_message += f"\n\nYou may refer to schematic images located at '{schematic_images_path}' for visual clarification. You can use file_editor tool to view these images as needed."
-
-    if component_pin_mapping_path:
-        user_message += f"\n\nYou may refer component_pin_mapping.md at '{component_pin_mapping_path}' for component pin mapping information if needed."
-    
-    if not observations:
-        user_message += "\n\nAll local library components are available under './lib/imports/' in the execution environment. The execution environment is a remote container. Any other path would produce import errors during validation."
-    
-    # Information on execution environment and the process
-    user_message += "\n\nYou should generate and store tsx circuit file in the current workspace directory. The circuit file will be evaluated by the backend in a a remote execution environment. All the imports in the circuit will be resolved in this execution environment. Libraries are available under ./lib/imports/ directory in the execution environment."
-
-    
-    user_message += f"Ensure the circuit file is named '{circuit_name}.tsx'." if circuit_name else "Ensure the circuit file is named appropriately with a .tsx extension."
-
-    logger.info(f"Final user message {"*"*100}\n{user_message}")
-
     conversation.send_message(user_message)
     conversation.run()
     

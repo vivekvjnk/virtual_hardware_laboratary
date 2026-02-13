@@ -34,6 +34,17 @@ class IterationManager:
         
         logger.info(f"[Iteration Manager] Started Iteration: {iteration_id} in {iteration_dir}")
         self._setup_symlinks()
+
+        # If previous iteration exist, check if there are any .tsx files in the previous iteration and copy them over to the new iteration
+        prev_iteration_dir = self.get_previous_iteration_dir()
+        if prev_iteration_dir and os.path.exists(prev_iteration_dir):
+            prev_tsx_files = list(Path(prev_iteration_dir).glob("*.tsx"))
+            for tsx_file in prev_tsx_files:
+                dest_path = os.path.join(iteration_dir, tsx_file.name)
+                if os.path.lexists(dest_path):
+                    os.remove(dest_path)
+                shutil.copy2(tsx_file, dest_path)
+                logger.info(f"[Iteration Manager] Copied {tsx_file} to {dest_path} for new iteration")
         return iteration_dir
 
     def prepare_iteration_with_files(self, iteration_id: str, source_file) -> str:
