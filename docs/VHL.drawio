@@ -473,7 +473,7 @@
     </mxGraphModel>
   </diagram>
   <diagram id="p8VHDGuhp1Q1nzmeFoV4" name="Page-3">
-    <mxGraphModel dx="1515" dy="1005" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+    <mxGraphModel dx="1748" dy="1131" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -620,6 +620,9 @@
           <mxGeometry relative="1" x="-0.0505" as="geometry">
             <mxPoint as="offset" />
           </mxGeometry>
+        </mxCell>
+        <mxCell id="vboGAVjiUlIMCi5jDz-B-33" parent="1" style="text;html=1;whiteSpace=wrap;overflow=hidden;rounded=0;" value="&lt;h1 style=&quot;margin-top: 0px;&quot;&gt;Inbox Queue&amp;nbsp;&lt;/h1&gt;&lt;p&gt;HIL wait is implemented using inbox queue mechanism. ANADSM wait for HIL input by waiting at inbox queue.&lt;/p&gt;" vertex="1">
+          <mxGeometry height="120" width="180" x="640" y="290" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>
