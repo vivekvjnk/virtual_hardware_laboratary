@@ -26,6 +26,12 @@ class EventType(str, Enum):
     ERROR = "ERROR"
     HIL_REQUEST = "HIL_REQUEST"
 
+    # Project Management
+    # Runtime -> Backend
+    CREATE_PROJECT = "CREATE_PROJECT"
+    # Backend -> Runtime
+    PROJECT_CREATED = "PROJECT_CREATED"
+
     # Workspace Management
     WORKSPACE_DOWNLOAD = "WORKSPACE_DOWNLOAD"
     WORKSPACE_UPLOAD = "WORKSPACE_UPLOAD"
