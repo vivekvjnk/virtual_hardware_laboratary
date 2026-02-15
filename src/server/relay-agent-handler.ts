@@ -37,6 +37,11 @@ export class RelayAgentHandler implements AgentHandler {
             }
         } else if (this.role === "vhl_workspace") {
             // Workspace Client -> Agent (Backend)
+            // Some events also go to UI (Runtime)
+            if (msg.type === "VHL_WORKSPACE_READY") {
+                RelayAgentHandler.uiClients.forEach(uiSend => uiSend(msg));
+            }
+
             if (RelayAgentHandler.agentClient) {
                 RelayAgentHandler.agentClient(msg)
             } else {

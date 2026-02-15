@@ -120,12 +120,26 @@ export class WorkspaceClient implements WorkspaceSender {
                 break;
             }
             case "PROJECT_CREATED": {
-                const { project_name } = msg.payload;
-                if (project_name) {
-                    this.projectDir = path.join(this.workspaceDir, project_name);
-                    console.log(`[WorkspaceClient] Active project set to: ${project_name} at ${this.projectDir}`);
-                    await fs.mkdir(this.projectDir, { recursive: true });
-                }
+                const { project_id } = msg.payload;
+                console.log('[WorkspaceClient] Project id:', project_id);
+
+                this.projectDir = path.join(this.workspaceDir, project_id);
+                console.log(`[WorkspaceClient] Active project set to: ${project_id} at ${this.projectDir}`);
+                await fs.mkdir(this.projectDir, { recursive: true });
+
+                // Notify UI that workspace is ready
+                this.send({
+                    id: randomUUID(),
+                    type: "VHL_WORKSPACE_READY",
+                    artifact_id: null,
+                    timestamp: new Date().toISOString(),
+                    source: "vhl_workspace",
+                    payload: {
+                        project_id,
+                        project_dir: this.projectDir
+                    }
+                });
+            
                 break;
             }
             case "VAP_DECISION": {
