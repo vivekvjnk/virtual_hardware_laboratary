@@ -1,5 +1,6 @@
 import { WebSocket } from "ws";
 import { randomUUID } from "crypto";
+import { execSync } from "child_process";
 import * as path from "path";
 import * as fs from "fs/promises";
 import { WORKSPACE_DIR } from "../config/paths.js";
@@ -126,6 +127,15 @@ export class WorkspaceClient implements WorkspaceSender {
                 this.projectDir = path.join(this.workspaceDir, project_id);
                 console.log(`[WorkspaceClient] Active project set to: ${project_id} at ${this.projectDir}`);
                 await fs.mkdir(this.projectDir, { recursive: true });
+
+                try {
+                    console.log(`[WorkspaceClient] Initializing tsci in ${this.projectDir}`);
+                    execSync("tsci init -y", { cwd: this.projectDir, stdio: 'inherit' });
+                } catch (error: any) {
+                    console.error(`[WorkspaceClient] Failed to initialize tsci: ${error.message}`);
+                    this.sendError("TSCI_INIT_FAILED", error.message);
+                    break;
+                }
 
                 // Notify UI that workspace is ready
                 this.send({
