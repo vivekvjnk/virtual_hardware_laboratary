@@ -21,6 +21,8 @@ export class WorkspaceClient implements WorkspaceSender {
     private activeVapContext: VapContext | null = null;
     private devServerProcess: ChildProcess | null = null;
     private currentDevServerPath: string | null = null;
+    private currentProjectId: string | null = null;
+    private currentProjectName: string | null = null;
 
     constructor(serverUrl: string, workspaceDir: string = WORKSPACE_DIR) {
         this.serverUrl = serverUrl;
@@ -125,8 +127,10 @@ export class WorkspaceClient implements WorkspaceSender {
                 break;
             }
             case "PROJECT_CREATED": {
-                const { project_id } = msg.payload;
+                const { project_id, project_name } = msg.payload; // project_name might be in payload?
                 console.log('[WorkspaceClient] Project id:', project_id);
+                this.currentProjectId = project_id;
+                this.currentProjectName = project_name || project_id;
 
                 this.projectDir = path.join(this.workspaceDir, project_id);
                 console.log(`[WorkspaceClient] Active project set to: ${project_id} at ${this.projectDir}`);
@@ -171,6 +175,21 @@ export class WorkspaceClient implements WorkspaceSender {
                 const fullPath = path.isAbsolute(project_path) ? project_path : path.join(this.workspaceDir, project_path);
                 this.projectDir = fullPath; // Update current project dir
 
+                // Try to infer project ID from path if it's inside workspace
+                if (fullPath.startsWith(this.workspaceDir) && fullPath !== this.workspaceDir) {
+                    const rel = path.relative(this.workspaceDir, fullPath);
+                    const parts = rel.split(path.sep);
+                    // Assuming first level is project ID
+                    if (parts.length > 0 && parts[0]) {
+                        this.currentProjectId = parts[0];
+                        this.currentProjectName = parts[0]; // Best guess
+                    }
+                } else if (fullPath === this.workspaceDir) {
+                    // Reset to root
+                    this.currentProjectId = null;
+                    this.currentProjectName = null;
+                }
+
                 // Construct URL
                 const relativePath = path.relative(this.workspaceDir, fullPath);
                 // If relativePath is empty, we are at root. Otherwise we target index.circuit.tsx in that folder.
@@ -194,6 +213,28 @@ export class WorkspaceClient implements WorkspaceSender {
                         }
                     });
                 }
+                break;
+            }
+            case "GET_SYSTEM_STATE": {
+                // Respond with current state
+                let state = "NO_PROJECT";
+                if (this.currentProjectId) {
+                    state = "PROJECT_INITIALIZED";
+                }
+
+                this.send({
+                    id: randomUUID(),
+                    type: "SYSTEM_STATE",
+                    artifact_id: null,
+                    timestamp: new Date().toISOString(),
+                    source: "vhl_workspace",
+                    payload: {
+                        state,
+                        project_id: this.currentProjectId,
+                        project_name: this.currentProjectName,
+                        project_dir: this.projectDir
+                    }
+                });
                 break;
             }
             case "VAP_DECISION": {

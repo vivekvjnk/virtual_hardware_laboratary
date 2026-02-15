@@ -37,6 +37,9 @@ export type EventType =
     // Dev Server Management
     | "START_DEV_SERVER"
     | "DEV_SERVER_READY"
+    // System State
+    | "GET_SYSTEM_STATE"
+    | "SYSTEM_STATE"
 
 export interface AgentMessage {
     id: string

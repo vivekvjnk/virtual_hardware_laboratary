@@ -29,23 +29,28 @@ export class RelayAgentHandler implements AgentHandler {
 
         if (this.role === "ui") {
             // UI (Runtime) -> Agent (Backend)
+            // 1. Always relay to Agent if connected
             if (RelayAgentHandler.agentClient) {
                 console.debug("[RelayAgentHandler] Relaying message from UI to Agent:", msg)
                 RelayAgentHandler.agentClient(msg)
-            } else if (msg.type === "START_DEV_SERVER") {
-                // If it's a dev server start request and no agent is connected, allow direct UI -> Workspace
+            }
+
+            // 2. Route specific messages to Workspace Client (Irrespective of Agent connectivity)
+            if (msg.type === "START_DEV_SERVER" || msg.type === "GET_SYSTEM_STATE") {
                 if (RelayAgentHandler.workspaceClient) {
                     RelayAgentHandler.workspaceClient(msg)
                 } else {
                     send({ type: "ERROR", payload: { message: "No workspace client connected", scope: "runtime", severity: "error" } } as any)
                 }
-            } else {
+            }
+            // 3. Fallback: If no agent connected and message wasn't one of the special types
+            else if (!RelayAgentHandler.agentClient) {
                 send({ type: "ERROR", payload: { message: "No agent client connected", scope: "runtime", severity: "error" } } as any)
             }
         } else if (this.role === "vhl_workspace") {
             // Workspace Client -> Agent (Backend)
             // Some events also go to UI (Runtime)
-            if (msg.type === "VHL_WORKSPACE_READY" || msg.type === "DEV_SERVER_READY") {
+            if (msg.type === "VHL_WORKSPACE_READY" || msg.type === "DEV_SERVER_READY" || msg.type === "SYSTEM_STATE") {
                 RelayAgentHandler.uiClients.forEach(uiSend => uiSend(msg));
             }
 
