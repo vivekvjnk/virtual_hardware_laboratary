@@ -1,6 +1,7 @@
 from enum import Enum, auto
 
 class AOSMState(Enum):
+    STARTUP = auto()
     IDLE = auto()
     BOOTSTRAP_PIPELINE = auto()
     WAIT_FOR_ANA = auto()

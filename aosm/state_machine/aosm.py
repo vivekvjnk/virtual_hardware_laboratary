@@ -12,7 +12,9 @@ from state_machine.states import AOSMState
 from vhl_protocol.client.client import VHLWebSocketClient
 from vhl_protocol.models import BaseEvent, EventType, EventSource
 
+import uuid
 from ana_agent.state_machine import ANADStateMachine
+from workspace.manager import WorkspaceManager
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +24,7 @@ class AOSM:
     Always-on, time-aware control layer for VHL.
     """
     def __init__(self, ws_url: str = "ws://localhost:1080"):
-        self.state = AOSMState.IDLE
+        self.state = AOSMState.STARTUP
         self.ws_client = VHLWebSocketClient(
             url=ws_url,
             role="agent"
@@ -32,8 +34,8 @@ class AOSM:
             "observations": []
         }
         self.event_queue = asyncio.Queue()
-        self.workspace_root = Path("ana_workspace")
-        self.workspace_root.mkdir(exist_ok=True)
+        self.workspace_manager = WorkspaceManager("ana_workspace")
+        self.project_root_info: Optional[Dict[str, Any]] = None
         self.active_ana_sm: Optional[ANADStateMachine] = None
         self.ana_inbox: Optional[asyncio.Queue] = None
         self._main_loop_task: Optional[asyncio.Task] = None
@@ -142,6 +144,34 @@ class AOSM:
 
     # --- State Handlers ---
 
+    async def _handle_startup(self, event: BaseEvent):
+        logger.info(f"[AOSM] In STARTUP state... Event: {event}")
+        if event.type == EventType.CREATE_PROJECT:
+            payload = event.payload or {}
+            project_name = payload.get("project_name", "untitled")
+            # Generate project_id with <project_name>_<UID>
+            project_id = f"{project_name}_{uuid.uuid4().hex[:8]}"
+            
+            logger.info(f"[AOSM] Creating new project: {project_id}")
+            project_root = self.workspace_manager.create_project(project_id)
+            
+            # Store project root information in class variable
+            self.project_root_info = self.workspace_manager.get_workspace_info()
+            
+            # Send back PROJECT_CREATED event to the runtime
+            await self.ws_client.emit_event(BaseEvent(
+                type=EventType.PROJECT_CREATED,
+                source=EventSource.BACKEND,
+                payload={
+                    "project_id": project_id,
+                    "project_root": str(project_root),
+                    "workspace_info": self.project_root_info
+                }
+            ))
+            
+            # Transition to IDLE state
+            await self.transition_to(AOSMState.IDLE, f"Project {project_id} created successfully")
+
     async def _handle_idle(self, event: BaseEvent):
         logger.info(f"[AOSM] In IDLE state... Event: {event}")
         if event.type == EventType.REFERENCE_UPLOADED:
@@ -232,7 +262,7 @@ class AOSM:
             source_tsx = tsx_files[0]
             
             # Store in predefined directory
-            dest_dir = self.workspace_root / "current_run"
+            dest_dir = self.workspace_manager.workspace_root / "current_run"
             dest_dir.mkdir(parents=True, exist_ok=True)
             dest_tsx = dest_dir / source_tsx.name
             
