@@ -30,6 +30,7 @@ export class RelayAgentHandler implements AgentHandler {
         if (this.role === "ui") {
             // UI (Runtime) -> Agent (Backend)
             if (RelayAgentHandler.agentClient) {
+                console.debug("[RelayAgentHandler] Relaying message from UI to Agent:", msg)
                 RelayAgentHandler.agentClient(msg)
             } else {
                 send({ type: "ERROR", payload: { message: "No agent client connected", scope: "runtime", severity: "error" } } as any)
@@ -43,14 +44,22 @@ export class RelayAgentHandler implements AgentHandler {
             }
         } else if (this.role === "agent") {
             // Agent (Backend) -> UI (Runtime) or Workspace Client
-            if (msg.type === "WORKSPACE_DOWNLOAD" || msg.type === "WORKSPACE_UPLOAD" ||
+            if (msg.type == "PROJECT_CREATED") {
+                // Send message to uiclient and workspace client
+                RelayAgentHandler.uiClients.forEach(uiSend => uiSend(msg))
+                if (RelayAgentHandler.workspaceClient) {
+                    RelayAgentHandler.workspaceClient(msg)
+                }
+            }
+            else if (msg.type === "WORKSPACE_DOWNLOAD" || msg.type === "WORKSPACE_UPLOAD" ||
                 msg.type === "VAP_INIT" || msg.type === "VAP_DECISION") {
                 if (RelayAgentHandler.workspaceClient) {
                     RelayAgentHandler.workspaceClient(msg)
                 } else {
                     send({ type: "ERROR", payload: { message: "No workspace client connected", scope: "backend", severity: "error" } } as any)
                 }
-            } else {
+            }
+            else {
                 RelayAgentHandler.uiClients.forEach(uiSend => uiSend(msg))
             }
         } else {

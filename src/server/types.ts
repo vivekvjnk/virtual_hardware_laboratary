@@ -30,6 +30,10 @@ export type EventType =
     | "VAP_DECISION"
     // Human In Loop Mangement
     | "HIL_REQUEST"
+    // Project Initialization
+    | "CREATE_PROJECT"
+    | "PROJECT_CREATED"
+    | "VHL_WORKSPACE_READY"
 
 export interface AgentMessage {
     id: string
