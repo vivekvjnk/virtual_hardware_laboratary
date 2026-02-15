@@ -19,19 +19,20 @@ export class COWWorkspaceManager {
     /**
      * Creates a hardlink clone of the workspace for evaluation.
      */
-    static async createEvaluationWorkspace(taskId: string): Promise<COWPaths> {
+    static async createEvaluationWorkspace(taskId: string, baseDir: string = WORKSPACE_DIR): Promise<COWPaths> {
         const paths = this.getTaskPaths(taskId);
 
         if (existsSync(paths.taskRoot)) {
             await fs.rm(paths.taskRoot, { recursive: true, force: true });
         }
 
+        await fs.mkdir(baseDir, { recursive: true });
         await fs.mkdir(EVAL_ROOT, { recursive: true });
 
         // cp -al creates hardlinks for all files
-        const cpCmd = `cp -al ${WORKSPACE_DIR}/ ${paths.taskRoot}`;
+        const cpCmd = `cp -al ${baseDir}/. ${paths.taskRoot}/`;
         try {
-            console.log(`[COW] Creating hardlink clone: ${cpCmd}`);
+            console.log(`[COW] Creating hardlink clone from ${baseDir}: ${cpCmd}`);
             execSync(cpCmd, { stdio: "inherit" });
         } catch (error) {
             console.error(`Failed to create COW workspace for task ${taskId}:`, error);
@@ -78,7 +79,7 @@ export class COWWorkspaceManager {
     /**
      * Commits changes from the evaluation workspace back to the main workspace.
      */
-    static async commit(taskId: string) {
+    static async commit(taskId: string, baseDir: string = WORKSPACE_DIR) {
         const paths = this.getTaskPaths(taskId);
 
         if (!existsSync(paths.taskRoot)) {
@@ -86,7 +87,7 @@ export class COWWorkspaceManager {
             return;
         }
 
-        console.log(`[COW] Committing changes from ${paths.taskRoot} to ${WORKSPACE_DIR}`);
+        console.log(`[COW] Committing changes from ${paths.taskRoot} to ${baseDir}`);
 
         // Recursive function to commit files
         const commitRecursive = async (currentEvalDir: string, currentWorkspaceDir: string) => {
@@ -140,7 +141,7 @@ export class COWWorkspaceManager {
         };
 
         try {
-            await commitRecursive(paths.taskRoot, WORKSPACE_DIR);
+            await commitRecursive(paths.taskRoot, baseDir);
             console.log(`[COW] Commit completed for task ${taskId}`);
         } catch (error) {
             console.error(`Failed to commit COW workspace for task ${taskId}:`, error);

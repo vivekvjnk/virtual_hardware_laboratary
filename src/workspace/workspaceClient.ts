@@ -1,5 +1,7 @@
 import { WebSocket } from "ws";
 import { randomUUID } from "crypto";
+import * as path from "path";
+import * as fs from "fs/promises";
 import { WORKSPACE_DIR } from "../config/paths.js";
 import type { WebSocketMessage, AgentMessage } from "../server/types.js";
 import { runtime } from "../vap/runtime.js";
@@ -11,6 +13,7 @@ export class WorkspaceClient implements WorkspaceSender {
     private ws: WebSocket | null = null;
     private serverUrl: string;
     private workspaceDir: string;
+    private projectDir: string | null = null;
     private reconnectTimer: NodeJS.Timeout | null = null;
     private vapStatusInterval: NodeJS.Timeout | null = null;
     private activeVapTaskId: string | null = null;
@@ -104,16 +107,25 @@ export class WorkspaceClient implements WorkspaceSender {
 
         switch (msg.type) {
             case "WORKSPACE_DOWNLOAD":
-                await handleWorkspaceDownload(msg as AgentMessage, this.workspaceDir, this);
+                await handleWorkspaceDownload(msg as AgentMessage, this.projectDir || this.workspaceDir, this);
                 break;
             case "WORKSPACE_UPLOAD":
-                await handleWorkspaceUpload(msg as AgentMessage, this.workspaceDir, this);
+                await handleWorkspaceUpload(msg as AgentMessage, this.projectDir || this.workspaceDir, this);
                 break;
             case "VAP_INIT": {
-                const { taskId, context } = await handleVapInit(msg as AgentMessage, this);
+                const { taskId, context } = await handleVapInit(msg as AgentMessage, this.projectDir || this.workspaceDir, this);
                 this.activeVapTaskId = taskId;
                 this.activeVapContext = context;
                 this.startVapStatusReporting(taskId, context);
+                break;
+            }
+            case "PROJECT_CREATED": {
+                const { project_name } = msg.payload;
+                if (project_name) {
+                    this.projectDir = path.join(this.workspaceDir, project_name);
+                    console.log(`[WorkspaceClient] Active project set to: ${project_name} at ${this.projectDir}`);
+                    await fs.mkdir(this.projectDir, { recursive: true });
+                }
                 break;
             }
             case "VAP_DECISION": {
@@ -122,7 +134,7 @@ export class WorkspaceClient implements WorkspaceSender {
                     this.sendError("VAP_DECISION_INVALID", "Missing task_id or decision in VAP_DECISION");
                     break;
                 }
-                await handleVapDecision(task_id, decision, this);
+                await handleVapDecision(task_id, decision, this.projectDir || this.workspaceDir, this);
                 break;
             }
             default:

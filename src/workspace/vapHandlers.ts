@@ -14,6 +14,7 @@ import { TEMP_DIR } from "../config/paths.js";
 
 export async function handleVapInit(
     msg: AgentMessage,
+    projectDir: string,
     sender: WorkspaceSender
 ): Promise<{ taskId: string, context: VapContext }> {
     let taskId = randomUUID();
@@ -29,7 +30,7 @@ export async function handleVapInit(
         console.log(`[Workspace] Setting up COW workspace for circuit: ${circuit_name} (Task: ${taskId})`);
 
         // 1. Create COW Workspace (hardlink clone)
-        paths = await COWWorkspaceManager.createEvaluationWorkspace(taskId);
+        paths = await COWWorkspaceManager.createEvaluationWorkspace(taskId, projectDir);
 
         // 2. Pull circuit code from MinIO to a temporary location
         const tempPullDir = path.join(TEMP_DIR, `pull_${taskId}`);
@@ -134,14 +135,15 @@ export async function reportVapResults(
 export async function handleVapDecision(
     taskId: string,
     decision: "ACCEPT" | "REJECT",
+    projectDir: string,
     sender: WorkspaceSender
 ) {
     console.log(`[Workspace] Handling agent decision for task ${taskId}: ${decision}`);
 
     try {
         if (decision === "ACCEPT") {
-            console.log(`[Workspace] Committing changes for task ${taskId}`);
-            await COWWorkspaceManager.commit(taskId);
+            console.log(`[Workspace] Committing changes for task ${taskId} to ${projectDir}`);
+            await COWWorkspaceManager.commit(taskId, projectDir);
         } else {
             console.log(`[Workspace] Rejecting changes for task ${taskId}`);
         }
