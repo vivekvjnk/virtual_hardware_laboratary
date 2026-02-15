@@ -1,6 +1,6 @@
 import { WebSocket } from "ws";
 import { randomUUID } from "crypto";
-import { execSync } from "child_process";
+import { execSync, spawn, ChildProcess } from "child_process";
 import * as path from "path";
 import * as fs from "fs/promises";
 import { WORKSPACE_DIR } from "../config/paths.js";
@@ -19,6 +19,8 @@ export class WorkspaceClient implements WorkspaceSender {
     private vapStatusInterval: NodeJS.Timeout | null = null;
     private activeVapTaskId: string | null = null;
     private activeVapContext: VapContext | null = null;
+    private devServerProcess: ChildProcess | null = null;
+    private currentDevServerPath: string | null = null;
 
     constructor(serverUrl: string, workspaceDir: string = WORKSPACE_DIR) {
         this.serverUrl = serverUrl;
@@ -41,6 +43,8 @@ export class WorkspaceClient implements WorkspaceSender {
                 if (this.activeVapTaskId && this.activeVapContext) {
                     this.startVapStatusReporting(this.activeVapTaskId, this.activeVapContext);
                 }
+                // Start dev server in workspace root by default to avoid lockout
+                this.startDevServer(this.workspaceDir);
                 resolve();
             });
 
@@ -137,19 +141,59 @@ export class WorkspaceClient implements WorkspaceSender {
                     break;
                 }
 
-                // Notify UI that workspace is ready
+                // Construct the targeted reload URL
+                const relativePath = path.relative(this.workspaceDir, this.projectDir!);
+                const targetFile = path.join(relativePath, "index.circuit.tsx");
+                const reloadUrl = `http://localhost:3020/#file=${encodeURIComponent(targetFile)}`;
+
                 this.send({
                     id: randomUUID(),
-                    type: "VHL_WORKSPACE_READY",
+                    type: "DEV_SERVER_READY",
                     artifact_id: null,
                     timestamp: new Date().toISOString(),
                     source: "vhl_workspace",
                     payload: {
+                        url: reloadUrl,
                         project_id,
                         project_dir: this.projectDir
                     }
                 });
-            
+
+                break;
+            }
+            case "START_DEV_SERVER": {
+                const { project_path } = (msg as AgentMessage).payload;
+                if (!project_path) {
+                    this.sendError("INVALID_REQUEST", "project_path is required for START_DEV_SERVER");
+                    break;
+                }
+                // Determine if path is absolute or relative to workspace
+                const fullPath = path.isAbsolute(project_path) ? project_path : path.join(this.workspaceDir, project_path);
+                this.projectDir = fullPath; // Update current project dir
+
+                // Construct URL
+                const relativePath = path.relative(this.workspaceDir, fullPath);
+                // If relativePath is empty, we are at root. Otherwise we target index.circuit.tsx in that folder.
+                const targetFile = relativePath === "" ? "" : path.join(relativePath, "index.circuit.tsx");
+                const reloadUrl = `http://localhost:3020/${targetFile ? `#file=${encodeURIComponent(targetFile)}` : ""}`;
+
+                // Only restart if the path is different
+                if (this.currentDevServerPath !== fullPath) {
+                    await this.startDevServer(fullPath);
+                } else {
+                    // Already running, just trigger reload
+                    this.send({
+                        id: randomUUID(),
+                        type: "DEV_SERVER_READY",
+                        artifact_id: null,
+                        timestamp: new Date().toISOString(),
+                        source: "vhl_workspace",
+                        payload: {
+                            url: reloadUrl,
+                            project_path: fullPath
+                        }
+                    });
+                }
                 break;
             }
             case "VAP_DECISION": {
@@ -208,5 +252,71 @@ export class WorkspaceClient implements WorkspaceSender {
                 }
             }
         }, 2000);
+    }
+
+    private async startDevServer(projectPath: string) {
+        if (this.devServerProcess) {
+            console.log("[WorkspaceClient] Stopping existing dev server...");
+            this.devServerProcess.kill();
+            this.devServerProcess = null;
+            this.currentDevServerPath = null;
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+
+        console.log(`[WorkspaceClient] Starting tsci dev in ${projectPath}`);
+        this.currentDevServerPath = projectPath;
+
+        const env = {
+            ...process.env,
+            RUNFRAME_STANDALONE_FILE_PATH: process.env.RUNFRAME_STANDALONE_FILE_PATH || "/app/runframe/standalone.min.js"
+        };
+
+        try {
+            this.devServerProcess = spawn("tsci", ["dev", "."], {
+                cwd: projectPath,
+                env,
+                stdio: ['ignore', 'pipe', 'pipe']
+            });
+
+            this.devServerProcess.stdout?.on('data', (data) => {
+                const output = data.toString();
+                console.log(`[tsci dev] ${output}`);
+
+                // Detection logic: wait for "Local: http://localhost:..."
+                if (output.includes("http://localhost:")) {
+                    console.log("[WorkspaceClient] Dev server ready, notifying clients...");
+                    this.send({
+                        id: randomUUID(),
+                        type: "DEV_SERVER_READY",
+                        artifact_id: null,
+                        timestamp: new Date().toISOString(),
+                        source: "vhl_workspace",
+                        payload: {
+                            url: "http://localhost:3020",
+                            project_path: projectPath
+                        }
+                    });
+                }
+            });
+
+            this.devServerProcess.stderr?.on('data', (data) => {
+                console.error(`[tsci dev error] ${data.toString()}`);
+            });
+
+            this.devServerProcess.on('exit', (code) => {
+                console.log(`[tsci dev] Exited with code ${code}`);
+                this.devServerProcess = null;
+            });
+
+            this.devServerProcess.on('error', (err) => {
+                console.error(`[tsci dev] Failed to start: ${err.message}`);
+                this.sendError("DEV_SERVER_FAILED", err.message);
+                this.devServerProcess = null;
+            });
+
+        } catch (error: any) {
+            console.error(`[WorkspaceClient] Error spawning tsci: ${error.message}`);
+            this.sendError("DEV_SERVER_FAILED", error.message);
+        }
     }
 }

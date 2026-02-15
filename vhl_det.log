@@ -1,0 +1,212 @@
+time="2026-02-15T19:19:53+05:30" level=warning msg="/home/pst/Documents/vhl/vhl_tscircuit/virtual_hardware_laboratary/docker-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+#1 [internal] load local bake definitions
+#1 reading from stdin 643B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 1.41kB done
+#2 DONE 0.1s
+
+#3 [internal] load metadata for docker.io/library/node:20-slim
+#3 DONE 0.0s
+
+#4 [internal] load .dockerignore
+#4 transferring context:
+#4 transferring context: 2B done
+#4 DONE 0.1s
+
+#5 [ 1/16] FROM docker.io/library/node:20-slim
+#5 DONE 0.0s
+
+#6 [internal] load build context
+#6 transferring context: 10.51MB 0.1s done
+#6 DONE 0.1s
+
+#7 [ 4/16] RUN curl -fsSL https://bun.sh/install | bash
+#7 CACHED
+
+#8 [ 9/16] COPY tsconfig.json ./
+#8 CACHED
+
+#9 [ 3/16] RUN apt-get update && apt-get install -y     curl     python3     make     expect     g++     unzip     libvips-dev     && rm -rf /var/lib/apt/lists/*
+#9 CACHED
+
+#10 [ 7/16] COPY package.json pnpm-lock.yaml ./
+#10 CACHED
+
+#11 [ 2/16] WORKDIR /app
+#11 CACHED
+
+#12 [ 5/16] RUN npm install -g pnpm
+#12 CACHED
+
+#13 [ 6/16] RUN bun install -g tscircuit
+#13 CACHED
+
+#14 [ 8/16] RUN pnpm install --frozen-lockfile
+#14 CACHED
+
+#15 [10/16] COPY src ./src
+#15 CACHED
+
+#16 [11/16] COPY dist/runframe ./runframe
+#16 DONE 1.4s
+
+#17 [12/16] COPY workspace ./workspace
+#17 DONE 0.3s
+
+#18 [13/16] RUN pnpm build
+#18 1.052 
+#18 1.052 > virtual-hardware-lab@0.1.0 build /app
+#18 1.052 > tsc
+#18 1.052 
+#18 DONE 3.6s
+
+#19 [14/16] RUN mkdir -p /app/lib /app/circuits
+#19 DONE 0.7s
+
+#20 [15/16] COPY start.sh ./
+#20 DONE 0.4s
+
+#21 [16/16] RUN chmod +x start.sh
+#21 DONE 0.7s
+
+#22 exporting to image
+#22 exporting layers
+#22 exporting layers 0.6s done
+#22 writing image sha256:dbb224718c4ec520974b93b16e52559e8c69fc76b037842b2a4eb9851824a97b 0.0s done
+#22 naming to docker.io/library/virtual_hardware_laboratary-vhl-library 0.0s done
+#22 DONE 0.8s
+
+#23 resolving provenance for metadata file
+#23 DONE 0.0s
+ virtual_hardware_laboratary-vhl-library  Built
+ Container vhl-library  Creating
+ Container minio  Running
+ Container vhl-library  Created
+Attaching to minio, vhl-library
+vhl-library  | Starting VHL Library Server...
+vhl-library  | Starting Agent WebSocket Server...
+vhl-library  | Starting Workspace WebSocket Client...
+vhl-library  | -----------------------------------------
+vhl-library  | INITIALIZING VHL AGENT WEBSOCKET SERVER...
+vhl-library  | -----------------------------------------
+vhl-library  | Agent WebSocket Server starting on ws://0.0.0.0:1080
+vhl-library  | ✅ Agent WebSocket Server is LISTENING on 0.0.0.0:1080
+vhl-library  | [Workspace] Starting workspace client...
+vhl-library  | [Workspace] Server URL: ws://localhost:1080
+vhl-library  | [Workspace] Workspace Path: /app/workspace
+vhl-library  | [WorkspaceClient] Connecting to ws://localhost:1080...
+vhl-library  | AgentWebSocketServer: New client connected
+vhl-library  | [WorkspaceClient] Connected to relay server
+vhl-library  | [WorkspaceClient] Starting tsci dev in /app/workspace
+vhl-library  | [AgentWS] Received raw message: {"type":"IDENTIFY","payload":{"role":"vhl_workspace"}}
+vhl-library  | [AgentWS] Handling message of type: IDENTIFY
+vhl-library  | RelayAgentHandler: Workspace client identified
+vhl-library  | PROJECT_ROOT: /app
+vhl-library  | LOCAL_LIBRARY_DIR: /app/lib
+vhl-library  | TEMP_DIR: /app/.tmp
+vhl-library  | MCP HTTP Server listening on port 8080
+vhl-library  | VHL Library Server running on HTTP port 8080
+vhl-library  | [tsci dev] Selected file: bq79616_eval_board.tsx
+vhl-library  | 
+vhl-library  | [tsci dev] Analyzing node_modules dependencies...
+vhl-library  | 
+vhl-library  | [tsci dev] Found 0 node_modules files to upload
+vhl-library  | Node modules uploaded successfully
+vhl-library  | 
+vhl-library  | [tsci dev] 
+vhl-library  | 
+vhl-library  |   @tscircuit/cli@0.1.916 ready in 152ms
+vhl-library  | 
+vhl-library  | [tsci dev] 
+vhl-library  |   ➜ Local:   http://localhost:3020/#file=bq79616_eval_board.tsx
+vhl-library  | 
+vhl-library  | 
+vhl-library  | Watching app/workspace for changes...
+vhl-library  | 
+vhl-library  | [WorkspaceClient] Dev server ready, notifying clients...
+vhl-library  | [AgentWS] Received raw message: {"id":"3eab5baf-cb3e-4066-b19a-59faf7cd3674","type":"DEV_SERVER_READY","artifact_id":null,"timestamp":"2026-02-15T13:50:05.288Z","source":"vhl_workspace","payload":{"url":"http://localhost:3020","project_path":"/app/workspace"}}
+vhl-library  | [AgentWS] Handling message of type: DEV_SERVER_READY
+vhl-library  | [WorkspaceClient] Received event: ERROR
+vhl-library  | AgentWebSocketServer: New client connected
+vhl-library  | [AgentWS] Received raw message: {"id":"519768e4-5a30-40ba-b5b5-df25dffc8bef","type":"IDENTIFY","artifact_id":null,"timestamp":"2026-02-15T13:50:07.512627Z","source":"backend","payload":{"role":"agent"}}
+vhl-library  | [AgentWS] Handling message of type: IDENTIFY
+vhl-library  | RelayAgentHandler: Agent client identified
+vhl-library  | AgentWebSocketServer: New client connected
+vhl-library  | [AgentWS] Received raw message: {"type":"IDENTIFY","payload":{"role":"ui"}}
+vhl-library  | [AgentWS] Handling message of type: IDENTIFY
+vhl-library  | RelayAgentHandler: UI client identified
+vhl-library  | [AgentWS] Client disconnected. Code: 1000, Reason: 
+vhl-library  | RelayAgentHandler: Agent client disconnected
+vhl-library  | AgentWebSocketServer: New client connected
+vhl-library  | [AgentWS] Received raw message: {"id":"29d0b69d-efc9-4f7c-92a1-34a264c7e85f","type":"IDENTIFY","artifact_id":null,"timestamp":"2026-02-15T13:50:23.563987Z","source":"backend","payload":{"role":"agent"}}
+vhl-library  | [AgentWS] Handling message of type: IDENTIFY
+vhl-library  | RelayAgentHandler: Agent client identified
+vhl-library  | [AgentWS] Received raw message: {"id":"be460b84-ac6f-437c-ba2c-5ed43e2b8101","type":"CREATE_PROJECT","artifact_id":null,"timestamp":"2026-02-15T13:50:30.944Z","source":"runtime","payload":{"project_name":"bms"}}
+vhl-library  | [AgentWS] Handling message of type: CREATE_PROJECT
+vhl-library  | [RelayAgentHandler] Relaying message from UI to Agent: {
+vhl-library  |   id: 'be460b84-ac6f-437c-ba2c-5ed43e2b8101',
+vhl-library  |   type: 'CREATE_PROJECT',
+vhl-library  |   artifact_id: null,
+vhl-library  |   timestamp: '2026-02-15T13:50:30.944Z',
+vhl-library  |   source: 'runtime',
+vhl-library  |   payload: { project_name: 'bms' }
+vhl-library  | }
+vhl-library  | [AgentWS] Received raw message: {"id":"ada80606-540c-4679-8825-17fa3aadf5f0","type":"PROJECT_CREATED","artifact_id":null,"timestamp":"2026-02-15T13:50:30.962404Z","source":"backend","payload":{"project_id":"bms_e5d45133","project_root":"/home/pst/Documents/vhl/vhl_ana/virtual_hardware_laboratary/ana_workspace/bms_e5d45133","workspace_info":{"project_root_path":"/home/pst/Documents/vhl/vhl_ana/virtual_hardware_laboratary/ana_workspace/bms_e5d45133","project_contents":["Iterations","Stable","UserArtefacts"],"current_iteration_path":null,"previous_iteration_path":null}}}
+vhl-library  | [AgentWS] Handling message of type: PROJECT_CREATED
+vhl-library  | [WorkspaceClient] Received event: PROJECT_CREATED
+vhl-library  | [WorkspaceClient] Project id: bms_e5d45133
+vhl-library  | [WorkspaceClient] Active project set to: bms_e5d45133 at /app/workspace/bms_e5d45133
+vhl-library  | [WorkspaceClient] Initializing tsci in /app/workspace/bms_e5d45133
+vhl-library  | Created: /app/workspace/bms_e5d45133/index.circuit.tsx
+vhl-library  | Updated tscircuit.config.json with mainEntrypoint: 'index.circuit.tsx'
+vhl-library  | Created: /app/workspace/bms_e5d45133/.npmrc
+vhl-library  | Generating package.json
+vhl-library  | Created: /app/workspace/bms_e5d45133/package.json
+vhl-library  | Created: /app/workspace/bms_e5d45133/tsconfig.json
+vhl-library  | Created: /app/workspace/bms_e5d45133/.gitignore
+vhl-library  | Setting up tscircuit skill...
+vhl-library  | tscircuit skill installed at .claude/skills/tscircuit
+vhl-library  | Initializing project in /app/workspace/bms_e5d45133...
+vhl-library  | Installing dependencies...
+vhl-library  | bun add v1.3.9 (cf6cdbbb)
+vhl-library  | Resolving dependencies
+vhl-library  | Resolved, downloaded and extracted [312]
+vhl-library  | warn: incorrect peer dependency "bun-match-svg@0.0.14"
+vhl-library  | 
+vhl-library  | warn: incorrect peer dependency "react@19.2.4"
+vhl-library  | 
+vhl-library  | warn: incorrect peer dependency "react-dom@19.2.4"
+vhl-library  | 
+vhl-library  | warn: incorrect peer dependency "react@19.2.4"
+vhl-library  | 
+vhl-library  | warn: incorrect peer dependency "circuit-json@0.0.379"
+vhl-library  | Saved lockfile
+vhl-library  | 
+vhl-library  | + typescript@5.9.3
+vhl-library  | 
+vhl-library  | installed @types/react@19.2.14
+vhl-library  | installed tscircuit@0.0.1319 with binaries:
+vhl-library  |  - tsci
+vhl-library  |  - tscircuit
+vhl-library  | 
+vhl-library  | 295 packages installed [40.87s]
+vhl-library  | Dependencies installed successfully.
+vhl-library  | 
+vhl-library  |  🎉 Initialization complete! Run  tsci dev  to start developing.
+vhl-library  | [AgentWS] Received raw message: {"id":"a3035f6e-3a45-446e-a6d7-e581803202e9","type":"DEV_SERVER_READY","artifact_id":null,"timestamp":"2026-02-15T13:51:18.442Z","source":"vhl_workspace","payload":{"url":"http://localhost:3020/#file=bms_e5d45133%2Findex.circuit.tsx","project_id":"bms_e5d45133","project_dir":"/app/workspace/bms_e5d45133"}}
+vhl-library  | [AgentWS] Handling message of type: DEV_SERVER_READY
+vhl-library  | [tsci dev] Saving: bms_e5d45133/tscircuit.config.json
+vhl-library  | Saving: bms_e5d45133/index.circuit.tsx
+vhl-library  | Saving: bms_e5d45133/package.json
+vhl-library  | Saving: bms_e5d45133/tsconfig.json
+vhl-library  | Saving: bms_e5d45133/package.json
+vhl-library  | Saving: bms_e5d45133/package.json
+vhl-library  | Saving: bms_e5d45133/bun.lock
+vhl-library  | 
+vhl-library  | [AgentWS] Client disconnected. Code: 1001, Reason: 
+vhl-library  | AgentWebSocketServer: New client connected
+vhl-library  | [AgentWS] Received raw message: {"type":"IDENTIFY","payload":{"role":"ui"}}
+vhl-library  | [AgentWS] Handling message of type: IDENTIFY
+vhl-library  | RelayAgentHandler: UI client identified

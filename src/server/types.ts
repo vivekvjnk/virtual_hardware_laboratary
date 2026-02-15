@@ -34,6 +34,9 @@ export type EventType =
     | "CREATE_PROJECT"
     | "PROJECT_CREATED"
     | "VHL_WORKSPACE_READY"
+    // Dev Server Management
+    | "START_DEV_SERVER"
+    | "DEV_SERVER_READY"
 
 export interface AgentMessage {
     id: string

@@ -32,13 +32,20 @@ export class RelayAgentHandler implements AgentHandler {
             if (RelayAgentHandler.agentClient) {
                 console.debug("[RelayAgentHandler] Relaying message from UI to Agent:", msg)
                 RelayAgentHandler.agentClient(msg)
+            } else if (msg.type === "START_DEV_SERVER") {
+                // If it's a dev server start request and no agent is connected, allow direct UI -> Workspace
+                if (RelayAgentHandler.workspaceClient) {
+                    RelayAgentHandler.workspaceClient(msg)
+                } else {
+                    send({ type: "ERROR", payload: { message: "No workspace client connected", scope: "runtime", severity: "error" } } as any)
+                }
             } else {
                 send({ type: "ERROR", payload: { message: "No agent client connected", scope: "runtime", severity: "error" } } as any)
             }
         } else if (this.role === "vhl_workspace") {
             // Workspace Client -> Agent (Backend)
             // Some events also go to UI (Runtime)
-            if (msg.type === "VHL_WORKSPACE_READY") {
+            if (msg.type === "VHL_WORKSPACE_READY" || msg.type === "DEV_SERVER_READY") {
                 RelayAgentHandler.uiClients.forEach(uiSend => uiSend(msg));
             }
 
@@ -57,7 +64,7 @@ export class RelayAgentHandler implements AgentHandler {
                 }
             }
             else if (msg.type === "WORKSPACE_DOWNLOAD" || msg.type === "WORKSPACE_UPLOAD" ||
-                msg.type === "VAP_INIT" || msg.type === "VAP_DECISION") {
+                msg.type === "VAP_INIT" || msg.type === "VAP_DECISION" || msg.type === "START_DEV_SERVER") {
                 if (RelayAgentHandler.workspaceClient) {
                     RelayAgentHandler.workspaceClient(msg)
                 } else {

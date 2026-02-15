@@ -18,23 +18,11 @@ echo "Starting Workspace WebSocket Client..."
 node dist/workspace/index.js &
 WS_CLIENT_PID=$!
 
-# Start tscircuit in background
-echo "Starting tscircuit..."
 
 
 
-cd workspace/
-
-tsci init -y
-
-echo "Starting tsci dev..."
-
-tsci dev bq79616_eval_board.tsx &
-TSCI_PID=$!
-
-cd ../
 # Wait for any process to exit
-wait -n $LIBRARY_PID $VAP_PID $WS_SERVER_PID $WS_CLIENT_PID $TSCI_PID
+wait -n $LIBRARY_PID $VAP_PID $WS_SERVER_PID $WS_CLIENT_PID
 
 # Exit with status of process that exited first
 exit $?
