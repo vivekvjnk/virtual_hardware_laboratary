@@ -365,8 +365,6 @@ class AOSM:
         """Logic for BOOTSTRAP_PIPELINE."""
         logger.info("Executing Bootstrap Pipeline...")
         # 1. Trigger Archy
-        # 2. Trigger Librarian
-        # 3. Trigger ANA-D
         await self.transition_to(AOSMState.WAIT_FOR_ANA, "Pipeline started")
 
 def main():

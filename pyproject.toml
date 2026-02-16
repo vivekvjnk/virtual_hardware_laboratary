@@ -15,6 +15,7 @@ dependencies = [
     "vhl-protocol",
     "vhl-workspace",
     "aosm",
+    "archy",
 ]
 
 [tool.uv.workspace]
@@ -26,6 +27,8 @@ members = [
     "vhl_protocol",
     "workspace",
     "aosm",
+    "archy",
+    "archy/sam3_repo",
 ]
 
 [tool.uv.sources]
@@ -36,3 +39,5 @@ ana = { workspace = true }
 vhl-protocol = { workspace = true }
 vhl-workspace = { workspace = true }
 aosm = { workspace = true }
+archy = { workspace = true }
+sam3 = { workspace = true }

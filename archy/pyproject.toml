@@ -1,0 +1,31 @@
+[project]
+name = "archy"
+version = "0.1.0"
+description = "Archy for Virtual Hardware Laboratory"
+dependencies = [
+    "pydantic",
+    "mcp",
+    "httpx",
+    "torch",
+    "matplotlib",
+    "numpy",
+    "pillow",
+    "setuptools",
+    "sam3",
+]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+
+[tool.setuptools.package-dir]
+"" = "."
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["archy_agent*"]
+
+
+[tool.uv.sources]
+sam3 = { workspace = true }

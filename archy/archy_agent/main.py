@@ -1,0 +1,96 @@
+import os
+import sys
+import logging
+from pathlib import Path
+from typing import Union
+from archy_agent.image_to_schematic.image_to_segments import run_schematic_segmentation_pipeline
+from archy_agent.scud_gen_agent import archy_build_scud
+
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger("archy_orchestrator")
+
+def orchestrate_archy(workspace_path: Union[str, Path], image_id: str):
+    """
+    Main orchestration function for the Archy module.
+    
+    Purpose: Generate a Shared Circuit Understanding Document (SCUD) from a schematic image.
+    
+    Steps:
+    1. Run image segmentation pipeline on the source schematic.
+    2. Validate that cropped image segments were generated.
+    3. Run Archy agent to generate the SCUD document.
+    4. Verify the SCUD document was created in the workspace.
+    
+    Inputs:
+    - workspace_path: Path to the workspace directory.
+    - image_id: Unique identifier for the source image.
+    """
+    workspace = Path(workspace_path).resolve()
+    
+    # 1. Image Segmentation
+    # Source image is assumed to be at <workspace>/UserArtefacts/<image_id>.png
+    image_path = workspace / "UserArtefacts" / f"{image_id}.png"
+    
+    # Predefined output directory for segments
+    # Consistent with standard naming and scud_gen_agent's expected structure
+    output_dir = workspace / "schematic_images" / image_id
+    
+    logger.info(f"Starting orchestration for image_id: {image_id}")
+    logger.info(f"Workspace: {workspace}")
+    logger.info(f"Source Image Path: {image_path}")
+    
+    if not image_path.exists():
+        raise FileNotFoundError(f"Source image not found at {image_path}")
+
+    # Step 1: Run Segmentation Pipeline
+    logger.info("Step 1/2: Running image segmentation pipeline...")
+    try:
+        segmentation_result = run_schematic_segmentation_pipeline(
+            output_dir=output_dir,
+            image_path=image_path
+        )
+        logger.info(f"Segmentation pipeline finished. Detections: {segmentation_result.get('num_detections', 0)}")
+    except Exception as e:
+        logger.error(f"Error during image segmentation: {e}")
+        raise
+
+    # Validation: Verify segments were created
+    if not output_dir.exists() or not any(output_dir.glob("*.png")):
+        raise RuntimeError(f"Validation failed: No cropped images found in segment directory {output_dir}")
+    
+    logger.info(f"Validation success: Segments found in {output_dir}")
+
+    # Step 2: Trigger Archy Agent (Scud Generation)
+    logger.info("Step 2/2: Triggering Archy agent for SCUD generation...")
+    try:
+        archy_build_scud(
+            image_id=image_id,
+            workspace=workspace
+        )
+    except Exception as e:
+        logger.error(f"Error during SCUD generation: {e}")
+        raise
+
+    # Final Verification: Check if scud document is created in workspace
+    scud_file = workspace / f"{image_id}.scud"
+    if not scud_file.exists():
+        raise RuntimeError(f"Final verification failed: SCUD document not found at {scud_file}")
+    
+    logger.info(f"Workflow completed successfully. SCUD document generated: {scud_file}")
+    return scud_file
+
+if __name__ == "__main__":
+    if len(sys.argv) < 3:
+        print("Usage: python main.py <workspace_path> <image_id>")
+        sys.exit(1)
+        
+    ws_v_path = sys.argv[1]
+    img_v_id = sys.argv[2]
+    
+    try:
+        orchestrate_archy(ws_v_path, img_v_id)
+    except Exception as e:
+        logger.error(f"Orchestration failed: {e}")
+        sys.exit(1)
