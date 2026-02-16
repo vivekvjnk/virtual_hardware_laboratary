@@ -46,11 +46,11 @@ def archy_build_scud(
     from schematic image crops.
     """
     submodule_root = Path(__file__).resolve().parent
-    sys_prompt_path = os.path.join(submodule_root,"archy_sys_prompt.j2")
+    sys_prompt_path = os.path.join(submodule_root,"archy_sys_prompt_simplified.j2")
 
     model = os.getenv("LLM_MODEL", "vertex_ai/gemini-3-flash-preview")
 
-    condenser = LLMSummarizingCondenser(llm=llm_condenser, max_size=50, keep_first=8)
+    condenser = LLMSummarizingCondenser(llm=llm_condenser, max_size=40, keep_first=8)
 
     llm = LLM(
         usage_id="agent-1-llm",
@@ -76,7 +76,7 @@ def archy_build_scud(
         f"The original schematic image is located in '{workspace}/UserArtefacts/{image_id}.png'.\n"
         f"Segmented schematic images are available under '{workspace}/schematic_images/{image_id}/'.\n"
         f"Please construct the SCUD file and save it as '{workspace}/{image_id}.scud'.\n"
-        f"Use the FileEditorTool to read the image files; it is capable of reading images as base64-encoded strings."
+        f"Use the FileEditorTool to read the image files"
     )
     
 

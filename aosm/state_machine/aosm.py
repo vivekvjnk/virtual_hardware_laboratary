@@ -13,8 +13,10 @@ from vhl_protocol.client.client import VHLWebSocketClient
 from vhl_protocol.models import BaseEvent, EventType, EventSource
 
 import uuid
+import base64
 from ana_agent.state_machine import ANADStateMachine
 from workspace.manager import WorkspaceManager
+from archy_agent.main import orchestrate_archy
 
 logger = logging.getLogger(__name__)
 
@@ -175,14 +177,14 @@ class AOSM:
     async def _handle_idle(self, event: BaseEvent):
         logger.info(f"[AOSM] In IDLE state... Event: {event}")
         if event.type == EventType.REFERENCE_UPLOADED:
-            await self.transition_to(AOSMState.BOOTSTRAP_PIPELINE, "New schematic uploaded")
+            await self.transition_to(AOSMState.BOOTSTRAP_PIPELINE, "New schematic uploaded", payload=event.payload)
         elif event.type == EventType.HUMAN_INPUT:
             await self.transition_to(AOSMState.INTENT_CLASSIFY, "User message received", payload=event.payload)
 
     async def _handle_bootstrap_pipeline(self, event: BaseEvent):
         # We trigger the bootstrap logic upon entering this state.
         if event.type == EventType.STATE_TRANSITION:
-            await self._run_bootstrap()
+            await self._run_bootstrap(event)
 
     
     async def _handle_present_result(self, event: BaseEvent):
@@ -361,10 +363,59 @@ class AOSM:
 
     # --- High-level Orchestration Logic ---
 
-    async def _run_bootstrap(self):
+    async def _run_bootstrap(self, event: BaseEvent):
         """Logic for BOOTSTRAP_PIPELINE."""
         logger.info("Executing Bootstrap Pipeline...")
-        # 1. Trigger Archy
+        
+        payload = event.payload or {}
+        filename = payload.get("filename", "unnamed.png")
+        base64_img = payload.get("base64")
+        
+        if not base64_img:
+            logger.error(f"[AOSM-BOOTSTRAP] Missing base64 in payload: {payload}")
+            await self.transition_to(AOSMState.ERROR_PRESENTED, "Bootstrap failed: Missing image data")
+            return
+
+        # Generate image_id: <file_name_without_extension>_<5 digit uid>
+        stem = Path(filename).stem
+        uid = uuid.uuid4().hex[:5]
+        image_id = f"{stem}_{uid}"
+
+        # 1. Save image to project root under UserArtefacts/
+        project_root = self.workspace_manager.project_root
+        if not project_root:
+            logger.error("[AOSM-BOOTSTRAP] Project root not set in workspace manager")
+            await self.transition_to(AOSMState.ERROR_PRESENTED, "Bootstrap failed: Project not initialized")
+            return
+
+        user_artefacts_dir = project_root / "UserArtefacts"
+        user_artefacts_dir.mkdir(exist_ok=True)
+        image_path = user_artefacts_dir / f"{image_id}.png"
+        
+        try:
+            logger.info(f"[AOSM-BOOTSTRAP] Saving reference image to {image_path}")
+            with open(image_path, "wb") as f:
+                f.write(base64.b64decode(base64_img))
+        except Exception as e:
+            logger.error(f"[AOSM-BOOTSTRAP] Failed to save image: {e}")
+            await self.transition_to(AOSMState.ERROR_PRESENTED, f"Bootstrap failed: Image save error: {str(e)}")
+            return
+
+        # 2. Trigger Archy
+        logger.info(f"[AOSM-BOOTSTRAP] Triggering Archy orchestration for image: {image_id}")
+        try:
+            # orchestrate_archy is CPU intensive/blocking, run in thread
+            scud_path = await asyncio.to_thread(
+                orchestrate_archy, 
+                workspace_path=project_root, 
+                image_id=image_id
+            )
+            logger.info(f"[AOSM-BOOTSTRAP] Archy completed successfully. SCUD generated at: {scud_path}")
+        except Exception as e:
+            logger.error(f"[AOSM-BOOTSTRAP] Archy orchestration failed: {e}")
+            await self.transition_to(AOSMState.ERROR_PRESENTED, f"Archy failed: {str(e)}")
+            return
+
         await self.transition_to(AOSMState.WAIT_FOR_ANA, "Pipeline started")
 
 def main():
