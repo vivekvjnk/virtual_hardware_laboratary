@@ -10,6 +10,7 @@ members = [
     "openhands-sdk",
     "openhands-tools",
     "vhl-protocol",
+    "vhl-workspace",
     "virtual-hardware-laboratary",
 ]
 
@@ -193,13 +194,17 @@ version = "0.1.0"
 source = { editable = "aosm" }
 dependencies = [
     { name = "ana" },
+    { name = "boto3" },
     { name = "vhl-protocol" },
+    { name = "vhl-workspace" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "ana", editable = "ana" },
+    { name = "boto3" },
     { name = "vhl-protocol", editable = "vhl_protocol" },
+    { name = "vhl-workspace", editable = "workspace" },
 ]
 
 [[package]]
@@ -5849,6 +5854,11 @@ requires-dist = [
 ]
 
 [[package]]
+name = "vhl-workspace"
+version = "0.1.0"
+source = { editable = "workspace" }
+
+[[package]]
 name = "virtual-hardware-laboratary"
 version = "0.1.0"
 source = { virtual = "." }
@@ -5862,6 +5872,7 @@ dependencies = [
     { name = "openhands-tools" },
     { name = "python-dotenv" },
     { name = "vhl-protocol" },
+    { name = "vhl-workspace" },
 ]
 
 [package.metadata]
@@ -5875,6 +5886,7 @@ requires-dist = [
     { name = "openhands-tools", editable = "agent-sdk/openhands-tools" },
     { name = "python-dotenv", specifier = ">=1.2.1" },
     { name = "vhl-protocol", editable = "vhl_protocol" },
+    { name = "vhl-workspace", editable = "workspace" },
 ]
 
 [[package]]
