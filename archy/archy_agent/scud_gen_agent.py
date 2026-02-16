@@ -74,7 +74,7 @@ def archy_build_scud(
 
     user_msg = (
         f"The original schematic image is located in '{workspace}/UserArtefacts/{image_id}.png'.\n"
-        f"Segmented schematic images are available under '{workspace}/shematic_images/{image_id}/'.\n"
+        f"Segmented schematic images are available under '{workspace}/schematic_images/{image_id}/'.\n"
         f"Please construct the SCUD file and save it as '{workspace}/{image_id}.scud'.\n"
         f"Use the FileEditorTool to read the image files; it is capable of reading images as base64-encoded strings."
     )
