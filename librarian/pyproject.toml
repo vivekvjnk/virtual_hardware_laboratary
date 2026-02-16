@@ -1,0 +1,25 @@
+[project]
+name = "librarian"
+version = "0.1.0"
+description = "Librarian for Virtual Hardware Laboratory"
+dependencies = [
+    "pydantic",
+    "mcp",
+    "httpx"
+]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+
+[tool.setuptools.package-dir]
+"" = "."
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["librarian_agent*"]
+
+
+[tool.uv.sources]
+librarian = { workspace = true }
