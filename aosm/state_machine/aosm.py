@@ -17,6 +17,7 @@ import base64
 from ana_agent.state_machine import ANADStateMachine
 from workspace.manager import WorkspaceManager
 from archy_agent.main import orchestrate_archy
+from librarian_agent.agent import LibrarianAgent
 
 logger = logging.getLogger(__name__)
 
@@ -184,7 +185,11 @@ class AOSM:
     async def _handle_bootstrap_pipeline(self, event: BaseEvent):
         # We trigger the bootstrap logic upon entering this state.
         if event.type == EventType.STATE_TRANSITION:
-            await self._run_bootstrap(event)
+            scud_path = await self._run_bootstrap(event)
+            if scud_path:
+                await self._run_librarian(scud_path)
+                # Transition to TRIGGER_ANA to start the ANA-D state machine
+                await self.transition_to(AOSMState.TRIGGER_ANA, "Bootstrap and Component resolution completed")
 
     
     async def _handle_present_result(self, event: BaseEvent):
@@ -411,12 +416,27 @@ class AOSM:
                 image_id=image_id
             )
             logger.info(f"[AOSM-BOOTSTRAP] Archy completed successfully. SCUD generated at: {scud_path}")
+            
+            # Update current message with the SCUD path for ANA trigger
+            self.current_message["circuit_code_path"] = str(scud_path)
+            return scud_path
         except Exception as e:
             logger.error(f"[AOSM-BOOTSTRAP] Archy orchestration failed: {e}")
             await self.transition_to(AOSMState.ERROR_PRESENTED, f"Archy failed: {str(e)}")
-            return
+            return None
 
-        await self.transition_to(AOSMState.WAIT_FOR_ANA, "Pipeline started")
+    async def _run_librarian(self, scud_path: Path):
+        """Logic for triggering Librarian Agent to resolve components."""
+        logger.info(f"[AOSM-BOOTSTRAP] Triggering Librarian Agent for SCUD: {scud_path}")
+        try:
+            # LibrarianAgent defaults to http://localhost:8080/mcp
+            librarian = LibrarianAgent()
+            # process_scud involves network/LLM, run in thread
+            await asyncio.to_thread(librarian.process_scud, str(scud_path))
+            logger.info(f"[AOSM-BOOTSTRAP] Librarian Agent completed successfully")
+        except Exception as e:
+            logger.error(f"[AOSM-BOOTSTRAP] Librarian Agent failed: {e}")
+            # We proceed even if Librarian fails, but log the error
 
 def main():
     # Test stub
