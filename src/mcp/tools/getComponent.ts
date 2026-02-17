@@ -1,11 +1,16 @@
 
 import fs from "fs/promises";
 import path from "path";
-import { LOCAL_LIBRARY_DIR } from "../../config/paths.js";
+import { LOCAL_LIBRARY_DIR as DEFAULT_LIB_DIR } from "../../config/paths.js";
+import { resolveLibDir } from "../../workspace/projectContext.js";
+
+
 import { getFilesRecursive } from "../../runtime/libraryFs.js";
 
 export async function getComponent(deviceName: string): Promise<string> {
-    const libDir = process.env.VHL_LIBRARY_DIR || LOCAL_LIBRARY_DIR;
+    const libDir = resolveLibDir();
+
+
 
     // 1. Try exact path or simple variations
     const possiblePaths = [

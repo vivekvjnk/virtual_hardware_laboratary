@@ -1,7 +1,9 @@
 import fs from "fs/promises";
 import path from "path";
 import ts from "typescript";
-import { LOCAL_LIBRARY_DIR } from "../config/paths.js";
+import { resolveLibDir } from "../workspace/projectContext.js";
+
+
 
 export interface ValidationResult {
   success: boolean;
@@ -106,7 +108,9 @@ export async function validateComponent(
 
   for (const kicadFile of importedKicadFiles) {
     const basename = path.basename(kicadFile);
-    const kicadPath = path.join(LOCAL_LIBRARY_DIR, basename);
+    const libDir = resolveLibDir();
+
+    const kicadPath = path.join(libDir, basename);
     try {
       await fs.access(kicadPath);
     } catch {

@@ -4,6 +4,9 @@ import crypto from "crypto";
 import { LOCAL_LIBRARY_DIR as DEFAULT_LIB_DIR } from "../../config/paths.js";
 import { getFilesRecursive } from "../../runtime/libraryFs.js";
 import { CLIInteractionHandler, CLIInteractionState } from "../../utils/cliInteraction.js";
+import { resolveLibDir } from "../../workspace/projectContext.js";
+
+
 
 // Long-polling constants to prevent status-polling thrash
 const MAX_WAIT_MS = 4000;        // hard cap for long-polling
@@ -157,7 +160,7 @@ class ResolveTask {
 let currentTask: ResolveTask | null = null;
 
 function getLibDir(): string {
-  return process.env.VHL_LIBRARY_DIR || DEFAULT_LIB_DIR;
+  return resolveLibDir();
 }
 
 async function resolveLocal(query: string): Promise<string | null> {

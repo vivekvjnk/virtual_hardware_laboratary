@@ -6,13 +6,17 @@ import {
   LOCAL_LIBRARY_DIR,
   TEMP_DIR
 } from "../config/paths.js";
+import { resolveLibDir } from "../workspace/projectContext.js";
+
+
 
 /**
  * Ensure that required directories exist.
  * Safe to call multiple times.
  */
 export async function ensureLibraryDirs(): Promise<void> {
-  await fs.mkdir(LOCAL_LIBRARY_DIR, { recursive: true });
+  await fs.mkdir(resolveLibDir(), { recursive: true });
+
   await fs.mkdir(TEMP_DIR, { recursive: true });
 }
 
@@ -38,9 +42,10 @@ export async function commitComponent(
   targetFilename: string
 ): Promise<string> {
   const finalPath = path.join(
-    LOCAL_LIBRARY_DIR,
+    resolveLibDir(),
     targetFilename
   );
+
 
   await fs.rename(tempPath, finalPath);
   return finalPath;
