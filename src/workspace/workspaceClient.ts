@@ -9,7 +9,7 @@ import { runtime } from "../vap/runtime.js";
 import { WorkspaceSender, VapContext } from "./types.js";
 import { handleWorkspaceUpload, handleWorkspaceDownload } from "./syncHandlers.js";
 import { handleVapInit, reportVapResults, handleVapDecision } from "./vapHandlers.js";
-import { setProjectDir } from "./projectContext.js";
+import { setProjectDir,getProjectDir } from "./projectContext.js";
 
 
 export class WorkspaceClient implements WorkspaceSender {
@@ -136,14 +136,14 @@ export class WorkspaceClient implements WorkspaceSender {
 
                 this.projectDir = path.join(this.workspaceDir, project_id);
                 setProjectDir(this.projectDir);
-                console.log(`[WorkspaceClient] Active project set to: ${project_id} at ${this.projectDir}`);
+                console.log(`[WorkspaceClient] Active project set to: ${project_id} at ${getProjectDir()}`);
                 await fs.mkdir(this.projectDir, { recursive: true });
                 await fs.mkdir(path.join(this.projectDir, "lib"), { recursive: true });
 
 
                 try {
                     console.log(`[WorkspaceClient] Initializing tsci in ${this.projectDir}`);
-                    execSync("tsci init -y", { cwd: this.projectDir, stdio: 'inherit' });
+                    execSync("tsci init -y --no-install", { cwd: this.projectDir, stdio: 'inherit' });
                 } catch (error: any) {
                     console.error(`[WorkspaceClient] Failed to initialize tsci: ${error.message}`);
                     this.sendError("TSCI_INIT_FAILED", error.message);
@@ -179,8 +179,8 @@ export class WorkspaceClient implements WorkspaceSender {
                 // Determine if path is absolute or relative to workspace
                 const fullPath = path.isAbsolute(project_path) ? project_path : path.join(this.workspaceDir, project_path);
                 this.projectDir = fullPath; // Update current project dir
-                setProjectDir(this.projectDir);
-                await fs.mkdir(path.join(fullPath, "lib"), { recursive: true });
+                // setProjectDir(this.projectDir);
+                // await fs.mkdir(path.join(fullPath, "lib"), { recursive: true });
 
 
 

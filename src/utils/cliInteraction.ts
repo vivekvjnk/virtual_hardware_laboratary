@@ -73,6 +73,15 @@ export class CLIInteractionHandler extends EventEmitter {
             const text = raw.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, "");
             this.buffer += text;
             debug(`Data received. Buffer length: ${this.buffer.length}`);
+
+            // Fast-fail on error patterns
+            if (this.buffer.includes("TypeError:") || this.buffer.includes("ReferenceError:") || this.buffer.includes("at <anonymous>")) {
+                debug("Fast-failing due to error pattern in stream");
+                this.currentState = { state: "failed", reason: this.buffer, exit_code: -1 };
+                this.resolveState(this.currentState);
+                return;
+            }
+
             this.resetInteractionTimeout();
         };
 
@@ -129,22 +138,69 @@ export class CLIInteractionHandler extends EventEmitter {
             let allLines = this.buffer.split("\n").map(l => l.trim()).filter(l => l.length > 0);
 
             if (allLines.length > 0) {
-                const prompt = allLines[0];
-                const options = allLines.slice(1).map(l => this.stripMarkers(l)).filter(l => l.length > 0);
-                debug(`Prompt detected: ${prompt}`);
+                // Check for crash/error patterns first
+                const errorPatterns = [
+                    /TypeError:/,
+                    /ReferenceError:/,
+                    /Error:/,
+                    /at\s+<anonymous>/,
+                    /SyntaxError:/,
+                    /fatal:/i
+                ];
 
-                this.selectionId = crypto.randomUUID();
-                this.currentState = {
-                    state: "selection_required",
-                    selection: {
-                        selection_id: this.selectionId,
-                        prompt,
-                        options,
-                        cursor_index: 0
+                if (errorPatterns.some(p => p.test(this.buffer))) {
+                    debug("Error/Crash detected in buffer.");
+                    this.currentState = {
+                        state: "failed",
+                        reason: this.buffer,
+                        exit_code: -1
+                    };
+                    this.resolveState(this.currentState);
+                    return;
+                }
+
+                // Find first line that looks like an option
+                const markerRegex = /^[❯*»]|^\([ x]\)|^\[[ x]\]/;
+                const firstOptionIndex = allLines.findIndex(l => markerRegex.test(l));
+
+                if (firstOptionIndex !== -1) {
+                    const prompt = firstOptionIndex > 0 ? allLines[firstOptionIndex - 1] : allLines[0];
+                    const options = allLines.slice(firstOptionIndex).map(l => this.stripMarkers(l)).filter(l => l.length > 0);
+
+                    if (options.length > 0) {
+                        debug(`Selection detected. Prompt: ${prompt}, Options: ${options.length}`);
+                        this.selectionId = crypto.randomUUID();
+                        this.currentState = {
+                            state: "selection_required",
+                            selection: {
+                                selection_id: this.selectionId,
+                                prompt,
+                                options,
+                                cursor_index: 0
+                            }
+                        };
+                        this.resolveState(this.currentState);
+                        return;
                     }
-                };
-                this.resolveState(this.currentState);
-                return;
+                }
+
+                // If no markers found, check if it's a clear text prompt (ends with ? or :)
+                const lastLine = allLines[allLines.length - 1];
+                if ((lastLine.endsWith("?") || lastLine.endsWith(":")) && !lastLine.startsWith("-")) {
+                    debug(`Text prompt detected: ${lastLine}`);
+                    this.selectionId = crypto.randomUUID();
+                    this.currentState = {
+                        state: "selection_required",
+                        selection: {
+                            selection_id: this.selectionId,
+                            prompt: lastLine,
+                            options: [],
+                            cursor_index: 0
+                        }
+                    };
+                    this.resolveState(this.currentState);
+                    return;
+                }
             }
         }
 

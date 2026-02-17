@@ -1,6 +1,7 @@
 import { WorkspaceClient } from "./workspaceClient.js";
 import { WORKSPACE_DIR } from "../config/paths.js";
 import { COWWorkspaceManager } from "../utils/cowWorkspace.js";
+import { setProjectDir } from "./projectContext.js";
 
 const SERVER_URL = process.env.VHL_WS_SERVER || "ws://localhost:1080";
 const WORKSPACE_PATH = process.env.VHL_WORKSPACE_DIR || WORKSPACE_DIR;
@@ -11,6 +12,7 @@ console.log(`[Workspace] Workspace Path: ${WORKSPACE_PATH}`);
 
 // Cleanup any stale evaluation workspaces on startup
 await COWWorkspaceManager.cleanupAll();
+setProjectDir(null);
 
 const client = new WorkspaceClient(SERVER_URL, WORKSPACE_PATH);
 

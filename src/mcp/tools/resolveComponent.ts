@@ -1,7 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
 import crypto from "crypto";
-import { LOCAL_LIBRARY_DIR as DEFAULT_LIB_DIR } from "../../config/paths.js";
 import { getFilesRecursive } from "../../runtime/libraryFs.js";
 import { CLIInteractionHandler, CLIInteractionState } from "../../utils/cliInteraction.js";
 import { resolveLibDir } from "../../workspace/projectContext.js";
@@ -20,6 +19,10 @@ export type ResolveState =
   | "trying_import"
   | "finished"
   | "failed";
+
+const isTerminalState = (state: ResolveState): boolean => {
+  return state === "finished" || state === "failed";
+};
 
 export interface ResolveStatus {
   task_id: string;
@@ -74,6 +77,7 @@ class ResolveTask {
 
     // In the new model, we go straight to import which handles search/selection
     this.state = "trying_import";
+    console.log("runResolution: current working directory: ",getLibDir())
     const state = await this.handler.execute("tsci", ["import", this.componentName], getLibDir());
     await this.handleHandlerState(state);
   }
@@ -214,12 +218,24 @@ async function resolveLocal(query: string): Promise<string | null> {
 
 export async function resolveComponentStart(componentName: string): Promise<ResolveStatus> {
   if (currentTask) {
-    throw new Error("A resolution task is already running");
+    const status = currentTask.getStatus();
+    if (isTerminalState(status.state)) {
+      currentTask.close();
+      currentTask = null;
+    } else {
+      throw new Error("A resolution task is already running");
+    }
   }
 
   currentTask = new ResolveTask(componentName);
   await currentTask.start();
-  return currentTask.getStatus();
+
+  const status = currentTask.getStatus();
+  if (isTerminalState(status.state)) {
+    currentTask.close();
+    currentTask = null;
+  }
+  return status;
 }
 
 export async function resolveComponentStatus(taskId: string): Promise<ResolveStatus> {
@@ -229,10 +245,6 @@ export async function resolveComponentStatus(taskId: string): Promise<ResolveSta
 
   const isTerminalOrAgentWait = (state: ResolveState): boolean => {
     return state === "finished" || state === "failed" || state === "selection_required";
-  };
-
-  const isTerminalState = (state: ResolveState): boolean => {
-    return state === "finished" || state === "failed";
   };
 
   const initialStatus = currentTask.getStatus();
