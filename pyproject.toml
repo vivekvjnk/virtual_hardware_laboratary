@@ -16,6 +16,7 @@ dependencies = [
     "vhl-workspace",
     "aosm",
     "archy",
+    "librarian",
 ]
 
 [tool.uv.workspace]
@@ -29,6 +30,7 @@ members = [
     "aosm",
     "archy",
     "archy/sam3_repo",
+    "librarian",
 ]
 
 [tool.uv.sources]
@@ -41,3 +43,4 @@ vhl-workspace = { workspace = true }
 aosm = { workspace = true }
 archy = { workspace = true }
 sam3 = { workspace = true }
+librarian = { workspace = true }
