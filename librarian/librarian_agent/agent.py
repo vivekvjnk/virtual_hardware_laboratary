@@ -14,8 +14,9 @@ from openhands.sdk import (
 from openhands.sdk.tool import Tool
 from openhands.tools.file_editor import FileEditorTool
 from openhands.tools.terminal import TerminalTool
+from openhands.sdk.conversation.event_filter_config import EventFilterConfig
 
-from .prompts import SYSTEM_PROMPT
+from pathlib import Path
 
 logger = get_logger(__name__)
 
@@ -59,12 +60,15 @@ class LibrarianAgent:
         
         llm_condenser = self._setup_llm(usage_id="librarian_condenser")
         condenser = LLMSummarizingCondenser(llm=llm_condenser, max_size=80, keep_first=8)
+    
+        submodule_root = Path(__file__).resolve().parent
+        sys_prompt_path = os.path.join(submodule_root,"librarian_prompt_minimal.j2")
 
         return Agent(
             llm=self.llm,
             tools=tools,
             mcp_config=mcp_config,
-            system_prompt=SYSTEM_PROMPT,
+            system_prompt_filename = sys_prompt_path,
             condenser=condenser,
         )
 
@@ -102,3 +106,9 @@ class LibrarianAgent:
         conversation.run()
         
         logger.info("Librarian Agent finished processing.")
+
+
+if __name__ == "__main__":
+    agent = LibrarianAgent()
+    scud_file_path = "ana_workspace/bms_bq79616_f5fdd834/bq79616_aba80.scud"  # Update this path to your SCUD file
+    agent.process_scud(scud_file_path)

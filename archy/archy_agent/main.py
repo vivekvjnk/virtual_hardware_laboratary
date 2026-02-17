@@ -45,7 +45,7 @@ def orchestrate_archy(workspace_path: Union[str, Path], image_id: str):
         raise FileNotFoundError(f"Source image not found at {image_path}")
 
     # Step 1: Run Segmentation Pipeline
-    logger.info("Step 1/2: Running image segmentation pipeline...")
+    logger.info("Skipping Step 1/2: Running image segmentation pipeline...")
     try:
         segmentation_result = run_schematic_segmentation_pipeline(
             output_dir=output_dir,
