@@ -100,7 +100,9 @@ class AOSM:
             logger.warning(f"No handler defined for state {self.state}")
 
     async def transition_to(self, next_state: AOSMState, reason: str = "", payload: Optional[Dict[str, Any]] = None):
-        """Transitions to a new state and emits a state transition event."""
+        """Transitions to a new state and emits a state transition event.
+            This transition function is internal to AOSM
+        """
         from_state = self.state
         self.state = next_state
         
@@ -175,6 +177,44 @@ class AOSM:
             # Transition to IDLE state
             await self.transition_to(AOSMState.IDLE, f"Project {project_id} created successfully")
 
+        elif event.type == EventType.LOAD_PROJECT:
+            payload = event.payload or {}
+            project_id = payload.get("project_id")
+            
+            if not project_id:
+                logger.error("[AOSM] Missing project_id in LOAD_PROJECT event")
+                return
+
+            logger.info(f"[AOSM] Loading project: {project_id}")
+            try:
+                project_root = self.workspace_manager.load_project(project_id)
+                
+                # Store project root information in class variable
+                self.project_root_info = self.workspace_manager.get_workspace_info()
+                
+                # Send back PROJECT_LOADED event to the runtime
+                await self.ws_client.emit_event(BaseEvent(
+                    type=EventType.PROJECT_LOADED,
+                    source=EventSource.BACKEND,
+                    payload={
+                        "project_id": project_id,
+                        "project_root": str(project_root),
+                        "workspace_info": self.project_root_info
+                    }
+                ))
+                
+                # Transition to IDLE state
+                await self.transition_to(AOSMState.IDLE, f"Project {project_id} loaded successfully")
+            except Exception as e:
+                logger.error(f"[AOSM] Failed to load project {project_id}: {e}")
+                await self.ws_client.emit_event(BaseEvent(
+                    type=EventType.ERROR,
+                    source=EventSource.BACKEND,
+                    payload={
+                        "message": f"Failed to load project: {str(e)}"
+                    }
+                ))
+
     async def _handle_idle(self, event: BaseEvent):
         logger.info(f"[AOSM] In IDLE state... Event: {event}")
         if event.type == EventType.REFERENCE_UPLOADED:
@@ -195,12 +235,19 @@ class AOSM:
     
     async def _handle_present_result(self, event: BaseEvent):
         logger.info(f"[AOSM] Presenting results to user... Event: {event}")
-        if event.type == EventType.HUMAN_INPUT:
-            await self.transition_to(AOSMState.INTENT_CLASSIFY, "User modification requested")
-        elif event.type == EventType.REFERENCE_UPLOADED:
-            await self.transition_to(AOSMState.BOOTSTRAP_PIPELINE, "New upload during review")
-        # elif event.type == EventType.STATE_TRANSITION:
-        #     # Read the evaluation status from event payload. If it is pass, 
+        if event.type == EventType.VAP_DECISION:
+            decision = event.payload.get("decision")
+            iteration_dir = event.payload.get("iteration_dir") 
+            # if decision is ACCEPT copy current iteration directory to Stable directory
+            if "ACCEPT" == decision:
+                # Instruct workspace manager to move content from iteration_dir/ to Stable/ directory
+                self.workspace_manager.populate_stable(iteration_dir)
+            elif "REJECT" == decision:
+                # Instruct workspace manager to move all iteration directories to archives/    
+                self.workspace_manager.move_iterations_to_archives()
+            else:
+                raise ValueError(f"Unexpected decision: {decision}")
+ 
     async def _handle_intent_classify(self, event: BaseEvent):
         # In a real scenario, an agent would classify the intent here.
         # For the wireframe, we assume valid modification request.
@@ -313,31 +360,30 @@ class AOSM:
         await self.transition_to(AOSMState.WAIT_FOR_ANA, "ANA-D started")
 
     async def _handle_wait_for_ana(self, event: BaseEvent):
-        if event.type == EventType.EVALUATION_UPDATE:
-            status = event.payload.get("status")
-            if status in ["pass", "fail"]:
-                await self.transition_to(AOSMState.PRESENT_RESULT, f"ANA finished with status: {status}")
-        elif event.type == EventType.INTERRUPT_REQUEST:
-            await self.transition_to(AOSMState.CANCEL_PIPELINE, "User interrupted execution")
-        elif event.type == EventType.ERROR:
-            await self.transition_to(AOSMState.ERROR_PRESENTED, f"System error: {event.payload.get('message')}")
-            
-        elif event.type == EventType.ANA_NOTIFY:
+
+        if event.type == EventType.ANA_NOTIFY:
             # Handle notification from ANA (e.g., HIL_REQUEST)
             logger.info(f"[AOSM-WAIT_FOR_ANA] ANA notification: {event.payload}")
             
             ana_event = event.payload.get("reason")
-            if ana_event == "ANA_HIL_REQUIRED":
+            ana_task_id = event.payload.get("task_id")
+            
+            if ana_event == "HIL_REQUIRED":
                 # Maybe notify UI that HIL is required
                 await self.ws_client.emit_status_update(
                     status="waiting_for_input",
                     message=event.payload.get("message")
                 )
-            elif ana_event == "ANA_ERROR":
+            elif ana_event == "ERROR":
                 await self.ws_client.emit_status_update(
                     status="ana_error",
                     message=event.payload.get("message")
                 )
+            elif ana_event == "EXIT":
+                ana_decision = event.payload.get("decision")
+                self.transition_to(AOSMState.PRESENT_RESULT)
+                await self.ws_client.emit_evaluation_update(task_id=ana_task_id, decision=ana_decision)
+
             else:
                 raise ValueError(f"Unknown ANA notification reason: {ana_event}")
             

@@ -14,10 +14,63 @@ class WorkspaceManager:
         self.workspace_root = Path(workspace_root).resolve()
         self.workspace_root.mkdir(parents=True, exist_ok=True)
         self.project_root: Optional[Path] = None
-        self.project_id: str = None
+        self.project_id: Optional[str] = None
         self.current_iteration_path: Optional[Path] = None
         self.previous_iteration_path: Optional[Path] = None
+        self._iteration_count: Optional[int] = None
         logger.info(f"WorkspaceManager initialized with root: {self.workspace_root}")
+
+    def list_projects(self) -> List[str]:
+        """Lists all project IDs available in the workspace."""
+        if not self.workspace_root.exists():
+            return []
+        return [d.name for d in self.workspace_root.iterdir() if d.is_dir()]
+
+    def load_project(self, project_id: str) -> Path:
+        """
+        Loads an existing project from the workspace.
+        Information is derived from the files and subdirectories of the project folder.
+        """
+        project_path = self.workspace_root / project_id
+        if not project_path.exists() or not project_path.is_dir():
+            raise FileNotFoundError(f"Project directory not found: {project_path}")
+        
+        self.project_id = project_id
+        self.project_root = project_path
+        
+        # Identify iterations
+        iterations_dir = self.project_root / "Iterations"
+        if iterations_dir.exists():
+            # Get all iteration directories and sort them by iteration number
+            iterations = sorted(
+                [d for d in iterations_dir.iterdir() if d.is_dir() and d.name[:4].isdigit()],
+                key=lambda x: int(x.name[:4])
+            )
+            
+            if iterations:
+                self.current_iteration_path = iterations[-1]
+                if len(iterations) > 1:
+                    self.previous_iteration_path = iterations[-2]
+                
+                # Initialize _iteration_count with the highest number found
+                self._iteration_count = int(self.current_iteration_path.name[:4])
+                logger.info(f"Loaded project {project_id}. Latest iteration: {self._iteration_count}")
+            else:
+                self._iteration_count = 0
+                self.current_iteration_path = None
+                self.previous_iteration_path = None
+        else:
+            self._iteration_count = 0
+            self.current_iteration_path = None
+            self.previous_iteration_path = None
+        
+        # Ensure other standard directories exist or at least we know about them
+        (self.project_root / "Stable").mkdir(exist_ok=True)
+        (self.project_root / "UserArtefacts").mkdir(exist_ok=True)
+        (self.project_root / "Archives").mkdir(exist_ok=True)
+        
+        logger.info(f"Project loaded: {self.project_id} at {self.project_root}")
+        return self.project_root
 
     def create_project(self, project_id: str) -> Path:
         """Creates a new project directory structure."""
@@ -25,11 +78,15 @@ class WorkspaceManager:
         self.project_root = self.workspace_root / project_id
         self.project_root.mkdir(parents=True, exist_ok=True)
         
+        # Reset iteration state
+        self.current_iteration_path = None
+        self.previous_iteration_path = None
+        self._iteration_count = 0
+        
         # Create Iterations/ and Stable/ (with no contents inside them)
         (self.project_root / "Iterations").mkdir(exist_ok=True)
         (self.project_root / "Stable").mkdir(exist_ok=True)
         (self.project_root / "UserArtefacts").mkdir(exist_ok=True)
-        
         
         logger.info(f"Project created at: {self.project_root}")
         return self.project_root
@@ -39,11 +96,17 @@ class WorkspaceManager:
         self.project_root = Path(path).resolve()
         self.project_root.mkdir(parents=True, exist_ok=True)
         
+        # Reset or identify iterations
+        self.current_iteration_path = None
+        self.previous_iteration_path = None
+        self._iteration_count = None # Will be recalculated on first use
+        
         # Ensure Iterations/ and Stable/ exist
         (self.project_root / "Iterations").mkdir(exist_ok=True)
         (self.project_root / "Stable").mkdir(exist_ok=True)
         (self.project_root / "UserArtefacts").mkdir(exist_ok=True)
-        
+        (self.project_root / "Archives").mkdir(exist_ok=True)
+            
         logger.info(f"Project root registered at: {self.project_root}")
         return self.project_root
 
@@ -74,10 +137,13 @@ class WorkspaceManager:
 
     def _get_next_iteration_number(self) -> int:
         """Calculates and returns the next iteration number, maintaining state in a class member."""
-        if not hasattr(self, "_iteration_count"):
+        if self._iteration_count is None:
             iterations_dir = self.project_root / "Iterations"
-            existing = [int(d.name[:4]) for d in iterations_dir.iterdir() if d.is_dir() and d.name[:4].isdigit()]
-            self._iteration_count = max(existing) if existing else 0
+            if iterations_dir.exists():
+                existing = [int(d.name[:4]) for d in iterations_dir.iterdir() if d.is_dir() and d.name[:4].isdigit()]
+                self._iteration_count = max(existing) if existing else 0
+            else:
+                self._iteration_count = 0
         
         self._iteration_count += 1
         return self._iteration_count
@@ -103,7 +169,7 @@ class WorkspaceManager:
         logger.info(f"New iteration created: {iteration_path}")
         return iteration_path
 
-    def populate_stable(self, iteration_path: Path) -> Path:
+    def populate_stable(self, iteration_id: str) -> Path:
         """Populates the Stable directory from specified iteration and sets up symbolic links."""
         if not self.project_root:
             raise RuntimeError("Project root not set.")
@@ -111,8 +177,9 @@ class WorkspaceManager:
         stable_dir = self.project_root / "Stable"
         stable_dir.mkdir(exist_ok=True)
         
+        iteration_dir = self.project_root/"Iterations"/iteration_id
         # Copy iteration files and directories to stable directory
-        for item in iteration_path.iterdir(): # make sure we only copy files and directories that are not symlinks
+        for item in iteration_dir.iterdir(): # make sure we only copy files and directories that are not symlinks
             if item.is_symlink():
                 continue
             
@@ -127,6 +194,15 @@ class WorkspaceManager:
         logger.info(f"Stable directory populated at: {stable_dir}")
         return stable_dir
 
+    def move_iterations_to_archives(self):
+        """Moves all directories under Iterations/ to Archives/"""
+        iterations_dir = self.project_root/"Iterations"
+        archives_dir = self.project_root/"Archives"
+        for item in iterations_dir.iterdir(): # make sure we only copy files and directories that are not symlinks
+            if item.is_symlink():
+                continue
+            shutil.move(item, archives_dir)
+            
     def _setup_symlinks(self, target_dir: Path):
         """Sets up symbolic links to project-level files and directories."""
         # Symbolic links should include schematic_images/ dir, circuit.scud file and pin mapping file.
@@ -165,8 +241,10 @@ class WorkspaceManager:
     def get_workspace_info(self) -> Dict[str, Any]:
         """Returns information about the current workspace status."""
         return {
+            "project_id": self.project_id,
             "project_root_path": str(self.project_root) if self.project_root else None,
             "project_contents": [item.name for item in self.project_root.iterdir()] if self.project_root else [],
             "current_iteration_path": str(self.current_iteration_path) if self.current_iteration_path else None,
-            "previous_iteration_path": str(self.previous_iteration_path) if self.previous_iteration_path else None
+            "previous_iteration_path": str(self.previous_iteration_path) if self.previous_iteration_path else None,
+            "iteration_count": self._iteration_count if hasattr(self, "_iteration_count") else 0
         }

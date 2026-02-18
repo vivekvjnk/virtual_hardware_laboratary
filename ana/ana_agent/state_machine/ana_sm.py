@@ -141,7 +141,7 @@ class ANADStateMachine:
         observations = message.get("observations",[])
         
         if self.iteration_manager.is_first_iteration():
-            logger.info(f"[ANA-D SM INIT] First iteration. Observations: {observations}, Circuit Code Path: {circuit_code_path}")
+            logger.info(f"[ANA-D SM INIT] First iteration. Observations: {observations}")
             if num_iterations := self.iteration_manager.get_number_of_iterations() > 0:
                 logger.warning(f"[ANA-D SM INIT] Completed first iteration. Resetting first iteration flag. Current iteration count: {num_iterations}")
                 self.iteration_manager.reset_first_iteration()
@@ -284,6 +284,7 @@ class ANADStateMachine:
             
         elif vap_decision == "ACCEPT":
             if intent_status == "satisfied":
+                result_msg["iteration_dir"] = self.iteration_manager.get_previous_iteration_dir()
                 proposed_next = State.EXIT_SUCCESS
             else:
                 result_msg["hil_wait_packet"] = {"reason":"ANA_HIL_REQUIRED", "message": "VAP accepted the circuit but intent is not fully satisfied. Human intervention required to decide if intent violation is acceptable or not."}
@@ -398,7 +399,7 @@ class ANADStateMachine:
         hil_packet = result_msg.get("hil_wait_packet", None)
         if not hil_packet:
             logger.warning("[ANA-D SM] No HIL packet found in message. Using default packet.")
-            hil_packet = {"reason":"ANA_HIL_REQUIRED", "message": "Unknown reason. Human intervention required."}
+            hil_packet = {"reason":"HIL_REQUIRED", "message": "Unknown reason. Human intervention required."}
 
         if self.parent_notify:
             logger.info(f"[ANA-D SM] Notifying parent of HIL requirement. HIL packet content: {hil_packet}")
@@ -456,28 +457,27 @@ class ANADStateMachine:
             while not self.is_terminal():
                 await self.step()
         except Exception as e:
-            logger.exception(f"Unexpected error in ANA-D SM run loop: {e}")
-            # Get current task_id
             task_id = self.current_message.get("task_id", None)
-            if self.ws_client:
-                # Notify AOSM of the error and terminal failure
-                await self.ws_client.emit_error(scope="ana-d", severity="critical", message=str(e))
+            logger.exception(f"Unexpected error in ANA-D SM run loop: {e}")    
+            payload = {"reason":"ERROR","task_id":task_id, "decision":"ERROR", "message": str(e)}
+            self.parent_notify(payload)
             return
-
+        
+        task_id = self.current_message.get("task_id", None)
         if self.state == State.EXIT_SUCCESS:
-            task_id = self.current_message.get("task_id", None)
             logger.info("Simulation Finished: SUCCESS")
-            if self.ws_client:
-                logger.info(f"Sending evaluation update for task_id: {task_id}")
-                await self.ws_client.emit_evaluation_update(task_id=task_id, decision="ACCEPT")
-        elif self.state == State.HIL_WAIT:
-            logger.info("State Machine paused at HIL_WAIT. Awaiting user input.")
-            # NOTE: In a real system, we might want to notify AOSM that we are waiting for HIL
+            payload = {"reason":"EXIT",
+                       "task_id":task_id, 
+                       "decision":"ACCEPT", 
+                       "iteration_dir":self.current_message.get("iteration_dir"),
+                       "from_state":self.current_message.get("from_state_id")}
+            self.parent_notify(payload)
+            
         elif self.state == State.EXIT_ABORT:
             logger.info("Simulation Finished: ABORTED")
-            if self.ws_client:
-                await self.ws_client.emit_evaluation_update(task_id=task_id, decision="REJECT")
-
+            payload = {"reason":"EXIT","task_id":task_id, "decision":"REJECT", "from_state":self.current_message.get("from_state_id")}
+            self.parent_notify(payload)
+            
 if __name__ == "__main__":
     sm = ANADStateMachine(max_auto_fixes=5)
     asyncio.run(sm.run())
