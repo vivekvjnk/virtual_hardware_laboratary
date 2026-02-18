@@ -40,6 +40,14 @@ export type EventType =
     // System State
     | "GET_SYSTEM_STATE"
     | "SYSTEM_STATE"
+    // Sync Protocol
+    | "HASH_REQUEST"
+    | "HASH_RESPONSE"
+    | "UPLOAD_REQUEST"
+    | "UPLOAD_PROPOSAL"
+    | "DOWNLOAD_REQUEST"
+    | "SYNC_COMPLETE"
+    | "SYNC_ERROR"
 
 export interface AgentMessage {
     id: string

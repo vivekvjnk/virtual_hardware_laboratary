@@ -9,7 +9,8 @@ import { runtime } from "../vap/runtime.js";
 import { WorkspaceSender, VapContext } from "./types.js";
 import { handleWorkspaceUpload, handleWorkspaceDownload } from "./syncHandlers.js";
 import { handleVapInit, reportVapResults, handleVapDecision } from "./vapHandlers.js";
-import { setProjectDir,getProjectDir } from "./projectContext.js";
+import { setProjectDir, getProjectDir } from "./projectContext.js";
+import { SyncManager } from "./syncManager.js";
 
 
 export class WorkspaceClient implements WorkspaceSender {
@@ -25,10 +26,12 @@ export class WorkspaceClient implements WorkspaceSender {
     private currentDevServerPath: string | null = null;
     private currentProjectId: string | null = null;
     private currentProjectName: string | null = null;
+    private syncManager: SyncManager;
 
     constructor(serverUrl: string, workspaceDir: string = WORKSPACE_DIR) {
         this.serverUrl = serverUrl;
         this.workspaceDir = workspaceDir;
+        this.syncManager = new SyncManager(this.workspaceDir, this);
     }
 
     public async connect(): Promise<void> {
@@ -255,6 +258,12 @@ export class WorkspaceClient implements WorkspaceSender {
                 await handleVapDecision(task_id, decision, this.projectDir || this.workspaceDir, this);
                 break;
             }
+            case "HASH_RESPONSE":
+            case "UPLOAD_PROPOSAL":
+            case "SYNC_COMPLETE":
+            case "SYNC_ERROR":
+                await this.syncManager.handleMessage(msg as AgentMessage);
+                break;
             default:
                 break;
         }

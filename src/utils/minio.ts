@@ -19,7 +19,7 @@ const BUCKET_NAME = process.env.MINIO_BUCKET || "vhl";
 export async function pullObject(objectName: string, localDir: string): Promise<string> {
     await fs.mkdir(localDir, { recursive: true });
     const localPath = path.join(localDir, objectName);
-    
+
     await minioClient.fGetObject(BUCKET_NAME, objectName, localPath);
     return localPath;
 }
@@ -29,13 +29,28 @@ export async function pullObject(objectName: string, localDir: string): Promise<
  */
 export async function pushObject(localPath: string, objectName: string): Promise<void> {
     const stats = await fs.stat(localPath);
-    
+
     if (stats.isDirectory()) {
         // For directory, we might want to zip it first or upload files recursively
         // The user mentioned "Compress the eval results folder", so maybe we push the zip
         throw new Error("Pushing directory directly not implemented. Please compress first.");
     } else {
         await minioClient.fPutObject(BUCKET_NAME, objectName, localPath);
+    }
+}
+
+/**
+ * Check if an object exists in the bucket
+ */
+export async function objectExists(objectName: string): Promise<boolean> {
+    try {
+        await minioClient.statObject(BUCKET_NAME, objectName);
+        return true;
+    } catch (err: any) {
+        if (err.code === "NotFound" || err.code === "NoSuchKey") {
+            return false;
+        }
+        throw err;
     }
 }
 
