@@ -21,9 +21,10 @@ from vhl_protocol.client.client import VHLWebSocketClient
 logger = logging.getLogger(__name__)
 
 class ANADStateMachine:
-    def __init__(self, 
+    def __init__(self,
+                 workspace_manager,
+                 circuit_name:str, 
                  max_auto_fixes: int = 3, 
-                 circuit_code_path: str = None, 
                  observations: List[str] = None, 
                  ws_client: Optional[VHLWebSocketClient] = None,
                  parent_notify: Optional[callable] = None,
@@ -41,12 +42,11 @@ class ANADStateMachine:
         self.inbox_queue = inbox_queue if inbox_queue is not None else asyncio.Queue()
         
         # Project Info
-        # TODO : Make project info configurable
-        self.circuit_name: str = "bq79616_eval_board"
-        self.workspace = Path(os.getcwd()) / "ana_workspace" / f"{self.circuit_name}_project"
+        self.circuit_name = circuit_name
+        self.workspace_manager = workspace_manager
 
         # Managers
-        self.iteration_manager = IterationManager(self.workspace, self.circuit_name)
+        self.iteration_manager = IterationManager(self.workspace_manager.project_root, self.circuit_name)
         self.mcp_manager = MCPManager(endpoint="http://localhost:8001")
 
         # Initial Message
@@ -56,8 +56,6 @@ class ANADStateMachine:
             "auto_fix_count": 0,
             "observations": observations if observations else []
         }
-        if circuit_code_path:
-            self.current_message.update({"circuit_code_path": circuit_code_path})
 
         # State Transition Table
         self.transition_table = {
@@ -141,7 +139,6 @@ class ANADStateMachine:
         
 
         observations = message.get("observations",[])
-        circuit_code_path = message.get("circuit_code_path",None)
         
         if self.iteration_manager.is_first_iteration():
             logger.info(f"[ANA-D SM INIT] First iteration. Observations: {observations}, Circuit Code Path: {circuit_code_path}")
@@ -155,15 +152,16 @@ class ANADStateMachine:
         # TODO: As of now, ANA state machine accept observations and circuit_code_path from AOSM. Then we move the circuit code from the given path to a local iteration directory. From the perspective of every other states in ANA-D state machine, this is just another iteration with some observations. This is a temporary workaround until we derive stable project directory structure and file management strategy. 
         # Hence the additional conditional logic based on circuit_code_path can be removed without any side effects in future refactor.
         # Check how many iterations are present in iteration manager
-        if (self.iteration_manager.is_first_iteration()) and (len(observations)>0) and (circuit_code_path is not None):
+        if (self.iteration_manager.is_first_iteration()) and (len(observations)>0):
             last_iteration_id = str(uuid.uuid4()).split("-")[0][:8] # First 8 characters of UUID
             logger.info(f"[ANA-D SM INIT] First iteration with user-provided circuit code and observations. Preparing iteration directory with provided circuit code. Iteration ID: {last_iteration_id}")
+            # get the circuit code path from Stable/ directory. Pass to prepare_iteration_with_files
+            # TODO: cleanup this logic. integrate workspace manager and iteration manager
+            circuit_code_path = self.workspace_manager.get_circuit_path_from_stable()
             self.iteration_manager.prepare_iteration_with_files(source_file=circuit_code_path,iteration_id=last_iteration_id)
-            # Set first iteration flag to true for downstream states
-            # Remove the circuit code path from message. This is no longer required.
-            result_msg.pop("circuit_code_path") 
+            
         else: # Debug observability
-            logger.info(f"[ANA-D SM INIT] Starting new iteration without user-provided circuit code. Observations: {observations}, Circuit Code Path: {circuit_code_path}, First Iteration: {self.iteration_manager.is_first_iteration()}")
+            logger.info(f"[ANA-D SM INIT] Starting new iteration without user-provided circuit code. Observations: {observations}, First Iteration: {self.iteration_manager.is_first_iteration()}")
         
         iteration_id = str(uuid.uuid4()).split("-")[0][:8]
         self.iteration_manager.start_new_iteration(iteration_id)

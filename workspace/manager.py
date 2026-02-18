@@ -14,13 +14,15 @@ class WorkspaceManager:
         self.workspace_root = Path(workspace_root).resolve()
         self.workspace_root.mkdir(parents=True, exist_ok=True)
         self.project_root: Optional[Path] = None
+        self.project_id: str = None
         self.current_iteration_path: Optional[Path] = None
         self.previous_iteration_path: Optional[Path] = None
         logger.info(f"WorkspaceManager initialized with root: {self.workspace_root}")
 
-    def create_project(self, project_name: str) -> Path:
+    def create_project(self, project_id: str) -> Path:
         """Creates a new project directory structure."""
-        self.project_root = self.workspace_root / project_name
+        self.project_id = project_id
+        self.project_root = self.workspace_root / project_id
         self.project_root.mkdir(parents=True, exist_ok=True)
         
         # Create Iterations/ and Stable/ (with no contents inside them)

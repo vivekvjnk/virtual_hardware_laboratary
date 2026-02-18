@@ -153,7 +153,7 @@ class AOSM:
             payload = event.payload or {}
             project_name = payload.get("project_name", "untitled")
             # Generate project_id with <project_name>_<UID>
-            project_id = f"{project_name}_{uuid.uuid4().hex[:8]}"
+            project_id = f"{project_name}_{uuid.uuid4().hex[:5]}"
             
             logger.info(f"[AOSM] Creating new project: {project_id}")
             project_root = self.workspace_manager.create_project(project_id)
@@ -185,7 +185,8 @@ class AOSM:
     async def _handle_bootstrap_pipeline(self, event: BaseEvent):
         # We trigger the bootstrap logic upon entering this state.
         if event.type == EventType.STATE_TRANSITION:
-            scud_path = await self._run_bootstrap(event)
+            scud_path,image_id = await self._run_bootstrap(event)
+            self.current_message["circuit_id"] = image_id
             if scud_path:
                 await self._run_librarian(scud_path)
                 # Transition to TRIGGER_ANA to start the ANA-D state machine
@@ -280,19 +281,24 @@ class AOSM:
         if event.type == EventType.STATE_TRANSITION:
             logger.info(f"[AOSM] Triggering ANA-D on state entry.")
             # Create ANA-D state machine instance with the circuit code path 
-            circuit_code_path = self.current_message.get("circuit_code_path")
-            observations = self.current_message.get("observations", [])
+            circuit_code_path = self.current_message.get("circuit_code_path",None)
+            observations = self.current_message.get("observations", None)
             logger.info(f"[AOSM-TRIGGER ANA]: Circuit code path: {circuit_code_path}, observations: {observations}")
 
-            if not circuit_code_path:
-                logger.error("[AOSM] No circuit code path found in current message for ANA-D")
-                await self.transition_to(AOSMState.ERROR_PRESENTED, "Missing circuit code for ANA run")
+            project_root = self.workspace_manager.project_root
+            circuit_id = self.current_message.get("circuit_id")
+
+            if not project_root:
+                logger.error("[AOSM-TRIGGER_ANA] Project root not set in workspace manager")
+                await self.transition_to(AOSMState.ERROR_PRESENTED, "Bootstrap failed: Project not initialized")
                 return
+            
             # Initialize inbox queue for bidirectional communication
             self.ana_inbox = asyncio.Queue()
             
             self.active_ana_sm = ANADStateMachine(
-                circuit_code_path=circuit_code_path, 
+                workspace_manager=self.workspace_manager,
+                circuit_name=circuit_id,
                 observations=observations,
                 ws_client=self.ws_client,
                 parent_notify=self._parent_notify,
@@ -384,15 +390,16 @@ class AOSM:
         # Generate image_id: <file_name_without_extension>_<5 digit uid>
         stem = Path(filename).stem
         uid = uuid.uuid4().hex[:5]
-        image_id = f"{stem}_{uid}"
+        image_id = f"{self.workspace_manager.project_id}_{stem}_{uid}"
 
-        # 1. Save image to project root under UserArtefacts/
         project_root = self.workspace_manager.project_root
         if not project_root:
             logger.error("[AOSM-BOOTSTRAP] Project root not set in workspace manager")
             await self.transition_to(AOSMState.ERROR_PRESENTED, "Bootstrap failed: Project not initialized")
             return
 
+
+        # 1. Save image to project root under UserArtefacts/
         user_artefacts_dir = project_root / "UserArtefacts"
         user_artefacts_dir.mkdir(exist_ok=True)
         image_path = user_artefacts_dir / f"{image_id}.png"
@@ -418,8 +425,8 @@ class AOSM:
             logger.info(f"[AOSM-BOOTSTRAP] Archy completed successfully. SCUD generated at: {scud_path}")
             
             # Update current message with the SCUD path for ANA trigger
-            self.current_message["circuit_code_path"] = str(scud_path)
-            return scud_path
+            
+            return scud_path,image_id
         except Exception as e:
             logger.error(f"[AOSM-BOOTSTRAP] Archy orchestration failed: {e}")
             await self.transition_to(AOSMState.ERROR_PRESENTED, f"Archy failed: {str(e)}")
