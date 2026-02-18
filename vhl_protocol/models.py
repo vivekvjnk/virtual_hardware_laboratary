@@ -51,7 +51,16 @@ class EventType(str, Enum):
     VAP_DECISION = "VAP_DECISION"
     
     # ANA Communication
-    ANA_NOTIFY = "ANA_NOTIFY"
+    ANA_NOTIFY = "ANA_NOTIFY",
+
+    # Sync Protocol
+    HASH_REQUEST = "HASH_REQUEST",
+    HASH_RESPONSE = "HASH_RESPONSE",
+    UPLOAD_REQUEST = "UPLOAD_REQUEST",
+    UPLOAD_PROPOSAL = "UPLOAD_PROPOSAL",
+    DOWNLOAD_REQUEST = "DOWNLOAD_REQUEST",
+    SYNC_COMPLETE = "SYNC_COMPLETE",
+    SYNC_ERROR = "SYNC_ERROR"
 
 class BaseEvent(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
@@ -132,3 +141,14 @@ class VAPStatusPayload(BaseModel):
 class HILRequestPayload(BaseModel):
     reason: str
     message: Optional[str] = None
+
+class SyncPayload(BaseModel):
+    sync_id: str
+    project_id: str
+    iteration_id: Optional[str] = None
+    resource_type: str # Library | Circuit | Evaluation | StableCircuit
+    intent: Optional[str] = None # EVALUATION | ALIGNMENT | RESULT
+    hash: Optional[str] = None
+    blob_id: Optional[str] = None
+    reason: Optional[str] = None # For SYNC_ERROR
+    data: Optional[Dict[str, Any]] = Field(default_factory=dict)

@@ -11,6 +11,7 @@ from pathlib import Path
 from state_machine.states import AOSMState
 from vhl_protocol.client.client import VHLWebSocketClient
 from vhl_protocol.models import BaseEvent, EventType, EventSource
+from vhl_protocol.sync.client import SyncClient
 
 import uuid
 import base64
@@ -42,6 +43,7 @@ class AOSM:
         self.active_ana_sm: Optional[ANADStateMachine] = None
         self.ana_inbox: Optional[asyncio.Queue] = None
         self._main_loop_task: Optional[asyncio.Task] = None
+        self.sync_client = SyncClient(self.ws_client, "ana_workspace")
         
         # Minio configuration (should ideally be from env)
         self.s3_client = boto3.client(

@@ -10,7 +10,8 @@ from ..models import (
     EvaluationUpdatePayload, ArtifactUpdatedPayload,
     AuthorityRequiredPayload, ErrorPayload,
     IdentifyPayload, WorkspacePayload,
-    VAPInitPayload, VAPStatusPayload
+    VAPInitPayload, VAPStatusPayload,
+    SyncPayload
 )
 
 logger = logging.getLogger(__name__)
@@ -24,11 +25,14 @@ class VHLWebSocketClient:
         self,
         url: str,
         role: str = "agent",  # "agent" or "ui"
-        on_event_received: Optional[Callable[[BaseEvent], Awaitable[None]]] = None
+        on_event_received: Optional[Callable[[BaseEvent], Awaitable[None]]] = None,
+        workspace_dir: Optional[str] = None
     ):
         self.url = url
         self.role = role
         self.on_event_received = on_event_received
+        self.workspace_dir = workspace_dir
+        
         self._ws = None
         self._is_running = False
         self._send_queue = asyncio.Queue()
