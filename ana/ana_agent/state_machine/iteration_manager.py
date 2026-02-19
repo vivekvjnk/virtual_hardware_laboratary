@@ -131,3 +131,17 @@ class IterationManager:
 
     def get_circuit_tsx_path(self) -> str:
         return os.path.join(self.current_iteration_dir, f"{self.circuit_name}.tsx")
+
+    def move_to_stable(self):
+        """Moves contents of the current iteration to the Stable directory."""
+        if not self.current_iteration_dir:
+            logger.error("[Iteration Manager] No current iteration to move to Stable")
+            return
+            
+        stable_dir = os.path.join(self.workspace, "Stable")
+        if os.path.exists(stable_dir):
+            shutil.rmtree(stable_dir)
+        
+        # Copy iteration contents to Stable
+        shutil.copytree(self.current_iteration_dir, stable_dir, dirs_exist_ok=True)
+        logger.info(f"[Iteration Manager] Moved iteration {self.current_iteration_id} to Stable")

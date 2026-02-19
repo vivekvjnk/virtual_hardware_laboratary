@@ -26,6 +26,9 @@ class ANADStateMachine:
                  circuit_code_path: str = None, 
                  observations: List[str] = None, 
                  ws_client: Optional[VHLWebSocketClient] = None,
+                 sync_client: Optional[Any] = None,
+                 project_id: Optional[str] = None,
+                 workspace: Optional[Path] = None,
                  parent_notify: Optional[callable] = None,
                  inbox_queue: Optional[asyncio.Queue] = None):
         # TODO Done: ANA state machine can be initialized with a circuit code path
@@ -37,13 +40,15 @@ class ANADStateMachine:
         # Inputs/Observations - Now handled via current_message for transparency
         self.max_auto_fixes = max_auto_fixes
         self.ws_client = ws_client
+        self.sync_client = sync_client
+        self.project_id = project_id
         self.parent_notify = parent_notify
         self.inbox_queue = inbox_queue if inbox_queue is not None else asyncio.Queue()
         
         # Project Info
         # TODO : Make project info configurable
         self.circuit_name: str = "bq79616_eval_board"
-        self.workspace = Path(os.getcwd()) / "ana_workspace" / f"{self.circuit_name}_project"
+        self.workspace = workspace if workspace else Path(os.getcwd()) / "ana_workspace" / f"{self.circuit_name}_project"
 
         # Managers
         self.iteration_manager = IterationManager(self.workspace, self.circuit_name)
@@ -137,6 +142,44 @@ class ANADStateMachine:
 
     async def _handle_init(self, message: Dict[str, Any]) -> Dict[str, Any]:
         logger.info(f"[ANA-D SM] State: INIT. Triggered from: {message.get('from_state_id')}\n{"*"*30}\n{message}\n{"*"*30}")
+        
+        # Workflow 2/3: Synchronize Stable and Library
+        if self.project_id and self.ws_client:
+            logger.info(f"[ANA-D SM INIT] Synchronizing StableCircuit and Library for project {self.project_id}")
+            
+            # 1. Sync StableCircuit
+            sync_payload_stable = SyncPayload(
+                sync_id=str(uuid.uuid4()),
+                project_id=self.project_id,
+                resource_type="StableCircuit",
+                data={"circuit_name": self.circuit_name}
+            )
+            await self.ws_client.emit(EventType.SYNC_TRIGGER, sync_payload_stable)
+            try:
+                await self.ws_client.wait_for_event(
+                    EventType.SYNC_COMPLETE, 
+                    filter_func=lambda e: e.payload.get("resource_type") == "StableCircuit",
+                    timeout=60.0 # Timeout for sync
+                )
+            except Exception as e:
+                logger.warning(f"StableCircuit sync failed or timed out: {e}")
+
+            # 2. Sync Library
+            sync_payload_lib = SyncPayload(
+                sync_id=str(uuid.uuid4()),
+                project_id=self.project_id,
+                resource_type="Library"
+            )
+            await self.ws_client.emit(EventType.SYNC_TRIGGER, sync_payload_lib)
+            try:
+                await self.ws_client.wait_for_event(
+                    EventType.SYNC_COMPLETE, 
+                    filter_func=lambda e: e.payload.get("resource_type") == "Library",
+                    timeout=60.0
+                )
+            except Exception as e:
+                logger.warning(f"Library sync failed or timed out: {e}")
+
         result_msg = message.copy()
         
 
@@ -374,11 +417,16 @@ class ANADStateMachine:
         result_msg = message.copy()
         result_msg["state_id"] = State.TRIGGER_W2
         
-        agent = ANA_validation_agent(ws_client=self.ws_client)
+        agent = ANA_validation_agent(
+            ws_client=self.ws_client,
+            sync_client=self.sync_client,
+            project_id=self.project_id
+        )
         try:
             result = await agent.validate_circuit(
                 self.circuit_name, 
-                workspace=self.iteration_manager.current_iteration_dir
+                workspace=self.iteration_manager.current_iteration_dir,
+                iteration_id=self.iteration_manager.current_iteration_id
             )
             vap_decision = result.get("decision")
             result_msg["vap_decision"] = vap_decision
@@ -469,6 +517,26 @@ class ANADStateMachine:
         if self.state == State.EXIT_SUCCESS:
             task_id = self.current_message.get("task_id", None)
             logger.info("Simulation Finished: SUCCESS")
+            
+            # Workflow 1.3: If ACCEPT, move to Stable and Sync
+            self.iteration_manager.move_to_stable()
+            
+            if self.project_id and self.ws_client:
+                logger.info("[ANA-D SM] Synchronizing Stable and Library after ACCEPT")
+                # Trigger sync for Library
+                await self.ws_client.emit(EventType.SYNC_TRIGGER, SyncPayload(
+                    sync_id=str(uuid.uuid4()),
+                    project_id=self.project_id,
+                    resource_type="Library"
+                ))
+                # Trigger sync for StableCircuit
+                await self.ws_client.emit(EventType.SYNC_TRIGGER, SyncPayload(
+                    sync_id=str(uuid.uuid4()),
+                    project_id=self.project_id,
+                    resource_type="StableCircuit",
+                    data={"circuit_name": self.circuit_name}
+                ))
+
             if self.ws_client:
                 logger.info(f"Sending evaluation update for task_id: {task_id}")
                 await self.ws_client.emit_evaluation_update(task_id=task_id, decision="ACCEPT")

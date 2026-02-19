@@ -23,43 +23,55 @@ class ANA_validation_agent:
     3. Poll for evaluation status.
     4. Collect and extract evaluation results.
     """
-    def __init__(self, ws_client: VHLWebSocketClient, minio_url: str = "http://127.0.0.1:9000"):
+    def __init__(self, ws_client: VHLWebSocketClient, sync_client: Optional[Any] = None, project_id: Optional[str] = None, minio_url: str = "http://127.0.0.1:9000"):
         self.ws_client = ws_client
+        self.sync_client = sync_client
+        self.project_id = project_id
         self.minio_url = minio_url
         self.object_store = MinioObjectStore(endpoint_url=minio_url)
 
-    async def validate_circuit(self, circuit_name: str, workspace: str) -> Dict[str, Any]:
+    async def validate_circuit(self, circuit_name: str, workspace: str, iteration_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Process the circuit file: upload to object store, invoke VAP, poll for status, and collect results.
         """
         logger.info(f"Identified circuit for validation: {circuit_name}")
 
         # Find path of the specified circuit file
-        # If circuit_name ends with .tsx, use it directly; otherwise, append .tsx
         if circuit_name.endswith('.tsx'):
             circuit_path = os.path.join(workspace, circuit_name)
         else:
             circuit_path = os.path.join(workspace, f"{circuit_name}.tsx")
-        
-        # Check if the circuit file exists
-        # NOTE: Observe if this block is ever hit during normal operation. If not, consider removing it.
+            
         if not os.path.exists(circuit_path):
-            # capture warning 
-            logger.warning(f"Circuit file {circuit_name} not found in workspace: {workspace}")
-            logger.info(f"Attempting to find any .tsx file in workspace: {workspace}")
-            # Find all .tsx files in the workspace directory
             tsx_files = [f for f in os.listdir(workspace) if f.endswith('.tsx')]
             if not tsx_files:
                 raise FileNotFoundError(f"No .tsx circuit files found in workspace: {workspace}")
-            # Use the first .tsx file found
             circuit_path = os.path.join(workspace, tsx_files[0])
             circuit_name = os.path.splitext(os.path.basename(circuit_path))[0]
         
         logger.info(f"Using circuit file: {circuit_path}")
 
-        # 1. Upload the circuit tsx file to Object store
-        logger.info(f"Step 1: Uploading {circuit_path} to object store...")
-        blob_id = self.object_store.upload_file(circuit_path)
+        # 1. Sync the circuit tsx file to Runtime
+        logger.info(f"Step 1: Syncing {circuit_path} to VHL Runtime...")
+        if self.sync_client and self.project_id:
+            # Workflow 1.2: Agent -> Runtime upload proposal for Circuit
+            await self.sync_client.propose_upload(
+                project_id=self.project_id,
+                resource_type="Circuit",
+                iteration_id=iteration_id,
+                intent="EVALUATION",
+                data={"circuit_name": circuit_name}
+            )
+            # Find blob_id (SyncClient provides it in UPLOAD_PROPOSAL, but we need it for VAP_INIT)
+            # Actually, compute it here too or have SyncClient return it
+            import hashlib
+            with open(circuit_path, "rb") as f:
+                file_hash = hashlib.sha256(f.read()).hexdigest()
+            blob_id = f"{self.project_id}/Circuit/{file_hash}"
+        else:
+            logger.warning("SyncClient or ProjectID not available, falling back to manual upload")
+            blob_id = self.object_store.upload_file(circuit_path)
+        
         logger.info(f"Uploaded as blob_id: {blob_id}")
 
         # 2. Invoke VAP with the circuit object id
@@ -111,39 +123,35 @@ class ANA_validation_agent:
                 logger.error(f"Unknown decision '{decision}' received.")
                 raise RuntimeError(f"Unknown decision '{decision}' received from VAP.")
 
-        # 4. Once evaluation is complete, collect evaluation results
-        logger.info("Step 4: Collecting evaluation results...")
-
-        #TODO: path refinement
-        # output_dir = os.path.join(os.getcwd(), "ana_worker_2", "results", task_id)
-        # Set output directory to workspace/evaluation_results
-        output_dir = os.path.join(workspace, "evaluation_results")
-        download_dir = os.path.join(workspace, "downloads")
-
-        os.makedirs(output_dir, exist_ok=True)
-        os.makedirs(download_dir, exist_ok=True)
+        # 4. Once evaluation is complete, sync evaluation results
+        logger.info("Step 4: Syncing evaluation results...")
+        output_dir = os.path.join(workspace, "eval_results")
         
-        downloaded_files = []
-        # Download and extract results from the blob_id in metadata
-        results_blob_id = evaluation_metadata.get("results_blob_id")
-        if results_blob_id:
-            logger.info(f"Downloading results from blob_id: {results_blob_id}")
-            zip_path = os.path.join(download_dir, "evaluation_results.zip")
-            try:
+        if self.sync_client and self.project_id:
+             # Workflow 1.2: Runtime -> Agent download for Evaluation
+             sync_payload = SyncPayload(
+                 sync_id=str(uuid.uuid4()),
+                 project_id=self.project_id,
+                 iteration_id=iteration_id,
+                 resource_type="Evaluation",
+                 intent="RESULT"
+             )
+             await self.ws_client.emit(EventType.SYNC_TRIGGER, sync_payload)
+             # Wait for SYNC_COMPLETE
+             await self.ws_client.wait_for_event(
+                 EventType.SYNC_COMPLETE,
+                 filter_func=lambda e: e.payload.get("resource_type") == "Evaluation"
+             )
+        else:
+            # Fallback (partial implementation of original Step 4)
+            results_blob_id = evaluation_metadata.get("results_blob_id")
+            if results_blob_id:
+                zip_path = os.path.join(workspace, "evaluation_results.zip")
                 self.object_store.download_file(results_blob_id, zip_path)
-                logger.info(f"Downloaded results to {zip_path}")
-                
-                # Extract the zip file
                 with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                     zip_ref.extractall(output_dir)
-                    logger.info(f"Extracted results to {output_dir}")
-
-                downloaded_files.append(zip_path)
-                downloaded_files.extend([os.path.join(output_dir, f) for f in os.listdir(output_dir)])
-            except Exception as e:
-                logger.error(f"Failed to download/extract results ({results_blob_id}): {e}")
-        else:
-            logger.warning("No results_blob_id found in evaluation metadata")
+            
+        logger.info("Step 4: Sync complete.")
 
         # 5. Delegate back to ANA-D
         # The return value provides all necessary info for ANA-D to continue.
