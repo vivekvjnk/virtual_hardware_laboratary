@@ -46,6 +46,7 @@ export type EventType =
     | "UPLOAD_REQUEST"
     | "UPLOAD_PROPOSAL"
     | "DOWNLOAD_REQUEST"
+    | "SYNC_TRIGGER"
     | "SYNC_COMPLETE"
     | "SYNC_ERROR"
 

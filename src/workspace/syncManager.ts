@@ -78,6 +78,9 @@ export class SyncManager {
         if (!syncId) return;
 
         switch (msg.type) {
+            case "SYNC_TRIGGER":
+                await this.startSync(payload.project_id, payload.resource_type, payload.iteration_id, payload.intent ?? undefined);
+                break;
             case "HASH_RESPONSE":
                 await this.handleHashResponse(payload);
                 break;
