@@ -241,7 +241,20 @@ class AOSM:
             await self.transition_to(AOSMState.BOOTSTRAP_PIPELINE, "New schematic uploaded", payload=event.payload)
         elif event.type == EventType.HUMAN_INPUT:
             await self.transition_to(AOSMState.INTENT_CLASSIFY, "User message received", payload=event.payload)
-
+        
+        elif event.type == EventType.SYNTHESIZE_CIRCUIT:
+            info = self.workspace_manager.get_workspace_info()
+            if info.get("is_synthesizable"):
+                self.current_message["circuit_id"] = info.get("circuit_name")
+                await self.transition_to(AOSMState.TRIGGER_ANA, "User triggered synthesis")
+            else:
+                logger.warning("[AOSM] SYNTHESIZE_CIRCUIT received but project not synthesizable")
+                await self.ws_client.emit_event(BaseEvent(
+                    type=EventType.ERROR,
+                    source=EventSource.BACKEND,
+                    payload={"message": "Project not ready for synthesis. Please upload schematic first."}
+                ))
+        
     async def _handle_bootstrap_pipeline(self, event: BaseEvent):
         # We trigger the bootstrap logic upon entering this state.
         if event.type == EventType.STATE_TRANSITION:

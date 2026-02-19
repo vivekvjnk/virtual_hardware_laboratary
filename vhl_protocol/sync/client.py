@@ -28,11 +28,11 @@ class SyncClient:
         elif resource_type == "Circuit":
             circuit_name = data.get("circuit_name") if data else "circuit"
             if iteration_id:
-                return os.path.join(project_root, "iterations", iteration_id, f"{circuit_name}.tsx")
+                return os.path.join(project_root, "Iterations", iteration_id, f"{circuit_name}.tsx")
             return os.path.join(project_root, f"{circuit_name}.tsx")
         elif resource_type == "Evaluation":
             if iteration_id:
-                return os.path.join(project_root, "iterations", iteration_id, "eval_results")
+                return os.path.join(project_root, "Iterations", iteration_id, "eval_results")
             return os.path.join(project_root, "eval_results")
         elif resource_type == "StableCircuit":
             circuit_name = data.get("circuit_name") if data else "circuit"
@@ -65,7 +65,7 @@ class SyncClient:
                  await self.send_sync_error(event.payload["sync_id"], event.payload["project_id"], str(e))
 
     async def handle_hash_request(self, payload: SyncPayload):
-        logger.info(f"Handling HASH_REQUEST for {payload.resource_type} (sync_id={payload.sync_id})")
+        logger.info(f"[SyncClient: handle_hash_request] Handling HASH_REQUEST for {payload.resource_type} (sync_id={payload.sync_id})")
         path = self.get_resource_path(payload.project_id, payload.resource_type, payload.iteration_id, payload.data)
         
         hash_val = None
@@ -74,7 +74,9 @@ class SyncClient:
                 hash_val = compute_directory_hash(path)
             else:
                 hash_val = compute_file_hash(path)
-        
+        else:
+            logger.info(f"[SyncClient: handle_hash_request] Path doesn't exist: {path}")
+
         response_payload = SyncPayload(
             sync_id=payload.sync_id,
             project_id=payload.project_id,

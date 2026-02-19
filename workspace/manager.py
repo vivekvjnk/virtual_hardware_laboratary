@@ -72,6 +72,14 @@ class WorkspaceManager:
             self.current_iteration_path = None
             self.previous_iteration_path = None
         
+        # If any .scud file is available in the project root, set the circuit name
+        scud_files = list(self.project_root.glob("*.scud"))
+        if scud_files:
+            self.circuit_name = scud_files[0].stem
+            logger.info(f"Circuit name set to: {self.circuit_name}")
+        else:
+            logger.warning(f"No .scud file found in project root: {self.project_root}")
+        
         # Ensure other standard directories exist or at least we know about them
         (self.project_root / "Stable").mkdir(exist_ok=True)
         (self.project_root / "UserArtefacts").mkdir(exist_ok=True)

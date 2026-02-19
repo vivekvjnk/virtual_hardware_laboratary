@@ -505,7 +505,7 @@ class ANADStateMachine:
             task_id = self.current_message.get("task_id", None)
             logger.exception(f"Unexpected error in ANA-D SM run loop: {e}")    
             payload = {"reason":"ERROR","task_id":task_id, "decision":"ERROR", "message": str(e)}
-            self.parent_notify(payload)
+            await self.parent_notify(payload)
             return
         
         task_id = self.current_message.get("task_id", None)
@@ -516,12 +516,12 @@ class ANADStateMachine:
                        "decision":"ACCEPT", 
                        "iteration_dir":self.current_message.get("iteration_dir"),
                        "from_state":self.current_message.get("from_state_id")}
-            self.parent_notify(payload)
+            await self.parent_notify(payload)
             
         elif self.state == State.EXIT_ABORT:
             logger.info("Simulation Finished: ABORTED")
             payload = {"reason":"EXIT","task_id":task_id, "decision":"REJECT", "from_state":self.current_message.get("from_state_id")}
-            self.parent_notify(payload)
+            await self.parent_notify(payload)
             
 if __name__ == "__main__":
     sm = ANADStateMachine(max_auto_fixes=5)
