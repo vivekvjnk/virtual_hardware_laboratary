@@ -33,6 +33,10 @@ export type EventType =
     // Project Initialization
     | "CREATE_PROJECT"
     | "PROJECT_CREATED"
+    | "LOAD_PROJECT"
+    | "PROJECT_LOADED"
+    | "LIST_PROJECTS"
+    | "PROJECTS_LIST"
     | "VHL_WORKSPACE_READY"
     // Dev Server Management
     | "START_DEV_SERVER"

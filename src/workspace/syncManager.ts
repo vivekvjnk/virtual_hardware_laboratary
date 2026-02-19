@@ -21,7 +21,7 @@ export class SyncManager {
 
     private getResourcePath(projectId: string, resourceType: ResourceType, iterationId?: string | null, data?: Record<string, any>): string {
         // Match the layout in Python SyncClient
-        const projectRoot = path.join(this.workspaceDir, "projects", projectId);
+        const projectRoot = path.join(this.workspaceDir, projectId);
 
         switch (resourceType) {
             case "Library":

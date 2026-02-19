@@ -61,7 +61,7 @@ export class RelayAgentHandler implements AgentHandler {
             }
         } else if (this.role === "agent") {
             // Agent (Backend) -> UI (Runtime) or Workspace Client
-            if (msg.type == "PROJECT_CREATED") {
+            if (msg.type == "PROJECT_CREATED" || msg.type == "PROJECT_LOADED") {
                 // Send message to uiclient and workspace client
                 RelayAgentHandler.uiClients.forEach(uiSend => uiSend(msg))
                 if (RelayAgentHandler.workspaceClient) {

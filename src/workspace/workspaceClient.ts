@@ -131,9 +131,10 @@ export class WorkspaceClient implements WorkspaceSender {
                 this.startVapStatusReporting(taskId, context);
                 break;
             }
-            case "PROJECT_CREATED": {
-                const { project_id, project_name } = msg.payload; // project_name might be in payload?
-                console.log('[WorkspaceClient] Project id:', project_id);
+            case "PROJECT_CREATED":
+            case "PROJECT_LOADED": {
+                const { project_id, project_name } = msg.payload;
+                console.log(`[WorkspaceClient] Project ${msg.type === "PROJECT_CREATED" ? 'created' : 'loaded'}:`, project_id);
                 this.currentProjectId = project_id;
                 this.currentProjectName = project_name || project_id;
 
@@ -157,6 +158,9 @@ export class WorkspaceClient implements WorkspaceSender {
                 const relativePath = path.relative(this.workspaceDir, this.projectDir!);
                 const targetFile = path.join(relativePath, "index.circuit.tsx");
                 const reloadUrl = `http://localhost:3020/#file=${encodeURIComponent(targetFile)}`;
+
+                // Start dev server for the project
+                await this.startDevServer(this.projectDir);
 
                 this.send({
                     id: randomUUID(),
