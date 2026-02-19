@@ -3,7 +3,7 @@ import json
 import uuid
 import zipfile
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from openhands.sdk import get_logger
 from ana_agent.ana_worker_2.utils.object_store import MinioObjectStore
@@ -152,7 +152,6 @@ class ANA_validation_agent:
             "decision": decision,
             "results": results,
             "output_dir": output_dir,
-            "downloaded_files": downloaded_files,
             "metadata": evaluation_metadata
         }
 

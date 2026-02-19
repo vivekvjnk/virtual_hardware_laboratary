@@ -11,7 +11,7 @@ from ..models import (
     AuthorityRequiredPayload, ErrorPayload,
     IdentifyPayload, WorkspacePayload,
     VAPInitPayload, VAPStatusPayload,
-    SyncPayload
+    SyncPayload, ProjectsListPayload
 )
 
 logger = logging.getLogger(__name__)
@@ -230,6 +230,10 @@ class VHLWebSocketClient:
     async def emit_workspace_upload(self, message: str = "Requesting workspace upload"):
         payload = WorkspacePayload(message=message)
         await self.emit(EventType.WORKSPACE_UPLOAD, payload)
+
+    async def emit_projects_list(self, projects: List[str]):
+        payload = ProjectsListPayload(projects=projects)
+        await self.emit(EventType.PROJECTS_LIST, payload)
 
     async def emit_workspace_download(self, reference_id: str, storage_path: str, filename: str):
         payload = WorkspacePayload(reference_id=reference_id, storage_path=storage_path, filename=filename)

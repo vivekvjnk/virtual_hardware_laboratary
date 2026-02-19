@@ -30,9 +30,11 @@ class EventType(str, Enum):
     # Runtime -> Backend
     CREATE_PROJECT = "CREATE_PROJECT"
     LOAD_PROJECT = "LOAD_PROJECT"
+    LIST_PROJECTS = "LIST_PROJECTS"
     # Backend -> Runtime
     PROJECT_CREATED = "PROJECT_CREATED"
     PROJECT_LOADED = "PROJECT_LOADED"
+    PROJECTS_LIST = "PROJECTS_LIST"
 
     # Workspace Management
     WORKSPACE_DOWNLOAD = "WORKSPACE_DOWNLOAD"
@@ -140,6 +142,9 @@ class VAPStatusPayload(BaseModel):
     results: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
+
+class ProjectsListPayload(BaseModel):
+    projects: List[str]
 
 class HILRequestPayload(BaseModel):
     reason: str

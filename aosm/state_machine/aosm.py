@@ -1,12 +1,8 @@
 import asyncio
 import logging
-import json
 import os
-import zipfile
-import tempfile
-import shutil
 import boto3
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 from pathlib import Path
 from state_machine.states import AOSMState
 from vhl_protocol.client.client import VHLWebSocketClient
@@ -38,13 +34,13 @@ class AOSM:
             "observations": []
         }
         self.event_queue = asyncio.Queue()
-        self.workspace_manager = WorkspaceManager("ana_workspace")
+        self.workspace_manager = WorkspaceManager("vhl_workspace")
         self.project_root_info: Optional[Dict[str, Any]] = None
         self.active_ana_sm: Optional[ANADStateMachine] = None
         self.ana_inbox: Optional[asyncio.Queue] = None
         self._main_loop_task: Optional[asyncio.Task] = None
         self.project_id: Optional[str] = None
-        self.sync_client = SyncClient(self.ws_client, "ana_workspace")
+        self.sync_client = SyncClient(self.ws_client, "vhl_workspace")
         
         # Minio configuration (should ideally be from env)
         self.s3_client = boto3.client(
@@ -207,6 +203,20 @@ class AOSM:
                     }
                 ))
                 
+                # Trigger sync for StableCircuit and Library (Agent to Runtime)
+                try:
+                    # Check if StableCircuit exists before proposing
+                    stable_path = self.sync_client.get_resource_path(project_id, "StableCircuit")
+                    if os.path.exists(stable_path):
+                         await self.sync_client.propose_upload(project_id, "StableCircuit")
+                    
+                    # Check if Library exists before proposing
+                    lib_path = self.sync_client.get_resource_path(project_id, "Library")
+                    if os.path.exists(lib_path):
+                        await self.sync_client.propose_upload(project_id, "Library")
+                except Exception as e:
+                    logger.warning(f"[AOSM] Auto-sync failed on project load (this is expected if project is empty): {e}")
+
                 # Transition to IDLE state
                 await self.transition_to(AOSMState.IDLE, f"Project {project_id} loaded successfully")
             except Exception as e:
@@ -218,6 +228,11 @@ class AOSM:
                         "message": f"Failed to load project: {str(e)}"
                     }
                 ))
+        
+        elif event.type == EventType.LIST_PROJECTS:
+            logger.info("[AOSM] Listing projects...")
+            projects = self.workspace_manager.list_projects()
+            await self.ws_client.emit_projects_list(projects)
 
     async def _handle_idle(self, event: BaseEvent):
         logger.info(f"[AOSM] In IDLE state... Event: {event}")
