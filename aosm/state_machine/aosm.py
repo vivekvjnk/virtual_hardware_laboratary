@@ -10,7 +10,7 @@ from typing import Optional, Dict, Any, List
 from pathlib import Path
 from state_machine.states import AOSMState
 from vhl_protocol.client.client import VHLWebSocketClient
-from vhl_protocol.models import BaseEvent, EventType, EventSource
+from vhl_protocol.models import BaseEvent, EventType, EventSource, SyncPayload
 from vhl_protocol.sync.client import SyncClient
 
 import uuid
@@ -43,6 +43,7 @@ class AOSM:
         self.active_ana_sm: Optional[ANADStateMachine] = None
         self.ana_inbox: Optional[asyncio.Queue] = None
         self._main_loop_task: Optional[asyncio.Task] = None
+        self.project_id: Optional[str] = None
         self.sync_client = SyncClient(self.ws_client, "ana_workspace")
         
         # Minio configuration (should ideally be from env)
@@ -157,7 +158,8 @@ class AOSM:
             payload = event.payload or {}
             project_name = payload.get("project_name", "untitled")
             # Generate project_id with <project_name>_<UID>
-            project_id = f"{project_name}_{uuid.uuid4().hex[:5]}"
+            project_id = f"{project_name}_{uuid.uuid4().hex[:8]}"
+            self.project_id = project_id
             
             logger.info(f"[AOSM] Creating new project: {project_id}")
             project_root = self.workspace_manager.create_project(project_id)
@@ -231,6 +233,22 @@ class AOSM:
             self.current_message["circuit_id"] = image_id
             if scud_path:
                 await self._run_librarian(scud_path)
+                
+                # Workflow 1.1: Sync lib/imports from VHL runtime to Agent backend
+                if self.project_id:
+                    sync_payload = SyncPayload(
+                        sync_id=str(uuid.uuid4()),
+                        project_id=self.project_id,
+                        resource_type="Library"
+                    )
+                    await self.ws_client.emit(EventType.SYNC_TRIGGER, sync_payload)
+                    # Wait for SYNC_COMPLETE
+                    logger.info(f"[AOSM] Waiting for Library sync to complete...")
+                    await self.ws_client.wait_for_event(
+                        EventType.SYNC_COMPLETE,
+                        filter_func=lambda e: e.payload.get("resource_type") == "Library"
+                    )
+                
                 # Transition to TRIGGER_ANA to start the ANA-D state machine
                 await self.transition_to(AOSMState.TRIGGER_ANA, "Bootstrap and Component resolution completed")
 
@@ -257,74 +275,49 @@ class AOSM:
         # Add user message to the current message observations
         self.current_message["observations"].append(event.payload.get("content", "No message provided"))
         logger.info(f"[AOSM] Current message: {self.current_message}")
-        # Transition to PREPARE_ANA_RUN or WAIT_FOR_USER if ambiguous
+        
+        # Transition to PREPARE_ANA_RUN
         await self.transition_to(AOSMState.PREPARE_ANA_RUN, "Intent classified as modification", payload=event.payload)
-        # Request workspace client to prepare and upload workspace
-        await self.ws_client.emit_workspace_upload(message="Preparing workspace for modification run")
+        
+        # Request workspace sync for StableCircuit and Library (Runtime to Agent)
+        if self.project_id:
+            logger.info("[AOSM] Triggering sync for StableCircuit and Library")
+            await self.ws_client.emit(EventType.SYNC_TRIGGER, SyncPayload(
+                sync_id=str(uuid.uuid4()),
+                project_id=self.project_id,
+                resource_type="StableCircuit"
+            ))
+            # Library sync will be handled in PREPARE_ANA_RUN or sequence
 
     async def _handle_prepare_ana_run(self, event: BaseEvent):
         logger.info("[AOSM] Preparing ANA run...")
         
-        if event.type in [EventType.WORKSPACE_SYNC_COMPLETE]:
-            logger.info(f"[AOSM] Received workspace upload confirmation: {event}")
-            reference_id = event.artifact_id
-            if not reference_id:
-                logger.error("[AOSM] No artifact_id provided in WORKSPACE_UPLOAD event")
-                await self.transition_to(AOSMState.ERROR_PRESENTED, "Missing workspace reference")
-                return
+        if event.type == EventType.SYNC_COMPLETE:
+            resource_type = event.payload.get("resource_type")
+            logger.info(f"[AOSM] Sync complete for {resource_type}")
+            
+            if resource_type == "StableCircuit":
+                # Now sync Library
+                await self.ws_client.emit(EventType.SYNC_TRIGGER, SyncPayload(
+                    sync_id=str(uuid.uuid4()),
+                    project_id=self.project_id,
+                    resource_type="Library"
+                ))
+            elif resource_type == "Library":
+                # Both synced, find the circuit file in Stable to set as circuit_code_path
+                stable_dir = self.workspace_manager.project_root / "Stable"
+                tsx_files = list(stable_dir.glob("*.tsx"))
+                if tsx_files:
+                    self.current_message["circuit_code_path"] = str(tsx_files[0])
+                    await self.transition_to(AOSMState.TRIGGER_ANA, "Workspace synced and ready")
+                else:
+                    logger.error("[AOSM] No .tsx file found in Stable after sync")
+                    await self.transition_to(AOSMState.ERROR_PRESENTED, "Missing circuit code in Stable")
+        
+        elif event.type == EventType.SYNC_ERROR:
+            logger.error(f"[AOSM] Sync failed: {event.payload}")
+            await self.transition_to(AOSMState.ERROR_PRESENTED, f"Sync failed: {event.payload.get('reason')}")
 
-            try:
-                # 3. Download the workspace zip, extract and store circuit code under a predefined directory
-                circuit_path = await self._download_and_extract_workspace(reference_id)
-                logger.info(f"[AOSM] Circuit code extracted to: {circuit_path}")
-                
-                # Update current message with the circuit path for the next states
-                self.current_message["circuit_code_path"] = str(circuit_path)
-                
-                # 4. Transition to TRIGGER_ANA once workspace is ready
-                await self.transition_to(AOSMState.TRIGGER_ANA, "Workspace ready for ANA run", payload=event.payload)
-            except Exception as e:
-                logger.error(f"[AOSM] Failed to prepare workspace: {e}", exc_info=True)
-                await self.transition_to(AOSMState.ERROR_PRESENTED, f"Workspace preparation failed: {str(e)}")
-        else:
-            logger.info(f"[AOSM] Still waiting for workspace upload (Received: {event.type})")
-
-    async def _download_and_extract_workspace(self, reference_id: str) -> Path:
-        """Downloads the workspace zip and extracts the circuit file."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_zip = Path(temp_dir) / "workspace.zip"
-            
-            # Download from Minio
-            logger.info(f"Downloading {reference_id} from bucket {self.bucket_name}...")
-            await asyncio.to_thread(
-                self.s3_client.download_file, 
-                self.bucket_name, 
-                reference_id, 
-                str(temp_zip)
-            )
-            
-            # Extract
-            extract_dir = Path(temp_dir) / "extracted"
-            extract_dir.mkdir()
-            with zipfile.ZipFile(temp_zip, 'r') as zip_ref:
-                zip_ref.extractall(extract_dir)
-            
-            # Find the circuit .tsx file
-            # For now, we assume there's a .tsx file or we take the first one found
-            tsx_files = list(extract_dir.glob("**/*.tsx"))
-            if not tsx_files:
-                raise FileNotFoundError("No .tsx circuit file found in workspace zip")
-            
-            # Pick the first one (or we could have more logic here)
-            source_tsx = tsx_files[0]
-            
-            # Store in predefined directory
-            dest_dir = self.workspace_manager.workspace_root / "current_run"
-            dest_dir.mkdir(parents=True, exist_ok=True)
-            dest_tsx = dest_dir / source_tsx.name
-            
-            shutil.copy2(source_tsx, dest_tsx)
-            return dest_tsx
 
     async def _handle_trigger_ana(self, event: BaseEvent):
         if event.type == EventType.STATE_TRANSITION:
@@ -350,6 +343,9 @@ class AOSM:
                 circuit_name=circuit_id,
                 observations=observations,
                 ws_client=self.ws_client,
+                sync_client=self.sync_client,
+                project_id=self.project_id,
+                workspace=self.workspace_manager.project_root,
                 parent_notify=self._parent_notify,
                 inbox_queue=self.ana_inbox
             )

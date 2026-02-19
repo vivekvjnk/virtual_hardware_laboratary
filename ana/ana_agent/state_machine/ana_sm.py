@@ -16,6 +16,7 @@ from ana_agent.ana_worker_2.agent import ANA_validation_agent
 from ana_agent.state_machine.states import State
 from ana_agent.state_machine.mcp_manager import MCPManager
 from vhl_protocol.client.client import VHLWebSocketClient
+from vhl_protocol.models import EventType, SyncPayload
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,9 @@ class ANADStateMachine:
                  max_auto_fixes: int = 3, 
                  observations: List[str] = None, 
                  ws_client: Optional[VHLWebSocketClient] = None,
+                 sync_client: Optional[Any] = None,
+                 project_id: Optional[str] = None,
+                 workspace: Optional[Path] = None,
                  parent_notify: Optional[callable] = None,
                  inbox_queue: Optional[asyncio.Queue] = None):
         '''
@@ -36,6 +40,8 @@ class ANADStateMachine:
         # Inputs/Observations - Now handled via current_message for transparency
         self.max_auto_fixes = max_auto_fixes
         self.ws_client = ws_client
+        self.sync_client = sync_client
+        self.project_id = project_id
         self.parent_notify = parent_notify
         self.inbox_queue = inbox_queue if inbox_queue is not None else asyncio.Queue()
         
@@ -133,6 +139,44 @@ class ANADStateMachine:
 
     async def _handle_init(self, message: Dict[str, Any]) -> Dict[str, Any]:
         logger.info(f"[ANA-D SM] State: INIT. Triggered from: {message.get('from_state_id')}\n{"*"*30}\n{message}\n{"*"*30}")
+        
+        # Workflow 2/3: Synchronize Stable and Library
+        if self.project_id and self.ws_client:
+            logger.info(f"[ANA-D SM INIT] Synchronizing StableCircuit and Library for project {self.project_id}")
+            
+            # 1. Sync StableCircuit
+            sync_payload_stable = SyncPayload(
+                sync_id=str(uuid.uuid4()),
+                project_id=self.project_id,
+                resource_type="StableCircuit",
+                data={"circuit_name": self.circuit_name}
+            )
+            await self.ws_client.emit(EventType.SYNC_TRIGGER, sync_payload_stable)
+            try:
+                await self.ws_client.wait_for_event(
+                    EventType.SYNC_COMPLETE, 
+                    filter_func=lambda e: e.payload.get("resource_type") == "StableCircuit",
+                    timeout=60.0 # Timeout for sync
+                )
+            except Exception as e:
+                logger.warning(f"StableCircuit sync failed or timed out: {e}")
+
+            # 2. Sync Library
+            sync_payload_lib = SyncPayload(
+                sync_id=str(uuid.uuid4()),
+                project_id=self.project_id,
+                resource_type="Library"
+            )
+            await self.ws_client.emit(EventType.SYNC_TRIGGER, sync_payload_lib)
+            try:
+                await self.ws_client.wait_for_event(
+                    EventType.SYNC_COMPLETE, 
+                    filter_func=lambda e: e.payload.get("resource_type") == "Library",
+                    timeout=60.0
+                )
+            except Exception as e:
+                logger.warning(f"Library sync failed or timed out: {e}")
+
         result_msg = message.copy()
         
 
@@ -370,7 +414,11 @@ class ANADStateMachine:
         result_msg = message.copy()
         result_msg["state_id"] = State.TRIGGER_W2
         
-        agent = ANA_validation_agent(ws_client=self.ws_client)
+        agent = ANA_validation_agent(
+            ws_client=self.ws_client,
+            sync_client=self.sync_client,
+            project_id=self.project_id
+        )
         try:
             result = await agent.validate_circuit(
                 self.circuit_name, 
