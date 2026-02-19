@@ -35,25 +35,7 @@ class ANA_validation_agent:
         logger.info(f"Identified circuit for validation: {circuit_name}")
 
         # Find path of the specified circuit file
-        # If circuit_name ends with .tsx, use it directly; otherwise, append .tsx
-        if circuit_name.endswith('.tsx'):
-            circuit_path = os.path.join(workspace, circuit_name)
-        else:
-            circuit_path = os.path.join(workspace, f"{circuit_name}.tsx")
-        
-        # Check if the circuit file exists
-        # NOTE: Observe if this block is ever hit during normal operation. If not, consider removing it.
-        if not os.path.exists(circuit_path):
-            # capture warning 
-            logger.warning(f"Circuit file {circuit_name} not found in workspace: {workspace}")
-            logger.info(f"Attempting to find any .tsx file in workspace: {workspace}")
-            # Find all .tsx files in the workspace directory
-            tsx_files = [f for f in os.listdir(workspace) if f.endswith('.tsx')]
-            if not tsx_files:
-                raise FileNotFoundError(f"No .tsx circuit files found in workspace: {workspace}")
-            # Use the first .tsx file found
-            circuit_path = os.path.join(workspace, tsx_files[0])
-            circuit_name = os.path.splitext(os.path.basename(circuit_path))[0]
+        circuit_path = os.path.join(workspace, f"{circuit_name}.tsx")
         
         logger.info(f"Using circuit file: {circuit_path}")
 

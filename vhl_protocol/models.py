@@ -29,8 +29,10 @@ class EventType(str, Enum):
     # Project Management
     # Runtime -> Backend
     CREATE_PROJECT = "CREATE_PROJECT"
+    LOAD_PROJECT = "LOAD_PROJECT"
     # Backend -> Runtime
     PROJECT_CREATED = "PROJECT_CREATED"
+    PROJECT_LOADED = "PROJECT_LOADED"
 
     # Workspace Management
     WORKSPACE_DOWNLOAD = "WORKSPACE_DOWNLOAD"

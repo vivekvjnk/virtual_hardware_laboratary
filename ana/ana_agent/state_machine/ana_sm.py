@@ -15,23 +15,22 @@ from ana_agent.ana_worker_2.agent import ANA_validation_agent
 
 from ana_agent.state_machine.states import State
 from ana_agent.state_machine.mcp_manager import MCPManager
-from ana_agent.state_machine.iteration_manager import IterationManager
 from vhl_protocol.client.client import VHLWebSocketClient
 
 logger = logging.getLogger(__name__)
 
 class ANADStateMachine:
-    def __init__(self, 
+    def __init__(self,
+                 workspace_manager,
+                 circuit_name:str, 
                  max_auto_fixes: int = 3, 
-                 circuit_code_path: str = None, 
                  observations: List[str] = None, 
                  ws_client: Optional[VHLWebSocketClient] = None,
                  parent_notify: Optional[callable] = None,
                  inbox_queue: Optional[asyncio.Queue] = None):
-        # TODO Done: ANA state machine can be initialized with a circuit code path
-        # This allows stateless circuit code correction and manipulation.
-        # Caller can inject the circuit code path. __init__ function should propagate the path to handle_init through message passing.
-        # Caller can also inject observations list to the function. This list will be passed through messages to the state machine.
+        '''
+        circuit_name: Name of the circuit without any extensions
+        '''
 
         self.state = State.INIT
         # Inputs/Observations - Now handled via current_message for transparency
@@ -41,12 +40,11 @@ class ANADStateMachine:
         self.inbox_queue = inbox_queue if inbox_queue is not None else asyncio.Queue()
         
         # Project Info
-        # TODO : Make project info configurable
-        self.circuit_name: str = "bq79616_eval_board"
-        self.workspace = Path(os.getcwd()) / "ana_workspace" / f"{self.circuit_name}_project"
+        self.circuit_name = circuit_name # NOTE : circuit_name should never contain extension
+        self.workspace_manager = workspace_manager
+        self.workspace_manager.set_circuit_name(self.circuit_name)
 
         # Managers
-        self.iteration_manager = IterationManager(self.workspace, self.circuit_name)
         self.mcp_manager = MCPManager(endpoint="http://localhost:8001")
 
         # Initial Message
@@ -56,8 +54,6 @@ class ANADStateMachine:
             "auto_fix_count": 0,
             "observations": observations if observations else []
         }
-        if circuit_code_path:
-            self.current_message.update({"circuit_code_path": circuit_code_path})
 
         # State Transition Table
         self.transition_table = {
@@ -141,37 +137,32 @@ class ANADStateMachine:
         
 
         observations = message.get("observations",[])
-        circuit_code_path = message.get("circuit_code_path",None)
         
-        if self.iteration_manager.is_first_iteration():
-            logger.info(f"[ANA-D SM INIT] First iteration. Observations: {observations}, Circuit Code Path: {circuit_code_path}")
-            if num_iterations := self.iteration_manager.get_number_of_iterations() > 0:
-                logger.warning(f"[ANA-D SM INIT] Completed first iteration. Resetting first iteration flag. Current iteration count: {num_iterations}")
-                self.iteration_manager.reset_first_iteration()
+        if self.workspace_manager.is_first_iteration() and (num_iterations := self.workspace_manager.get_session_iteration_count() > 0):
+            logger.warning(f"[ANA-D SM INIT] Iteration_{self.workspace_manager.get_session_iteration_count()}: Resetting first iteration flag. Current session iteration count: {num_iterations}")
+            self.workspace_manager.reset_first_iteration()
 
-        # NOTE: Out of the 3 conditions checked here, 
-        #       - is_first_iteration and len(observations)>0 are the authoritative decision makers
-        #       - If Both these conditions are true, we are in user triggered error correction cycle.
-        # TODO: As of now, ANA state machine accept observations and circuit_code_path from AOSM. Then we move the circuit code from the given path to a local iteration directory. From the perspective of every other states in ANA-D state machine, this is just another iteration with some observations. This is a temporary workaround until we derive stable project directory structure and file management strategy. 
-        # Hence the additional conditional logic based on circuit_code_path can be removed without any side effects in future refactor.
-        # Check how many iterations are present in iteration manager
-        if (self.iteration_manager.is_first_iteration()) and (len(observations)>0) and (circuit_code_path is not None):
-            last_iteration_id = str(uuid.uuid4()).split("-")[0][:8] # First 8 characters of UUID
-            logger.info(f"[ANA-D SM INIT] First iteration with user-provided circuit code and observations. Preparing iteration directory with provided circuit code. Iteration ID: {last_iteration_id}")
-            self.iteration_manager.prepare_iteration_with_files(source_file=circuit_code_path,iteration_id=last_iteration_id)
-            # Set first iteration flag to true for downstream states
-            # Remove the circuit code path from message. This is no longer required.
-            result_msg.pop("circuit_code_path") 
+        # Check how many iterations are present in session
+        if (self.workspace_manager.is_first_iteration()) and (len(observations)>0):
+            last_iteration_id_suffix = str(uuid.uuid4()).split("-")[0][:8] # First 8 characters of UUID
+            logger.info(f"[ANA-D SM INIT] First iteration with user-provided circuit code and observations. Preparing iteration directory with provided circuit code. Suffix: {last_iteration_id_suffix}")
+
+            # get the circuit code path from Stable/ directory. Pass to prepare_iteration_with_files
+            # NOTE: Assumption: Before reaching init, workspace sync is carried out between VHL Runtime and Agent backend. Hence Stable/ directory contents are in sync with VHL runtime.
+            circuit_code_path = self.workspace_manager.get_circuit_path_from_stable()
+            self.workspace_manager.prepare_iteration_with_files(source_file=str(circuit_code_path), iteration_id_suffix=last_iteration_id_suffix)
+            
         else: # Debug observability
-            logger.info(f"[ANA-D SM INIT] Starting new iteration without user-provided circuit code. Observations: {observations}, Circuit Code Path: {circuit_code_path}, First Iteration: {self.iteration_manager.is_first_iteration()}")
+            logger.info(f"[ANA-D SM INIT] Starting new iteration without user-provided circuit code. Observations: {observations}, First Iteration: {self.workspace_manager.is_first_iteration()}")
         
-        iteration_id = str(uuid.uuid4()).split("-")[0][:8]
-        self.iteration_manager.start_new_iteration(iteration_id)
+        iteration_id_suffix = str(uuid.uuid4()).split("-")[0][:8]
+        iteration_path = self.workspace_manager.create_new_iteration(iteration_id_suffix)
         
         # INIT handler is responsible for clearing the iteration-specific state
         result_msg.update({
             "state_id": State.INIT,
-            "iteration_id": iteration_id,
+            "iteration_id": iteration_id_suffix,
+            "iteration_dir": str(iteration_path)
         })
                 
         return result_msg
@@ -183,7 +174,7 @@ class ANADStateMachine:
         
         observations = result_msg.get("observations", [])
         
-        if self.iteration_manager.is_first_iteration():
+        if self.workspace_manager.is_first_iteration():
             logger.info("[ANA-D SM Observe] First iteration. Skipping observation of previous iteration.")
             
             # Check if result message contain intent_status or error_class. If not, observe is triggered from user message
@@ -206,7 +197,9 @@ class ANADStateMachine:
             return result_msg
 
 
-        previous_dir = self.iteration_manager.get_previous_iteration_dir()
+        previous_dir = self.workspace_manager.previous_iteration_path
+        if previous_dir:
+            previous_dir = str(previous_dir)
         logger.info(f"[ANA-D SM Observe] Observing previous iteration: {previous_dir}")
         
         observer = ObserverAgent()
@@ -286,6 +279,7 @@ class ANADStateMachine:
             
         elif vap_decision == "ACCEPT":
             if intent_status == "satisfied":
+                result_msg["iteration_dir"] = str(self.workspace_manager.previous_iteration_path)
                 proposed_next = State.EXIT_SUCCESS
             else:
                 result_msg["hil_wait_packet"] = {"reason":"ANA_HIL_REQUIRED", "message": "VAP accepted the circuit but intent is not fully satisfied. Human intervention required to decide if intent violation is acceptable or not."}
@@ -321,8 +315,9 @@ class ANADStateMachine:
         result_msg["auto_fix_count"] = auto_fix_count
         
         try:
-            scud_path = self.iteration_manager.get_scud_path()
-            schematic_images_path = os.path.join(self.iteration_manager.current_iteration_dir, "schematic_images")
+            scud_path = self.workspace_manager.get_scud_path()
+            current_iter_dir = self.workspace_manager.current_iteration_path
+            schematic_images_path = os.path.join(current_iter_dir, "schematic_images")
             observations = result_msg.get("observations", [])
 
 
@@ -333,29 +328,30 @@ class ANADStateMachine:
             # There are perceivably two operating modes for ANA-W1. Error correction and Synthesis. 
             # If observations are present and previous iteration directory is not none, 
             # ANA-W1 is triggered in Error Correction mode. Otherwise Synthesis mode
-            if len(observations)>0 and (previous_iter_dir:=self.iteration_manager.get_previous_iteration_dir()):
+            previous_iter_dir = self.workspace_manager.previous_iteration_path
+            if len(observations)>0 and previous_iter_dir:
                 logger.info("[ANA-D SM] ANA-W1 in error correction mode (triggered from PREPARE_FIX).")
                 await asyncio.to_thread(
                     run_ana_w1_agent,
-                    workspace=str(self.iteration_manager.current_iteration_dir),
+                    workspace=str(current_iter_dir),
                     schematic_images_path=schematic_images_path,
-                    scud_path=scud_path,
+                    scud_path=str(scud_path),
                     circuit_name=self.circuit_name,
                     observations=observations,
-                    previous_iteration_dir=previous_iter_dir,
+                    previous_iteration_dir=str(previous_iter_dir),
                 )
             else:
                 logger.info("[ANA-D SM] ANA-W1 in synthesis mode (not triggered from PREPARE_FIX).")
                 await asyncio.to_thread(
                     run_ana_w1_agent,
-                    workspace=str(self.iteration_manager.current_iteration_dir),
+                    workspace=str(current_iter_dir),
                     schematic_images_path=schematic_images_path,
-                    scud_path=scud_path,
+                    scud_path=str(scud_path),
                     circuit_name=self.circuit_name,
                     observations=observations
                 )
             
-            if not os.path.exists(self.iteration_manager.get_circuit_tsx_path()):
+            if not os.path.exists(self.workspace_manager.get_circuit_tsx_path()):
                 logger.error(f"[ANA-D SM] ANA-W1 did not produce circuit file")
                 result_msg["hil_wait_packet"] = {"reason":"ANA_ERROR", "message": "ANA-W1 did not produce circuit file"}
                 result_msg["proposed_next_state"] = State.PREPARE_HIL
@@ -378,7 +374,7 @@ class ANADStateMachine:
         try:
             result = await agent.validate_circuit(
                 self.circuit_name, 
-                workspace=self.iteration_manager.current_iteration_dir
+                workspace=str(self.workspace_manager.current_iteration_path)
             )
             vap_decision = result.get("decision")
             result_msg["vap_decision"] = vap_decision
@@ -400,7 +396,7 @@ class ANADStateMachine:
         hil_packet = result_msg.get("hil_wait_packet", None)
         if not hil_packet:
             logger.warning("[ANA-D SM] No HIL packet found in message. Using default packet.")
-            hil_packet = {"reason":"ANA_HIL_REQUIRED", "message": "Unknown reason. Human intervention required."}
+            hil_packet = {"reason":"HIL_REQUIRED", "message": "Unknown reason. Human intervention required."}
 
         if self.parent_notify:
             logger.info(f"[ANA-D SM] Notifying parent of HIL requirement. HIL packet content: {hil_packet}")
@@ -458,28 +454,27 @@ class ANADStateMachine:
             while not self.is_terminal():
                 await self.step()
         except Exception as e:
-            logger.exception(f"Unexpected error in ANA-D SM run loop: {e}")
-            # Get current task_id
             task_id = self.current_message.get("task_id", None)
-            if self.ws_client:
-                # Notify AOSM of the error and terminal failure
-                await self.ws_client.emit_error(scope="ana-d", severity="critical", message=str(e))
+            logger.exception(f"Unexpected error in ANA-D SM run loop: {e}")    
+            payload = {"reason":"ERROR","task_id":task_id, "decision":"ERROR", "message": str(e)}
+            self.parent_notify(payload)
             return
-
+        
+        task_id = self.current_message.get("task_id", None)
         if self.state == State.EXIT_SUCCESS:
-            task_id = self.current_message.get("task_id", None)
             logger.info("Simulation Finished: SUCCESS")
-            if self.ws_client:
-                logger.info(f"Sending evaluation update for task_id: {task_id}")
-                await self.ws_client.emit_evaluation_update(task_id=task_id, decision="ACCEPT")
-        elif self.state == State.HIL_WAIT:
-            logger.info("State Machine paused at HIL_WAIT. Awaiting user input.")
-            # NOTE: In a real system, we might want to notify AOSM that we are waiting for HIL
+            payload = {"reason":"EXIT",
+                       "task_id":task_id, 
+                       "decision":"ACCEPT", 
+                       "iteration_dir":self.current_message.get("iteration_dir"),
+                       "from_state":self.current_message.get("from_state_id")}
+            self.parent_notify(payload)
+            
         elif self.state == State.EXIT_ABORT:
             logger.info("Simulation Finished: ABORTED")
-            if self.ws_client:
-                await self.ws_client.emit_evaluation_update(task_id=task_id, decision="REJECT")
-
+            payload = {"reason":"EXIT","task_id":task_id, "decision":"REJECT", "from_state":self.current_message.get("from_state_id")}
+            self.parent_notify(payload)
+            
 if __name__ == "__main__":
     sm = ANADStateMachine(max_auto_fixes=5)
     asyncio.run(sm.run())
