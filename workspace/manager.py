@@ -367,11 +367,30 @@ class WorkspaceManager:
 
     def get_workspace_info(self) -> Dict[str, Any]:
         """Returns information about the current workspace status."""
+        is_synthesizable = False
+        if self.project_root:
+            has_schematic_images = (self.project_root / "schematic_images").exists() and (self.project_root / "schematic_images").is_dir()
+            has_user_artefacts = (self.project_root / "UserArtefacts").exists() and (self.project_root / "UserArtefacts").is_dir()
+            scud_files = list(self.project_root.glob("*.scud"))
+            
+            # Also check if UserArtefacts has any images
+            has_images = False
+            if has_user_artefacts:
+                has_images = any(f.suffix.lower() in ['.png', '.jpg', '.jpeg'] for f in (self.project_root / "UserArtefacts").iterdir() if f.is_file())
+
+            if has_schematic_images and has_user_artefacts and has_images and scud_files:
+                is_synthesizable = True
+                # If circuit_name is not set, try to infer it from scud file
+                if not self.circuit_name:
+                    self.circuit_name = scud_files[0].stem
+
         return {
             "project_id": self.project_id,
             "project_root_path": str(self.project_root) if self.project_root else None,
             "project_contents": [item.name for item in self.project_root.iterdir()] if self.project_root else [],
             "current_iteration_path": str(self.current_iteration_path) if self.current_iteration_path else None,
             "previous_iteration_path": str(self.previous_iteration_path) if self.previous_iteration_path else None,
-            "iteration_count": self._iteration_count if hasattr(self, "_iteration_count") else 0
+            "iteration_count": self._iteration_count if hasattr(self, "_iteration_count") else 0,
+            "is_synthesizable": is_synthesizable,
+            "circuit_name": self.circuit_name
         }

@@ -188,6 +188,7 @@ class AOSM:
             logger.info(f"[AOSM] Loading project: {project_id}")
             try:
                 project_root = self.workspace_manager.load_project(project_id)
+                self.project_id = project_id
                 
                 # Store project root information in class variable
                 self.project_root_info = self.workspace_manager.get_workspace_info()
