@@ -31,13 +31,14 @@ export class RelayAgentHandler implements AgentHandler {
             // UI (Runtime) -> Agent (Backend)
             // 1. Always relay to Agent if connected
             if (RelayAgentHandler.agentClient) {
-                console.debug("[RelayAgentHandler] Relaying message from UI to Agent:", msg)
+                console.debug("[Websocket Relay] Relaying message from UI to VHL_Agent_Backend:", msg)
                 RelayAgentHandler.agentClient(msg)
             }
 
             // 2. Route specific messages to Workspace Client (Irrespective of Agent connectivity)
             if (msg.type === "START_DEV_SERVER" || msg.type === "GET_SYSTEM_STATE") {
                 if (RelayAgentHandler.workspaceClient) {
+                    console.debug("[Websocket Relay] Relaying message from UI to VHL_Runtime:", msg)
                     RelayAgentHandler.workspaceClient(msg)
                 } else {
                     send({ type: "ERROR", payload: { message: "No workspace client connected", scope: "runtime", severity: "error" } } as any)

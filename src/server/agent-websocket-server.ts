@@ -36,7 +36,7 @@ export class AgentWebSocketServer {
         })
 
         this.wss.on("connection", (ws: WebSocket) => {
-            console.log("AgentWebSocketServer: New client connected")
+            console.log("[Websocket Relay]: New client connected")
 
             const handler = this.createHandler()
 
@@ -52,13 +52,13 @@ export class AgentWebSocketServer {
 
             ws.on("message", async (data: any) => {
                 const dataString = data.toString()
-                console.debug(`[AgentWS] Received raw message: ${dataString}`)
+                console.debug(`[Websocket Relay] Received raw message: ${dataString}`)
                 try {
                     const msg = JSON.parse(dataString) as WebSocketMessage
-                    console.log(`[AgentWS] Handling message of type: ${msg.type}`)
+                    console.log(`[Websocket Relay] Handling message of type: ${msg.type}`)
                     await handler.onMessage(msg, send)
                 } catch (err) {
-                    console.error("[AgentWS] Error handling message:", err, dataString)
+                    console.error("[Websocket Relay] Error handling message:", err, dataString)
                     ws.send(JSON.stringify({
                         type: "ERROR",
                         payload: { message: "Internal server error handling message", scope: "runtime", severity: "error" }
@@ -67,14 +67,14 @@ export class AgentWebSocketServer {
             })
 
             ws.on("close", (code, reason) => {
-                console.log(`[AgentWS] Client disconnected. Code: ${code}, Reason: ${reason}`)
+                console.log(`[Websocket Relay] Client disconnected. Code: ${code}, Reason: ${reason}`)
                 if (handler.onDisconnect) {
                     handler.onDisconnect()
                 }
             })
 
             ws.onerror = (err: any) => {
-                console.error("AgentWebSocketServer: WebSocket error", err)
+                console.error("[Websocket Relay]: WebSocket error", err)
             }
         })
 

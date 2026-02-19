@@ -27,6 +27,7 @@ export class WorkspaceClient implements WorkspaceSender {
     private currentProjectId: string | null = null;
     private currentProjectName: string | null = null;
     private syncManager: SyncManager;
+    private isSynthesizable: boolean = false;
 
     constructor(serverUrl: string, workspaceDir: string = WORKSPACE_DIR) {
         this.serverUrl = serverUrl;
@@ -133,10 +134,11 @@ export class WorkspaceClient implements WorkspaceSender {
             }
             case "PROJECT_CREATED":
             case "PROJECT_LOADED": {
-                const { project_id, project_name } = msg.payload;
+                const { project_id, is_synthesizable } = msg.payload;
                 console.log(`[WorkspaceClient] Project ${msg.type === "PROJECT_CREATED" ? 'created' : 'loaded'}:`, project_id);
                 this.currentProjectId = project_id;
-                this.currentProjectName = project_name || project_id;
+                this.currentProjectName = project_id;
+                this.isSynthesizable = !!is_synthesizable;
 
                 this.projectDir = path.join(this.workspaceDir, project_id);
                 setProjectDir(this.projectDir);
@@ -248,7 +250,8 @@ export class WorkspaceClient implements WorkspaceSender {
                         state,
                         project_id: this.currentProjectId,
                         project_name: this.currentProjectName,
-                        project_dir: this.projectDir
+                        project_dir: this.projectDir,
+                        is_synthesizable: this.isSynthesizable
                     }
                 });
                 break;
