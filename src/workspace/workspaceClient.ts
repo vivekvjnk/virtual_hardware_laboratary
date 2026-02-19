@@ -134,11 +134,11 @@ export class WorkspaceClient implements WorkspaceSender {
             }
             case "PROJECT_CREATED":
             case "PROJECT_LOADED": {
-                const { project_id, is_synthesizable } = msg.payload;
+                const { project_id, workspace_info } = msg.payload;
                 console.log(`[WorkspaceClient] Project ${msg.type === "PROJECT_CREATED" ? 'created' : 'loaded'}:`, project_id);
                 this.currentProjectId = project_id;
                 this.currentProjectName = project_id;
-                this.isSynthesizable = !!is_synthesizable;
+                this.isSynthesizable = !!workspace_info?.is_synthesizable;
 
                 this.projectDir = path.join(this.workspaceDir, project_id);
                 setProjectDir(this.projectDir);
@@ -206,6 +206,7 @@ export class WorkspaceClient implements WorkspaceSender {
                     // Reset to root
                     this.currentProjectId = null;
                     this.currentProjectName = null;
+                    this.isSynthesizable = false;
                 }
 
                 // Construct URL
@@ -251,7 +252,9 @@ export class WorkspaceClient implements WorkspaceSender {
                         project_id: this.currentProjectId,
                         project_name: this.currentProjectName,
                         project_dir: this.projectDir,
-                        is_synthesizable: this.isSynthesizable
+                        workspace_info: {
+                            is_synthesizable: this.isSynthesizable
+                        }
                     }
                 });
                 break;
@@ -269,6 +272,7 @@ export class WorkspaceClient implements WorkspaceSender {
             case "UPLOAD_PROPOSAL":
             case "SYNC_COMPLETE":
             case "SYNC_ERROR":
+            case "SYNC_TRIGGER":
                 await this.syncManager.handleMessage(msg as AgentMessage);
                 break;
             default:

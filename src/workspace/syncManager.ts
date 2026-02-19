@@ -126,13 +126,30 @@ export class SyncManager {
             return;
         }
 
+        // Gracefully ignore if authoritative side is null (resource doesn't exist)
+        const isAgentAuthoritative = resource_type === "Evaluation" || (resource_type === "Circuit" && payload.intent === "EVALUATION");
+
+        if ((isAgentAuthoritative && remoteHash === null) || (!isAgentAuthoritative && localHash === null)) {
+            console.log(`[Sync] Authoritative side (${isAgentAuthoritative ? "Agent" : "Runtime"}) has null hash for ${resource_type}. Gracefully ignoring.`);
+            this.sender.send({
+                id: randomUUID(),
+                type: "SYNC_COMPLETE",
+                source: "vhl_workspace",
+                timestamp: new Date().toISOString(),
+                artifact_id: null,
+                payload: { sync_id, project_id, resource_type }
+            });
+            this.activeSyncs.delete(sync_id);
+            return;
+        }
+
         // Authority logic: 
         // Evaluation moves from Agent -> Runtime (UPLOAD)
         // Others might depend on intent. 
         // For simplicity: if local is null -> REQUEST_DOWNLOAD, if remote is null -> REQUEST_UPLOAD
         // If mismatch: trigger based on resource type authority.
 
-        if (resource_type === "Evaluation" || (resource_type === "Circuit" && payload.intent === "EVALUATION")) {
+        if (isAgentAuthoritative) {
             // Agent is authoritative for evaluations
             await this.requestUpload(payload);
         } else {

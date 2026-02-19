@@ -68,9 +68,11 @@ export class RelayAgentHandler implements AgentHandler {
                 if (RelayAgentHandler.workspaceClient) {
                     RelayAgentHandler.workspaceClient(msg)
                 }
-            }
+            } // To workspace client
             else if (msg.type === "WORKSPACE_DOWNLOAD" || msg.type === "WORKSPACE_UPLOAD" ||
-                msg.type === "VAP_INIT" || msg.type === "VAP_DECISION" || msg.type === "START_DEV_SERVER") {
+                msg.type === "VAP_INIT" || msg.type === "VAP_DECISION" || msg.type === "START_DEV_SERVER" ||
+                msg.type === "SYNC_TRIGGER" || msg.type === "UPLOAD_PROPOSAL" || msg.type === "HASH_REQUEST" || 
+                msg.type === "HASH_RESPONSE") {
                 if (RelayAgentHandler.workspaceClient) {
                     RelayAgentHandler.workspaceClient(msg)
                 } else {
