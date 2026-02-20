@@ -183,7 +183,7 @@ export class SyncManager {
             // Actually if local is null, we might want to download from agent if agent has it.
         }
 
-        const blobId = `${payload.project_id}/${payload.resource_type}/${payload.hash}`;
+        const blobId = `${payload.project_id}/${payload.resource_type}/${localHash}`;
         console.log(`[Sync] Instructing Agent to download ${blobId}`);
 
         await this.sender.send({
