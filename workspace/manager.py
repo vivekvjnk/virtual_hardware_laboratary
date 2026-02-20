@@ -33,7 +33,7 @@ class WorkspaceManager:
         """Lists all project IDs available in the workspace."""
         if not self.workspace_root.exists():
             return []
-        return [d.name for d in self.workspace_root.iterdir() if d.is_dir()]
+        return [d.name for d in self.workspace_root.iterdir() if (d.is_dir() and d.name != ".sync_scratch")]
 
     def load_project(self, project_id: str) -> Path:
         """
@@ -386,6 +386,8 @@ class WorkspaceManager:
             has_images = False
             if has_user_artefacts:
                 has_images = any(f.suffix.lower() in ['.png', '.jpg', '.jpeg'] for f in (self.project_root / "UserArtefacts").iterdir() if f.is_file())
+
+            logger.info(f"has_schematic_images: {has_schematic_images}, has_user_artefacts: {has_user_artefacts}, has_images: {has_images}, scud_files: {scud_files}")
 
             if has_schematic_images and has_user_artefacts and has_images and scud_files:
                 is_synthesizable = True

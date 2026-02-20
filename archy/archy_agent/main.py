@@ -4,13 +4,66 @@ import logging
 from pathlib import Path
 from typing import Union
 from archy_agent.image_to_schematic.image_to_segments import run_schematic_segmentation_pipeline
-from archy_agent.scud_gen_agent import archy_build_scud
-
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("archy_orchestrator")
 
+def _archy_build_scud_stub(image_id: str, workspace_path: Path):
+    """Stub implementation of archy_build_scud for faster validation."""
+
+    # Step 1
+    workspace = Path(workspace_path).resolve()    
+    # 1. Image Segmentation
+    # Source image is assumed to be at <workspace>/UserArtefacts/<image_id>.png
+    image_path = workspace / "UserArtefacts" / f"{image_id}.png"
+    
+    # Predefined output directory for segments
+    # Consistent with standard naming and scud_gen_agent's expected structure
+    output_dir = workspace / "schematic_images" / image_id
+    
+    logger.info(f"Starting orchestration for image_id: {image_id}")
+    logger.info(f"Workspace: {workspace}")
+    logger.info(f"Source Image Path: {image_path}")
+    
+    if not image_path.exists():
+        raise FileNotFoundError(f"Source image not found at {image_path}")
+
+    # Step 1: Run Segmentation Pipeline
+    logger.info("Running image segmentation pipeline...")
+    try:
+        segmentation_result = run_schematic_segmentation_pipeline(
+            output_dir=output_dir,
+            image_path=image_path
+        )
+        logger.info(f"Segmentation pipeline finished. Detections: {segmentation_result.get('num_detections', 0)}")
+    except Exception as e:
+        logger.error(f"Error during image segmentation: {e}")
+        raise
+
+    # Validation: Verify segments were created
+    if not output_dir.exists() or not any(output_dir.glob("*.png")):
+        raise RuntimeError(f"Validation failed: No cropped images found in segment directory {output_dir}")
+    
+    logger.info(f"Validation success: Segments found in {output_dir}")
+
+    
+    
+    # Step 2
+    logger.info(f"[STUB] Generating dummy SCUD document for image_id: {image_id}")
+    
+    # Create dummy SCUD file
+    scud_file = workspace / f"{image_id}.scud"
+    # Load mock SCUD content from VHL_agent_backend/tests/Mocks/Archy/bms_bq_sys_c195dff2_eval_board_0b36a.scud
+    with open("tests/Mocks/Archy/bms_bq_sys_c195dff2_eval_board_0b36a.scud", "r") as f:
+        scud_content = f.read()
+    
+    with open(scud_file, "w") as f:
+        f.write(scud_content)
+
+    logger.info(f"[STUB] Dummy SCUD document generated: {scud_file}")
+    return scud_file
+    
 def orchestrate_archy(workspace_path: Union[str, Path], image_id: str):
     """
     Main orchestration function for the Archy module.
@@ -29,6 +82,7 @@ def orchestrate_archy(workspace_path: Union[str, Path], image_id: str):
     """
     workspace = Path(workspace_path).resolve()
     
+    
     # 1. Image Segmentation
     # Source image is assumed to be at <workspace>/UserArtefacts/<image_id>.png
     image_path = workspace / "UserArtefacts" / f"{image_id}.png"
@@ -45,7 +99,7 @@ def orchestrate_archy(workspace_path: Union[str, Path], image_id: str):
         raise FileNotFoundError(f"Source image not found at {image_path}")
 
     # Step 1: Run Segmentation Pipeline
-    logger.info("Skipping Step 1/2: Running image segmentation pipeline...")
+    logger.info("Running image segmentation pipeline...")
     try:
         segmentation_result = run_schematic_segmentation_pipeline(
             output_dir=output_dir,
@@ -64,14 +118,18 @@ def orchestrate_archy(workspace_path: Union[str, Path], image_id: str):
 
     # Step 2: Trigger Archy Agent (Scud Generation)
     logger.info("Step 2/2: Triggering Archy agent for SCUD generation...")
-    try:
-        archy_build_scud(
-            image_id=image_id,
-            workspace=workspace
-        )
-    except Exception as e:
-        logger.error(f"Error during SCUD generation: {e}")
-        raise
+    if os.environ.get("ARCHY_STUB") == "true":
+        _archy_build_scud_stub(image_id=image_id, workspace_path=workspace)
+    else:
+        from archy_agent.scud_gen_agent import archy_build_scud
+        try:
+            archy_build_scud(
+                image_id=image_id,
+                workspace=workspace
+            )
+        except Exception as e:
+            logger.error(f"Error during SCUD generation: {e}")
+            raise
 
     # Final Verification: Check if scud document is created in workspace
     scud_file = workspace / f"{image_id}.scud"

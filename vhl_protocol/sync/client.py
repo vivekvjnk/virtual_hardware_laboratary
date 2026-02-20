@@ -9,7 +9,7 @@ from ..utils.zip import compress_directory, decompress_zip, atomic_replace_direc
 import tempfile
 from pathlib import Path
 import asyncio
-import uuid
+import uuid, shutil
 
 logger = logging.getLogger(__name__)
 
@@ -92,40 +92,53 @@ class SyncClient:
     async def handle_download_request(self, payload: SyncPayload):
         logger.info(f"Handling DOWNLOAD_REQUEST for {payload.resource_type} (sync_id={payload.sync_id})")
         target_path = self.get_resource_path(payload.project_id, payload.resource_type, payload.iteration_id, payload.data)
-        
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_file = os.path.join(tmp_dir, "downloaded_blob")
-            await asyncio.to_thread(self.minio.download_file, payload.blob_id, tmp_file)
-            
-            # Verify hash
-            computed_hash = compute_file_hash(tmp_file) if payload.resource_type in ["Circuit", "StableCircuit"] else None
-            # If it's a directory, we need to unzip first to compute directory hash? 
-            # Or is the blob hash the directory hash?
-            # The spec says "Verify computed hash matches declared hash". 
-            # For directories, the blob is a zip of the directory, but the 'hash' in the payload is the directory hash.
-            # So we MUST unzip to verify.
-            
+        #make sure target path exists
+        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+
+        scratch_dir = Path(self.base_dir) / ".sync_scratch" / str(uuid.uuid4())
+        scratch_dir.mkdir(parents=True, exist_ok=True)
+
+        try:
+            tmp_file = scratch_dir / "downloaded_blob"
+            await asyncio.to_thread(self.minio.download_file, payload.blob_id, str(tmp_file))
+
             if payload.resource_type in ["Library", "Evaluation"]:
-                extract_dir = os.path.join(tmp_dir, "extracted")
-                decompress_zip(tmp_file, extract_dir)
-                computed_hash = compute_directory_hash(extract_dir)
+                extract_dir = scratch_dir / "extracted"
+                extract_dir.mkdir(parents=True, exist_ok=True)
+                decompress_zip(str(tmp_file), str(extract_dir))
+                computed_hash = compute_directory_hash(str(extract_dir))
+                logger.info(f"[handle_download_request]Computed hash: {computed_hash}, Declared hash: {payload.hash}")
                 if computed_hash != payload.hash:
                     raise ValueError(f"Hash mismatch! Expected {payload.hash}, got {computed_hash}")
                 
-                atomic_replace_directory(extract_dir, target_path)
+                atomic_replace_directory(str(extract_dir), str(target_path))
             else:
+                computed_hash = compute_file_hash(str(tmp_file))
+                logger.info(f"[handle_download_request]Computed hash: {computed_hash}, Declared hash: {payload.hash}")
                 if computed_hash != payload.hash:
                     raise ValueError(f"Hash mismatch! Expected {payload.hash}, got {computed_hash}")
-                atomic_replace_file(tmp_file, target_path)
+                logger.info(f"[handle_download_request]Hash verified for {payload.resource_type}")
+                atomic_replace_file(str(tmp_file), str(target_path))
 
-        # Notify completion
-        complete_payload = SyncPayload(
-            sync_id=payload.sync_id,
-            project_id=payload.project_id,
-            iteration_id=payload.iteration_id,
-            resource_type=payload.resource_type
-        )
-        await self.ws_client.emit(EventType.SYNC_COMPLETE, complete_payload)
+            # Notify completion
+            logger.info(f"[handle_download_request]Completed download for {payload.resource_type}")
+            complete_payload = SyncPayload(
+                sync_id=payload.sync_id,
+                project_id=payload.project_id,
+                iteration_id=payload.iteration_id,
+                resource_type=payload.resource_type
+            )
+            await self.ws_client.emit(EventType.SYNC_COMPLETE, complete_payload)
+        
+        except Exception as e:
+            logger.error(f"Error handling download request for {payload.resource_type}: {e}", exc_info=True)
+            # We should probably send a SYNC_ERROR here if we have a sync_id
+            if hasattr(payload, "sync_id"):
+                await self.send_sync_error(payload.sync_id, payload.project_id, str(e))
+        finally:
+            # Clean up scratch directory
+            if scratch_dir.exists():
+                shutil.rmtree(str(scratch_dir))
 
     async def propose_upload(self, project_id: str, resource_type: str, iteration_id: Optional[str] = None, intent: Optional[str] = None, data: Optional[Dict[str, Any]] = None):
         """Trigger an upload proposal from the agent side."""

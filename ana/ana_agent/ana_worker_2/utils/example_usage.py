@@ -1,4 +1,4 @@
-from mcp_utils import list_mcp_tools, call_mcp_function
+from vhl_protocol.utils.mcp_utils import list_mcp_tools, call_mcp_function
 import json
 
 def main():

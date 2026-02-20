@@ -13,8 +13,9 @@ import uuid
 import base64
 from ana_agent.state_machine import ANADStateMachine
 from workspace.manager import WorkspaceManager
-from archy_agent.main import orchestrate_archy
+from archy_agent.main import orchestrate_archy, _archy_build_scud_stub
 from librarian_agent.agent import LibrarianAgent
+from librarian_agent.stub import process_scud_stub
 
 logger = logging.getLogger(__name__)
 
@@ -488,31 +489,39 @@ class AOSM:
 
         # 2. Trigger Archy
         logger.info(f"[AOSM-BOOTSTRAP] Triggering Archy orchestration for image: {image_id}")
-        try:
-            # orchestrate_archy is CPU intensive/blocking, run in thread
-            scud_path = await asyncio.to_thread(
-                orchestrate_archy, 
-                workspace_path=project_root, 
-                image_id=image_id
-            )
-            logger.info(f"[AOSM-BOOTSTRAP] Archy completed successfully. SCUD generated at: {scud_path}")
+        if os.environ.get("STUBS") == "true":
+            logger.info("[AOSM-BOOTSTRAP] Running Archy in STUB mode")
+            scud_path = _archy_build_scud_stub(workspace_path=project_root, image_id=image_id)
+        else:    
+            try:
+                # orchestrate_archy is CPU intensive/blocking, run in thread
+                scud_path = await asyncio.to_thread(
+                    orchestrate_archy, 
+                    workspace_path=project_root, 
+                    image_id=image_id
+                )
+                logger.info(f"[AOSM-BOOTSTRAP] Archy completed successfully. SCUD generated at: {scud_path}")    
+                # Update current message with the SCUD path for ANA trigger
+                
+            except Exception as e:
+                logger.error(f"[AOSM-BOOTSTRAP] Archy orchestration failed: {e}")
+                await self.transition_to(AOSMState.ERROR_PRESENTED, f"Archy failed: {str(e)}")
+                return None
             
-            # Update current message with the SCUD path for ANA trigger
-            
-            return scud_path,image_id
-        except Exception as e:
-            logger.error(f"[AOSM-BOOTSTRAP] Archy orchestration failed: {e}")
-            await self.transition_to(AOSMState.ERROR_PRESENTED, f"Archy failed: {str(e)}")
-            return None
+        return scud_path,image_id
 
     async def _run_librarian(self, scud_path: Path):
         """Logic for triggering Librarian Agent to resolve components."""
         logger.info(f"[AOSM-BOOTSTRAP] Triggering Librarian Agent for SCUD: {scud_path}")
         try:
-            # LibrarianAgent defaults to http://localhost:8080/mcp
-            librarian = LibrarianAgent()
-            # process_scud involves network/LLM, run in thread
-            await asyncio.to_thread(librarian.process_scud, str(scud_path))
+            if os.environ.get("STUBS") == "true":
+                logger.info("[AOSM-BOOTSTRAP] Running Librarian in STUB mode")
+                await asyncio.to_thread(process_scud_stub, str(scud_path))
+            else:
+                # LibrarianAgent defaults to http://localhost:8080/mcp
+                librarian = LibrarianAgent()
+                # process_scud involves network/LLM, run in thread
+                await asyncio.to_thread(librarian.process_scud, str(scud_path))
             logger.info(f"[AOSM-BOOTSTRAP] Librarian Agent completed successfully")
         except Exception as e:
             logger.error(f"[AOSM-BOOTSTRAP] Librarian Agent failed: {e}")
