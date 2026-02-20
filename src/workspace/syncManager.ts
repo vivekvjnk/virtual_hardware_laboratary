@@ -99,7 +99,7 @@ export class SyncManager {
     }
 
     private async handleHashResponse(payload: SyncPayload) {
-        const { sync_id, project_id, iteration_id, resource_type, hash: remoteHash } = payload;
+        const { sync_id, project_id, iteration_id, resource_type, hash: remoteHash, intent } = payload;
         const localPath = this.getResourcePath(project_id, resource_type, iteration_id, payload.data);
 
         let localHash: string | null = null;
@@ -112,50 +112,70 @@ export class SyncManager {
 
         console.log(`[Sync] Comparing hashes for ${resource_type}: Local=${localHash}, Remote=${remoteHash}`);
 
+        // 1. If hashes match and both are not null, we are in sync
         if (localHash === remoteHash && localHash !== null) {
-            console.log(`[Sync] Hashes match. Sync complete.`);
-            this.sender.send({
-                id: randomUUID(),
-                type: "SYNC_COMPLETE",
-                source: "vhl_workspace",
-                timestamp: new Date().toISOString(),
-                artifact_id: null,
-                payload: { sync_id, project_id, resource_type }
-            });
-            this.activeSyncs.delete(sync_id);
+            console.log(`[Sync] Hashes match for ${resource_type}. Sync complete.`);
+            return this.sendSyncComplete(sync_id, project_id, resource_type);
+        }
+
+        // 2. Specialized Authority Logic for Library
+        if (resource_type === "Library") {
+            if (localHash === null && remoteHash === null) {
+                console.log(`[Sync] Both hashes null for Library. Provision for Librarian trigger in syncfsm.`);
+                // We complete the sync phase here; syncfsm can decide to trigger librarian
+                return this.sendSyncComplete(sync_id, project_id, resource_type);
+            }
+
+            if (localHash !== null) {
+                // Runtime is authoritative if it has library content (even if backend has different content)
+                // This covers: Normal New Project workflow AND Special Cases where backend is null/corrupted
+                await this.requestDownload(payload, localHash);
+            } else {
+                // localHash is null, remoteHash is NOT null
+                // Case: Project Load - Backend has library, Runtime starts as blank slate.
+                await this.requestUpload(payload);
+            }
             return;
         }
 
-        // Gracefully ignore if authoritative side is null (resource doesn't exist)
-        const isAgentAuthoritative = resource_type === "Evaluation" || (resource_type === "Circuit" && payload.intent === "EVALUATION");
-
-        if ((isAgentAuthoritative && remoteHash === null) || (!isAgentAuthoritative && localHash === null)) {
-            console.log(`[Sync] Authoritative side (${isAgentAuthoritative ? "Agent" : "Runtime"}) has null hash for ${resource_type}. Gracefully ignoring.`);
-            this.sender.send({
-                id: randomUUID(),
-                type: "SYNC_COMPLETE",
-                source: "vhl_workspace",
-                timestamp: new Date().toISOString(),
-                artifact_id: null,
-                payload: { sync_id, project_id, resource_type }
-            });
-            this.activeSyncs.delete(sync_id);
-            return;
-        }
-
-        // Authority logic: 
-        // Evaluation moves from Agent -> Runtime (UPLOAD)
-        // Others might depend on intent. 
-        // For simplicity: if local is null -> REQUEST_DOWNLOAD, if remote is null -> REQUEST_UPLOAD
-        // If mismatch: trigger based on resource type authority.
+        // 3. Authority logic for other resources (Evaluation, Circuit, StableCircuit)
+        const isAgentAuthoritative = resource_type === "Evaluation" || (resource_type === "Circuit" && intent === "EVALUATION");
 
         if (isAgentAuthoritative) {
             // Agent is authoritative for evaluations
+            if (remoteHash === null) {
+                console.log(`[Sync] Agent is authority but remote hash is null for ${resource_type}. Skipping.`);
+                return this.sendSyncComplete(sync_id, project_id, resource_type);
+            }
             await this.requestUpload(payload);
         } else {
-            // Runtime is authoritative for Libraries and StableCircuits
-            await this.requestDownload(payload, localHash);
+            // Runtime is authoritative for StableCircuits and normal Circuits
+            if (localHash === null) {
+                // Mismatch or first-time load: if Agent has it, we pull it to Runtime
+                if (remoteHash !== null) {
+                    console.log(`[Sync] Runtime (authority) misses ${resource_type}, but Agent has it. Pulling from Agent.`);
+                    await this.requestUpload(payload);
+                } else {
+                    console.log(`[Sync] Both sides missing ${resource_type}. Skipping.`);
+                    return this.sendSyncComplete(sync_id, project_id, resource_type);
+                }
+            } else {
+                // Runtime has it, we sync it to Agent (Agent should match Runtime)
+                await this.requestDownload(payload, localHash);
+            }
         }
+    }
+
+    private sendSyncComplete(syncId: string, projectId: string, resourceType: ResourceType) {
+        this.sender.send({
+            id: randomUUID(),
+            type: "SYNC_COMPLETE",
+            source: "vhl_workspace",
+            timestamp: new Date().toISOString(),
+            artifact_id: null,
+            payload: { sync_id: syncId, project_id: projectId, resource_type: resourceType }
+        });
+        this.activeSyncs.delete(syncId);
     }
 
     private async requestUpload(payload: SyncPayload) {
@@ -179,29 +199,56 @@ export class SyncManager {
 
     private async requestDownload(payload: SyncPayload, localHash: string | null) {
         if (!localHash) {
-            console.error(`[Sync] Cannot download if local is null but runtime is authoritative?`);
-            // Actually if local is null, we might want to download from agent if agent has it.
+            console.warn(`[Sync] Cannot provide ${payload.resource_type} for download if local is null.`);
+            return;
         }
 
-        const blobId = `${payload.project_id}/${payload.resource_type}/${localHash}`;
-        console.log(`[Sync] Instructing Agent to download ${blobId}`);
+        const { project_id, resource_type, iteration_id, sync_id, data } = payload;
+        const localPath = this.getResourcePath(project_id, resource_type, iteration_id, data);
 
-        await this.sender.send({
-            id: randomUUID(),
-            type: "DOWNLOAD_REQUEST",
-            source: "vhl_workspace",
-            timestamp: new Date().toISOString(),
-            artifact_id: null,
-            payload: {
-                sync_id: payload.sync_id,
-                project_id: payload.project_id,
-                iteration_id: payload.iteration_id,
-                resource_type: payload.resource_type,
-                blob_id: blobId,
-                hash: payload.hash,
-                data: payload.data
+        try {
+            // 1. Ensure bucket exists
+            await ensureBucket();
+
+            // 2. Prepare blob and upload to MinIO (so Agent can download it)
+            const blobId = `${project_id}/${resource_type}/${localHash}`;
+            console.log(`[Sync] Providing ${resource_type} to Agent via ${blobId}`);
+
+            if (!(await objectExists(blobId))) {
+                const stats = await fs.stat(localPath).catch(() => null);
+                if (stats?.isDirectory()) {
+                    const zipPath = path.join(TEMP_DIR, `upload_${randomUUID()}.zip`);
+                    await compressDirectory(localPath, zipPath);
+                    await pushObject(zipPath, blobId);
+                    await fs.unlink(zipPath).catch(() => { });
+                } else if (stats) {
+                    await pushObject(localPath, blobId);
+                } else {
+                    throw new Error(`File or directory not found at ${localPath}`);
+                }
             }
-        });
+
+            // 3. Instruct Agent to download from our provided blob
+            await this.sender.send({
+                id: randomUUID(),
+                type: "DOWNLOAD_REQUEST",
+                source: "vhl_workspace",
+                timestamp: new Date().toISOString(),
+                artifact_id: null,
+                payload: {
+                    sync_id,
+                    project_id,
+                    iteration_id,
+                    resource_type,
+                    blob_id: blobId,
+                    hash: localHash,
+                    data
+                }
+            });
+        } catch (err: any) {
+            console.error(`[Sync] Failed to provide resource for download:`, err);
+            this.handleError(sync_id, project_id, resource_type, err.message);
+        }
     }
 
     private async handleUploadProposal(payload: SyncPayload) {
