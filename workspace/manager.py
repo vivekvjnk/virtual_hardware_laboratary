@@ -21,6 +21,7 @@ class WorkspaceManager:
         self._iteration_count: Optional[int] = None
         self._session_first_iteration: bool = True
         self._session_iteration_count: int = 0
+        self.current_iteration_id = None
         logger.info(f"WorkspaceManager initialized with root: {self.workspace_root}")
 
     def set_circuit_name(self, name: str):
@@ -187,8 +188,8 @@ class WorkspaceManager:
             raise RuntimeError("Project root not set.")
         
         iteration_number = self._get_next_iteration_number()
-        iteration_name = f"{iteration_number:04d}_{hash_val}"
-        iteration_path = self.project_root / "Iterations" / iteration_name
+        iteration_id = f"{iteration_number:04d}_{hash_val}"
+        iteration_path = self.project_root / "Iterations" / iteration_id
         iteration_path.mkdir(exist_ok=True)
         
         # Update current/previous paths
@@ -196,7 +197,8 @@ class WorkspaceManager:
             self.previous_iteration_path = self.current_iteration_path
         self.current_iteration_path = iteration_path
         self._session_iteration_count += 1
-        
+        self.current_iteration_id = iteration_id
+
         # Setup symbolic links
         self._setup_symlinks(iteration_path)
 
@@ -204,8 +206,7 @@ class WorkspaceManager:
         if self.previous_iteration_path and self.previous_iteration_path.exists():
             for tsx_file in self.previous_iteration_path.glob("*.tsx"):
                 dest = iteration_path / tsx_file.name
-                if dest.lexists():
-                    dest.unlink()
+                dest.unlink(missing_ok=True)
                 shutil.copy2(tsx_file, dest)
                 logger.info(f"Carried over {tsx_file.name} from previous iteration")
         
@@ -402,3 +403,9 @@ class WorkspaceManager:
             "is_synthesizable": is_synthesizable,
             "circuit_name": self.circuit_name
         }
+
+    def get_current_iteration_path(self):
+        return self.current_iteration_path
+    
+    def get_current_iteration_id(self):
+        return self.current_iteration_id

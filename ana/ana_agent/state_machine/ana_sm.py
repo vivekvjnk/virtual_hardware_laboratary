@@ -422,7 +422,8 @@ class ANADStateMachine:
         try:
             result = await agent.validate_circuit(
                 self.circuit_name, 
-                workspace=str(self.workspace_manager.current_iteration_path)
+                workspace= self.workspace_manager.get_current_iteration_path(),
+                iteration_id= self.workspace_manager.get_current_iteration_id()
             )
             vap_decision = result.get("decision")
             result_msg["vap_decision"] = vap_decision

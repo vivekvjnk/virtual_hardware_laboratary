@@ -31,7 +31,7 @@ class ANA_validation_agent:
         self.minio_url = minio_url
         self.object_store = MinioObjectStore(endpoint_url=minio_url)
 
-    async def validate_circuit(self, circuit_name: str, workspace: str, iteration_id: Optional[str] = None) -> Dict[str, Any]:
+    async def validate_circuit(self, circuit_name: str, workspace: str, iteration_id: str) -> Dict[str, Any]:
         """
         Process the circuit file: upload to object store, invoke VAP, poll for status, and collect results.
         """
