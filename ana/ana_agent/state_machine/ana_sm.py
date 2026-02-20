@@ -11,6 +11,7 @@ import uuid
 
 from ana_agent.observer import ObserverAgent, ObserverMode
 from ana_agent.ana_worker_1 import run_ana_w1_agent
+from ana_agent.ana_worker_1.stub import run_ana_w1_stub
 from ana_agent.ana_worker_2.agent import ANA_validation_agent
 
 from ana_agent.state_machine.states import State
@@ -373,7 +374,15 @@ class ANADStateMachine:
             # If observations are present and previous iteration directory is not none, 
             # ANA-W1 is triggered in Error Correction mode. Otherwise Synthesis mode
             previous_iter_dir = self.workspace_manager.previous_iteration_path
-            if len(observations)>0 and previous_iter_dir:
+            
+            if os.environ.get("STUBS") == "true":
+                logger.info("[ANA-D SM] Running ANA-W1 in STUB mode")
+                await asyncio.to_thread(
+                    run_ana_w1_stub,
+                    workspace=str(current_iter_dir),
+                    circuit_name=self.circuit_name
+                )
+            elif len(observations)>0 and previous_iter_dir:
                 logger.info("[ANA-D SM] ANA-W1 in error correction mode (triggered from PREPARE_FIX).")
                 await asyncio.to_thread(
                     run_ana_w1_agent,
