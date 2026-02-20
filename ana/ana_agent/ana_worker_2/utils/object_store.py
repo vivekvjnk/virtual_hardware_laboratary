@@ -58,7 +58,7 @@ class MinioObjectStore:
                 try:
                     self.s3.upload_file(file_path, self.bucket_name, object_key)
                     mapping[filename] = object_key
-                    logger.info(f"Uploaded {filename} to {self.bucket_name}/{object_key}")
+                    logger.info(f"{__file__}:{__class__}:Uploaded {filename} to {self.bucket_name}/{object_key}")
                 except Exception as e:
                     logger.error(f"Failed to upload {filename}: {e}")
         
@@ -74,10 +74,10 @@ class MinioObjectStore:
         
         try:
             self.s3.upload_file(file_path, self.bucket_name, object_key)
-            logger.info(f"Uploaded {file_path} to {self.bucket_name}/{object_key}")
+            logger.info(f"{__file__}:{__class__}:Uploaded {file_path} to {self.bucket_name}/{object_key}")
             return object_key
         except Exception as e:
-            logger.error(f"Failed to upload {file_path}: {e}")
+            logger.error(f"{__file__}:{__class__}:Failed to upload {file_path}: {e}")
             raise
 
     def download_file(self, object_key: str, download_path: str):
@@ -86,9 +86,9 @@ class MinioObjectStore:
         """
         try:
             self.s3.download_file(self.bucket_name, object_key, download_path)
-            logger.info(f"Downloaded {object_key} to {download_path}")
+            logger.info(f"{__file__}:{__class__}:Downloaded {object_key} to {download_path}")
         except Exception as e:
-            logger.error(f"Failed to download {object_key}: {e}")
+            logger.error(f"{__file__}:{__class__}:Failed to download {object_key}: {e}")
             raise
 
     def get_object_url(self, object_key: str) -> str:

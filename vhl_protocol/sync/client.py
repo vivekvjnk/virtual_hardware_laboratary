@@ -7,7 +7,9 @@ from ..utils.hashing import compute_file_hash, compute_directory_hash
 from ..utils.minio import get_minio_client
 from ..utils.zip import compress_directory, decompress_zip, atomic_replace_directory, atomic_replace_file
 import tempfile
-import shutil
+from pathlib import Path
+import asyncio
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -128,26 +130,26 @@ class SyncClient:
     async def propose_upload(self, project_id: str, resource_type: str, iteration_id: Optional[str] = None, intent: Optional[str] = None, data: Optional[Dict[str, Any]] = None):
         """Trigger an upload proposal from the agent side."""
         sync_id = str(uuid.uuid4())
-        path = self.get_resource_path(project_id, resource_type, iteration_id, data)
-        
-        if not os.path.exists(path):
+        path = Path(self.get_resource_path(project_id, resource_type, iteration_id, data))
+
+        if not path.exists():
             raise FileNotFoundError(f"Resource path does not exist: {path}")
 
         hash_val = None
         blob_to_upload = None
         temp_zip = None
 
-        if os.path.isdir(path):
-            hash_val = compute_directory_hash(path)
-            temp_zip = os.path.join(tempfile.gettempdir(), f"upload_{sync_id}.zip")
-            compress_directory(path, temp_zip)
-            blob_to_upload = temp_zip
+        if path.is_dir():
+            hash_val = compute_directory_hash(str(path))
+            temp_zip = Path(tempfile.gettempdir()) / f"upload_{sync_id}.zip"
+            compress_directory(str(path), str(temp_zip))
+            blob_to_upload = str(temp_zip)
         else:
-            hash_val = compute_file_hash(path)
-            blob_to_upload = path
+            hash_val = compute_file_hash(str(path))
+            blob_to_upload = str(path)
 
-        blob_id = f"{project_id}/{resource_type}/{hash_val}"
-        
+        blob_id = f"{project_id}/{resource_type}/{path.name}"
+
         try:
             await asyncio.to_thread(self.minio.upload_file, blob_to_upload, blob_id)
             
@@ -176,5 +178,3 @@ class SyncClient:
         )
         await self.ws_client.emit(EventType.SYNC_ERROR, error_payload)
 
-import asyncio
-import uuid
