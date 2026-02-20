@@ -10,6 +10,7 @@ from pathlib import Path
 import uuid
 
 from ana_agent.observer import ObserverAgent, ObserverMode
+from ana_agent.observer.stub import run_observer_stub
 from ana_agent.ana_worker_1 import run_ana_w1_agent
 from ana_agent.ana_worker_1.stub import run_ana_w1_stub
 from ana_agent.ana_worker_2.agent import ANA_validation_agent
@@ -247,19 +248,27 @@ class ANADStateMachine:
             previous_dir = str(previous_dir)
         logger.info(f"[ANA-D SM Observe] Observing previous iteration: {previous_dir}")
         
-        observer = ObserverAgent()
-        try:
-            result = await asyncio.to_thread(
-                observer.observe,
-                mode=ObserverMode("validation_error"),
-                iteration_dir=previous_dir,
+        if os.environ.get("STUBS") == "true":
+            logger.info("[ANA-D SM Observe] Running Observer in STUB mode")
+            await asyncio.to_thread(
+                run_observer_stub,
+                mode="validation_error",
+                iteration_dir=previous_dir
             )
-            logger.info(f"[ANA-D SM Observe] Observation Result: {json.dumps(result, indent=2)}")
-        except Exception as e:
-            logger.exception(f"Error during observation: {e}")
-            sys.exit(1)
-        finally:
-            observer.close()
+        else:
+            observer = ObserverAgent()
+            try:
+                result = await asyncio.to_thread(
+                    observer.observe,
+                    mode=ObserverMode("validation_error"),
+                    iteration_dir=previous_dir,
+                )
+                logger.info(f"[ANA-D SM Observe] Observation Result: {json.dumps(result, indent=2)}")
+            except Exception as e:
+                logger.exception(f"Error during observation: {e}")
+                sys.exit(1)
+            finally:
+                observer.close()
         
         logger.info("[ANA-D SM Observe] Awaiting commit from Observer Agent via MCP...")
         observation_mcp = await asyncio.to_thread(self.mcp_manager.poll_for_observation)
