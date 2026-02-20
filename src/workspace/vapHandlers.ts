@@ -44,14 +44,13 @@ export async function handleVapInit(
         // Cleanup temp pull dir
         await fs.rm(tempPullDir, { recursive: true, force: true }).catch(() => { });
 
-        const resultsDir = await createResultsFolder(blob_id, datetime);
+        const resultsDir = await createResultsFolder(circuit_name, datetime);
 
         const result = await runtime.startEvaluation(
             circuit_name,
             relativeTsxPath,
             resultsDir,
             paths.taskRoot,
-            blob_id,
             datetime,
             taskId
         );
@@ -65,7 +64,6 @@ export async function handleVapInit(
             payload: {
                 ...result,
                 results_dir: resultsDir,
-                blob_id,
                 datetime
             }
         });
@@ -76,7 +74,6 @@ export async function handleVapInit(
             context: {
                 circuit_name,
                 results_dir: resultsDir,
-                blob_id,
                 datetime
             }
         };
@@ -97,12 +94,12 @@ export async function reportVapResults(
     context: VapContext,
     sender: WorkspaceSender
 ) {
-    const { results_dir, blob_id, datetime } = context;
+    const { results_dir, datetime, circuit_name } = context;
     console.log(`[Workspace] Reporting results for task ${taskId}. Evaluation status: ${status.eval_status}`);
 
     try {
         const zipPath = `${results_dir}.zip`;
-        const objectName = `${blob_id}_${datetime}_eval_results.zip`;
+        const objectName = `${circuit_name}_${datetime}_eval_results.zip`;
 
         console.log(`[Workspace] Compressing results: ${results_dir} -> ${zipPath}`);
         await compressDirectory(results_dir, zipPath);

@@ -70,9 +70,9 @@ export class COWWorkspaceManager {
 
        
         if (srcStats.ino === destStats.ino) {
-            console.warn(`[WARNING] Files are still HARDLINKED! Changes will leak.`);
+            console.warn(`[COW] Provisional file is still HARDLINKED! Changes will leak.`);
         } else {
-            console.log(`[SUCCESS] Hardlink broken. Destination is now an independent copy.`);
+            console.log(`[COW] Provisional file injected to .vhl_eval/ directory`);
         }
     }
 

@@ -210,14 +210,15 @@ export class SyncManager {
 
         try {
             // 1. Verify object exists in MinIO
+            console.log(`[Sync] Verifying blob ${blob_id} exists in object store`);
             if (!(await objectExists(blob_id!))) {
                 throw new Error(`Blob ${blob_id} not found in object store`);
             }
 
             // 2. Download and apply atomically
-            const tempDownloadPath = path.join(TEMP_DIR, `sync_${sync_id}`);
             await fs.mkdir(TEMP_DIR, { recursive: true });
 
+            console.log(`[Sync] Pulling blob ${blob_id} to local storage`);
             const localFile = await pullObject(blob_id!, TEMP_DIR);
 
             // Recompute and verify hash
@@ -226,6 +227,7 @@ export class SyncManager {
 
             if (resource_type === "Library" || resource_type === "Evaluation") {
                 const extractDir = path.join(TEMP_DIR, `extract_${sync_id}`);
+                console.log(`[Sync] Decompressing ${resource_type} archive to ${extractDir}`);
                 await decompressZip(localFile, extractDir);
                 computedHash = await computeDirectoryHash(extractDir);
 
@@ -234,6 +236,7 @@ export class SyncManager {
                 }
 
                 // Atomic replace
+                console.log(`[Sync] Performing atomic directory replacement for ${targetPath}`);
                 await this.atomicReplaceDirectory(extractDir, targetPath);
             } else {
                 computedHash = await computeFileHash(localFile);
@@ -241,13 +244,16 @@ export class SyncManager {
                     throw new Error(`Hash mismatch! Expected ${hash}, got ${computedHash}`);
                 }
                 // Atomic replace
+                console.log(`[Sync] Performing atomic file replacement for ${targetPath}`);
                 await this.atomicReplaceFile(localFile, targetPath);
             }
 
             // Cleanup
+            console.log(`[Sync] Cleaning up temporary file ${localFile}`);
             await fs.unlink(localFile).catch(() => { });
 
             // 3. Complete
+            console.log(`[Sync] Sync session ${sync_id} completed for ${resource_type}`);
             this.sender.send({
                 id: randomUUID(),
                 type: "SYNC_COMPLETE",
