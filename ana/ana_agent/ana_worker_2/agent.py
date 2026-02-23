@@ -59,6 +59,7 @@ class ANA_validation_agent:
             with open(circuit_path, "rb") as f:
                 file_hash = hashlib.sha256(f.read()).hexdigest()
             blob_id = f"{self.project_id}/Circuit/{file_hash}"
+            self.object_store.upload_file(circuit_path,object_key=blob_id)
         else:
             logger.warning("SyncClient or ProjectID not available, falling back to manual upload")
             blob_id = self.object_store.upload_file(circuit_path)
