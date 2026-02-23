@@ -22,10 +22,8 @@ def run_ana_w1_stub(workspace: str, circuit_name: str, **kwargs):
     # User mentioned VHL_agent_backend/tests/Mocks
     potential_sources = [
         Path("tests/Mocks/test_project.tsx"),
-        Path("VHL_agent_backend/tests/Mocks/test_project.tsx"),
         # Also check for one named after circuit if needed, but for now use test_project.tsx
         Path(f"tests/Mocks/{circuit_name}.tsx"),
-        Path(f"VHL_agent_backend/tests/Mocks/{circuit_name}.tsx"),
     ]
     
     source_path = None

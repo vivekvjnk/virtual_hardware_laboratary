@@ -246,6 +246,7 @@ class AOSM:
         elif event.type == EventType.SYNTHESIZE_CIRCUIT:
             info = self.workspace_manager.get_workspace_info()
             if info.get("is_synthesizable"):
+                logger.info(f"Circuit is synthesizable. Transitioning to TRIGGER_ANA")
                 self.current_message["circuit_id"] = info.get("circuit_name")
                 await self.transition_to(AOSMState.TRIGGER_ANA, "User triggered synthesis")
             else:
@@ -278,10 +279,14 @@ class AOSM:
                         EventType.SYNC_COMPLETE,
                         filter_func=lambda e: e.payload.get("resource_type") == "Library"
                     )
-                
-                # Transition to TRIGGER_ANA to start the ANA-D state machine
-                await self.transition_to(AOSMState.TRIGGER_ANA, "Bootstrap and Component resolution completed")
+                    logger.info(f"[BOOTSTRAP_PIPELINE] Library sync completed. Transitioning to TRIGGER_ANA")
 
+                    # Transition to TRIGGER_ANA to start the ANA-D state machine
+                    await self.transition_to(AOSMState.TRIGGER_ANA, "Bootstrap and Component resolution completed")
+                else:
+                    raise ValueError(f"Project id is null : {self.project_id}")
+            else:
+                raise ValueError(f"scud_path is null. {scud_path}")
     
     async def _handle_present_result(self, event: BaseEvent):
         logger.info(f"[AOSM] Presenting results to user... Event: {event}")
@@ -319,51 +324,19 @@ class AOSM:
             ))
             # Library sync will be handled in PREPARE_ANA_RUN or sequence
 
-    async def _handle_prepare_ana_run(self, event: BaseEvent):
-        logger.info("[AOSM] Preparing ANA run...")
-        
-        if event.type == EventType.SYNC_COMPLETE:
-            resource_type = event.payload.get("resource_type")
-            logger.info(f"[AOSM] Sync complete for {resource_type}")
-            
-            if resource_type == "StableCircuit":
-                # Now sync Library
-                await self.ws_client.emit(EventType.SYNC_TRIGGER, SyncPayload(
-                    sync_id=str(uuid.uuid4()),
-                    project_id=self.project_id,
-                    resource_type="Library"
-                ))
-            elif resource_type == "Library":
-                # Both synced, find the circuit file in Stable to set as circuit_code_path
-                stable_dir = self.workspace_manager.project_root / "Stable"
-                tsx_files = list(stable_dir.glob("*.tsx"))
-                if tsx_files:
-                    self.current_message["circuit_code_path"] = str(tsx_files[0])
-                    await self.transition_to(AOSMState.TRIGGER_ANA, "Workspace synced and ready")
-                else:
-                    logger.error("[AOSM] No .tsx file found in Stable after sync")
-                    await self.transition_to(AOSMState.ERROR_PRESENTED, "Missing circuit code in Stable")
-        
-        elif event.type == EventType.SYNC_ERROR:
-            logger.error(f"[AOSM] Sync failed: {event.payload}")
-            await self.transition_to(AOSMState.ERROR_PRESENTED, f"Sync failed: {event.payload.get('reason')}")
-
-
     async def _handle_trigger_ana(self, event: BaseEvent):
+
         if event.type == EventType.STATE_TRANSITION:
             logger.info(f"[AOSM] Triggering ANA-D on state entry.")
-            # Create ANA-D state machine instance with the circuit code path 
-            circuit_code_path = self.current_message.get("circuit_code_path",None)
+            # Check, under which condition ANA is triggered. Circuit synthesis or circuit correction
             observations = self.current_message.get("observations", None)
-            logger.info(f"[AOSM-TRIGGER ANA]: Circuit code path: {circuit_code_path}, observations: {observations}")
-
-            project_root = self.workspace_manager.project_root
             circuit_id = self.current_message.get("circuit_id")
 
-            if not project_root:
-                logger.error("[AOSM-TRIGGER_ANA] Project root not set in workspace manager")
-                await self.transition_to(AOSMState.ERROR_PRESENTED, "Bootstrap failed: Project not initialized")
-                return
+            logger.info(f"[AOSM-TRIGGER ANA]: Circuit name/id: {circuit_id}, observations: {observations}")
+            
+            if not observations:
+                logger.info(f"[AOSM-TRIGGER ANA]: Ana is in synthesis mode. Observations is None")
+            
             
             # Initialize inbox queue for bidirectional communication
             self.ana_inbox = asyncio.Queue()
@@ -375,17 +348,16 @@ class AOSM:
                 ws_client=self.ws_client,
                 sync_client=self.sync_client,
                 project_id=self.project_id,
-                workspace=self.workspace_manager.project_root,
                 parent_notify=self._parent_notify,
                 inbox_queue=self.ana_inbox
             )
             # Run the ANA-D state machine in a background task to keep AOSM responsive
             asyncio.create_task(self.active_ana_sm.run())
+            await self.transition_to(AOSMState.WAIT_FOR_ANA, "ANA-D started")
         else:
-            raise ValueError(f"Unexpected event type in TRIGGER_ANA state: {event.type}")
+            logger.info(f"[Trigger ANA] Received event: {event.type}")
         
         
-        await self.transition_to(AOSMState.WAIT_FOR_ANA, "ANA-D started")
 
     async def _handle_wait_for_ana(self, event: BaseEvent):
 

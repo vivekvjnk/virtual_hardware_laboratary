@@ -31,7 +31,6 @@ class ANADStateMachine:
                  ws_client: Optional[VHLWebSocketClient] = None,
                  sync_client: Optional[Any] = None,
                  project_id: Optional[str] = None,
-                 workspace: Optional[Path] = None,
                  parent_notify: Optional[callable] = None,
                  inbox_queue: Optional[asyncio.Queue] = None):
         '''
@@ -191,7 +190,7 @@ class ANADStateMachine:
         # Check how many iterations are present in session
         if (self.workspace_manager.is_first_iteration()) and (len(observations)>0):
             last_iteration_id_suffix = str(uuid.uuid4()).split("-")[0][:8] # First 8 characters of UUID
-            logger.info(f"[ANA-D SM INIT] First iteration with user-provided circuit code and observations. Preparing iteration directory with provided circuit code. Suffix: {last_iteration_id_suffix}")
+            logger.info(f"[ANA-D SM INIT] First iteration Error Correction Mode. Preparing iteration directory with provided circuit code. Suffix: {last_iteration_id_suffix}")
 
             # get the circuit code path from Stable/ directory. Pass to prepare_iteration_with_files
             # NOTE: Assumption: Before reaching init, workspace sync is carried out between VHL Runtime and Agent backend. Hence Stable/ directory contents are in sync with VHL runtime.
@@ -199,7 +198,7 @@ class ANADStateMachine:
             self.workspace_manager.prepare_iteration_with_files(source_file=str(circuit_code_path), iteration_id_suffix=last_iteration_id_suffix)
             
         else: # Debug observability
-            logger.info(f"[ANA-D SM INIT] Starting new iteration without user-provided circuit code. Observations: {observations}, First Iteration: {self.workspace_manager.is_first_iteration()}")
+            logger.info(f"[ANA-D SM INIT] Starting new iteration {self.workspace_manager.get_iteration_count()}. \nObservations: {observations}, First Iteration: {self.workspace_manager.is_first_iteration()}")
         
         iteration_id_suffix = str(uuid.uuid4()).split("-")[0][:8]
         iteration_path = self.workspace_manager.create_new_iteration(iteration_id_suffix)
