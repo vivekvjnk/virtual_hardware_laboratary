@@ -116,7 +116,7 @@ def process_scud_stub(scud_path: str, mcp_url: str = "http://localhost:8080/mcp"
     with open(scud_path, 'r') as f:
         scud_content = f.read()
 
-    components = ["BQ79616","ISO7342"]
+    components = ["BQ79616","ISO7342","MMBT3904LT1G","BZX84C24","NCP18XH103F03RB"]
     mappings = []
     
     # Also list local components first to mimic the agent behavior

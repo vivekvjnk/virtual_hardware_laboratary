@@ -5,7 +5,7 @@ from vhl_protocol.utils.mcp_utils import call_mcp_function
 
 logger = logging.getLogger(__name__)
 
-def run_observer_stub(mode: str, iteration_dir: str, mcp_url: str = "http://localhost:8001/mcp/observe"):
+def run_observer_stub(mode: str, iteration_dir: str, mcp_url: str = "http://localhost:8081/mcp/observe"):
     """
     Mock replacement for ObserverAgent.observe.
     Commits an observation via MCP TOOL.
@@ -35,11 +35,11 @@ def run_observer_stub(mode: str, iteration_dir: str, mcp_url: str = "http://loca
         "observations": observations
     }
     
-    # The MCP server at :8001 expects the payload either flattened or in a 'payload' key
+    # The MCP server at :8081 expects the payload either flattened or in a 'payload' key
     # Based on server/main.py: arguments.get("payload", arguments)
     logger.info(f"[Observer Stub] Committing observation: {payload}")
     try:
-        # Note: the url in observer_agent is http://localhost:8001/mcp/observe
+        # Note: the url in observer_agent is http://localhost:8081/mcp/observe
         # call_mcp_function takes a base URL for SSE. 
         # But wait, the ana-mcp-server/server/main.py uses a hybrid FastAPI.
         # It's an SSE server? 
@@ -49,10 +49,10 @@ def run_observer_stub(mode: str, iteration_dir: str, mcp_url: str = "http://loca
         
         # If I use call_mcp_function, it uses SSE if the URL looks like it.
         # ana-mcp-server/server/main.py has @app.post("/mcp/{scope_endpoint:path}")
-        # So the SSE endpoint is likely http://localhost:8001/mcp/observe
+        # So the SSE endpoint is likely http://localhost:8081/mcp/observe
         
         # Correct URL for SSE in MCPInvoker/call_mcp_function
-        result = call_mcp_function(mcp_url, "commit_observation", {"payload": payload})
+        result = call_mcp_function(mcp_url, "commit_observation", arguments=payload)
         logger.info(f"[Observer Stub] Successfully committed observation. Result: {result}")
     except Exception as e:
         logger.error(f"[Observer Stub] Failed to commit observation: {e}")

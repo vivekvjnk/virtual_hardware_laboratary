@@ -39,7 +39,7 @@ class ObserverAgent:
     
     def __init__(
         self,
-        mcp_url: str = "http://localhost:8001/mcp/observe",
+        mcp_url: str = "http://localhost:8081/mcp/observe",
         llm_model: Optional[str] = None,
         llm_base_url: Optional[str] = None,
         llm_api_key: Optional[str] = None,

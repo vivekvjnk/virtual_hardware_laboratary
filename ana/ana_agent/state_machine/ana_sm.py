@@ -53,7 +53,7 @@ class ANADStateMachine:
         self.workspace_manager.set_circuit_name(self.circuit_name)
 
         # Managers
-        self.mcp_manager = MCPManager(endpoint="http://localhost:8001")
+        self.mcp_manager = MCPManager(endpoint="http://localhost:8081")
 
         # Initial Message
         self.current_message: Dict[str, Any] = {
