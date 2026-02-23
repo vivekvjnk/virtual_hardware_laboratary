@@ -393,7 +393,11 @@ class ANADStateMachine:
                 await asyncio.to_thread(
                     run_ana_w1_stub,
                     workspace=str(current_iter_dir),
-                    circuit_name=self.circuit_name
+                    schematic_images_path=schematic_images_path,
+                    scud_path=str(scud_path),
+                    circuit_name=self.circuit_name,
+                    observations=observations,
+                    previous_iteration_dir=str(previous_iter_dir),
                 )
             elif len(observations)>0 and previous_iter_dir:
                 logger.info("[ANA-D._handle_trigger_w1] ANA-W1 in error correction mode (triggered from PREPARE_FIX).")

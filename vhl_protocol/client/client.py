@@ -247,8 +247,8 @@ class VHLWebSocketClient:
 
     # --- VAP Helpers ---
 
-    async def emit_vap_init(self, circuit_name: str, blob_id: str):
-        payload = VAPInitPayload(circuit_name=circuit_name, blob_id=blob_id)
+    async def emit_vap_init(self, circuit_name: str, blob_id: str,iteration_id:str):
+        payload = VAPInitPayload(circuit_name=circuit_name, blob_id=blob_id,iteration_id=iteration_id)
         return await self.emit(EventType.VAP_INIT, payload)
 
     # Helper for HIL

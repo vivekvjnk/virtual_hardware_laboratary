@@ -68,7 +68,7 @@ class ANA_validation_agent:
 
         # 2. Invoke VAP with the circuit object id
         logger.info(f"Step 2: Invoking VAP for circuit: {circuit_name}")
-        await self.ws_client.emit_vap_init(circuit_name, blob_id)
+        await self.ws_client.emit_vap_init(circuit_name, blob_id,iteration_id=iteration_id)
         
         # Wait for the initial VAP_STATUS to get task_id
         init_response = await self.ws_client.wait_for_event(

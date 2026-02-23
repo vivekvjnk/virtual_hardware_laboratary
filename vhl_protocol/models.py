@@ -139,6 +139,7 @@ class AgentPresencePayload(BaseModel):
 class VAPInitPayload(BaseModel):
     circuit_name: str
     blob_id: str
+    iteration_id: str
 
 class VAPStatusPayload(BaseModel):
     task_id: str
