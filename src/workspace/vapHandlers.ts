@@ -2,7 +2,6 @@ import { randomUUID } from "crypto";
 import * as fs from "fs/promises";
 import * as path from "path";
 import {
-    createResultsFolder,
     compressDirectory
 } from "./fileOperations.js";
 import { pushObject, pullObject } from "../utils/minio.js";
@@ -21,7 +20,7 @@ export async function handleVapInit(
     let paths: any = null;
     try {
         console.log("[Workspace] Processing VAP_INIT");
-        const { circuit_name, blob_id } = msg.payload;
+        const { circuit_name, blob_id, iteration_id } = msg.payload;
         if (!circuit_name || !blob_id) {
             throw new Error("Missing circuit_name or blob_id in VAP_INIT payload");
         }
@@ -31,6 +30,15 @@ export async function handleVapInit(
 
         // 1. Create COW Workspace (hardlink clone)
         paths = await COWWorkspaceManager.createEvaluationWorkspace(taskId, projectDir);
+
+        // Determine results directory in the main workspace (for persistence)
+        let resultsDir: string;
+        if (iteration_id) {
+            resultsDir = path.join(projectDir, "iterations", iteration_id, "eval_results");
+        } else {
+            resultsDir = path.join(projectDir, "eval_results");
+        }
+        await fs.mkdir(resultsDir, { recursive: true });
 
         // 2. Pull circuit code from MinIO to a temporary location
         const tempPullDir = path.join(TEMP_DIR, `pull_${taskId}`);
@@ -43,8 +51,6 @@ export async function handleVapInit(
 
         // Cleanup temp pull dir
         await fs.rm(tempPullDir, { recursive: true, force: true }).catch(() => { });
-
-        const resultsDir = await createResultsFolder(circuit_name, datetime);
 
         const result = await runtime.startEvaluation(
             circuit_name,

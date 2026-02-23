@@ -139,7 +139,7 @@ export class SyncManager {
         }
 
         // 3. Authority logic for other resources (Evaluation, Circuit, StableCircuit)
-        const isAgentAuthoritative = resource_type === "Evaluation" || (resource_type === "Circuit" && intent === "EVALUATION");
+        const isAgentAuthoritative = (resource_type === "Circuit" && intent === "EVALUATION");
 
         if (isAgentAuthoritative) {
             // Agent is authoritative for evaluations

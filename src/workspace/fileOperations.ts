@@ -3,8 +3,7 @@ import { createWriteStream } from "fs";
 import * as fs from "fs/promises";
 import * as path from "path";
 import { execSync } from "child_process";
-import { CIRCUITS_DIR, CIRCUITS_TEMP_DIR, EVAL_RESULTS_DIR } from "../config/paths.js";
-import { pullObject } from "../utils/minio.js";
+import { TEMP_DIR } from "../config/paths.js";
 
 /**
  * Compress a directory into a zip file
@@ -61,89 +60,4 @@ export async function runPredefinedOperations(workspaceDir: string): Promise<voi
     // For now, we'll just log and ensure the directory exists.
     // In a real scenario, this might involve running 'npm install' or similar inside the container.
     await fs.mkdir(workspaceDir, { recursive: true });
-}
-
-// ============================================================================
-// VAP Circuit Management (Owned by Workspace Client)
-// ============================================================================
-
-/**
- * Get the provisional (temporary) path for a circuit
- */
-export function getProvisionalPath(circuitName: string): string {
-    return path.join(CIRCUITS_TEMP_DIR, `${circuitName}.tsx`);
-}
-
-/**
- * Get the final (permanent) path for a circuit
- */
-export function getFinalPath(circuitName: string): string {
-    return path.join(CIRCUITS_DIR, `${circuitName}.tsx`);
-}
-
-/**
- * Pull circuit from MinIO and save to provisional file
- */
-export async function pullAndWriteProvisional(
-    blobId: string,
-    circuitName: string
-): Promise<string> {
-    await fs.mkdir(CIRCUITS_TEMP_DIR, { recursive: true });
-
-    const provisionalDir = path.join(CIRCUITS_TEMP_DIR, circuitName);
-    await fs.mkdir(provisionalDir, { recursive: true });
-
-    console.log(`[Workspace] Pulling circuit ${circuitName} from MinIO (${blobId})`);
-    let localPath: string;
-    try {
-        localPath = await pullObject(blobId, provisionalDir);
-    } catch (err: any) {
-        console.error(`[Workspace] Failed to pull circuit ${circuitName} from MinIO (${blobId}):`, err);
-        throw err;
-    }
-
-    const targetPath = getProvisionalPath(circuitName);
-    await fs.rename(localPath, targetPath);
-    console.log(`[Workspace] Circuit provisioned at ${targetPath}`);
-
-    return targetPath;
-}
-
-/**
- * Create a dedicated folder for evaluation results
- */
-export async function createResultsFolder(blobId: string, datetime: string): Promise<string> {
-    const folderName = `${blobId}_${datetime}`;
-    const resultsPath = path.join(EVAL_RESULTS_DIR, folderName);
-    await fs.mkdir(resultsPath, { recursive: true });
-    return resultsPath;
-}
-
-/**
- * Finalize circuit (ACCEPT path)
- */
-export async function finalizeCircuit(circuitName: string): Promise<string> {
-    const provisionalPath = getProvisionalPath(circuitName);
-    const finalPath = getFinalPath(circuitName);
-
-    const finalDir = path.dirname(finalPath);
-    await fs.mkdir(finalDir, { recursive: true });
-
-    await fs.rename(provisionalPath, finalPath);
-    return finalPath;
-}
-
-/**
- * Cleanup circuit (REJECT path)
- */
-export async function cleanupCircuit(circuitName: string): Promise<void> {
-    const provisionalPath = getProvisionalPath(circuitName);
-
-    try {
-        await fs.unlink(provisionalPath);
-    } catch (err: any) {
-        if (err.code !== "ENOENT") {
-            throw err;
-        }
-    }
 }
