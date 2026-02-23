@@ -47,13 +47,6 @@ def commit_observation(payload: ObservationCommit) -> Dict[str, Any]:
     # FastMCP automatically validates 'payload' against the Pydantic model
     return _add_commit("/mcp/observe", "commit_observation", payload.model_dump(), "OBSERVATION_MESSAGE")
 
-@mcp.tool()
-def commit_fix_proposal(payload: FixProposalCommit) -> Dict[str, Any]:
-    """
-    Commit a proposal for a fix to a detected issue.
-    """
-    return _add_commit("/mcp/prepare_fix", "commit_fix_proposal", payload.model_dump(), "FIX_PROPOSAL_MESSAGE")
-
 def get_commits(since: int | None = None, endpoint: str | None = None) -> List[Dict[str, Any]]:
     """Retrieve commits from the log with optional filtering."""
     commits = _commit_log

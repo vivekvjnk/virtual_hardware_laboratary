@@ -33,6 +33,7 @@ class ANADStateMachine:
                  project_id: Optional[str] = None,
                  parent_notify: Optional[callable] = None,
                  inbox_queue: Optional[asyncio.Queue] = None):
+        logger.info(f"[ANA-D.__init__] Initializing ANA-D SM for circuit: {circuit_name}")
         '''
         circuit_name: Name of the circuit without any extensions
         '''
@@ -78,7 +79,7 @@ class ANADStateMachine:
 
     async def step(self, event: Optional[str] = None, data: Optional[Dict[str, Any]] = None):
         """Executes one step of the state machine using message passing framework."""
-        logger.info(f"Stepping from state: {self.state}")
+        logger.info(f"[ANA-D.step] Stepping from state: {self.state}")
         
         # Inject external inputs into a copy of current message
         message = self.current_message.copy()
@@ -100,7 +101,7 @@ class ANADStateMachine:
 
         handler = handlers.get(self.state)
         if not handler:
-            logger.error(f"No handler for state: {self.state}")
+            logger.error(f"[ANA-D.step] No handler for state: {self.state}")
             return
 
         # Execute handler and get result message describing the CURRENT node's execution
@@ -126,7 +127,7 @@ class ANADStateMachine:
         self.state = next_state
         self.current_message = next_message
         
-        logger.info(f"New state: {self.state} (Triggered from: {next_message['from_state_id']})")
+        logger.info(f"[ANA-D.step] New state: {self.state} (Triggered from: {next_message['from_state_id']})")
 
     def _get_next_state(self, current_state: State, message: Dict[str, Any]) -> State:
         """Determines the next state. Gives preference to proposed_next_state if present."""
@@ -139,11 +140,12 @@ class ANADStateMachine:
         return self.transition_table.get(current_state, current_state)
 
     async def _handle_init(self, message: Dict[str, Any]) -> Dict[str, Any]:
-        logger.info(f"[ANA-D SM] State: INIT. Triggered from: {message.get('from_state_id')}\n{"*"*30}\n{message}\n{"*"*30}")
+        logger.info(f"[ANA-D._handle_init] State: INIT. Triggered from: {message.get('from_state_id')}")
+        logger.debug(f"[ANA-D._handle_init] Message: {message}")
         
         # Workflow 2/3: Synchronize Stable and Library
         if self.project_id and self.ws_client:
-            logger.info(f"[ANA-D SM INIT] Synchronizing StableCircuit and Library for project {self.project_id}")
+            logger.info(f"[ANA-D._handle_init] Synchronizing StableCircuit and Library for project {self.project_id}")
             
             # 1. Sync StableCircuit
             sync_payload_stable = SyncPayload(
@@ -160,7 +162,7 @@ class ANADStateMachine:
                     timeout=60.0 # Timeout for sync
                 )
             except Exception as e:
-                logger.warning(f"StableCircuit sync failed or timed out: {e}")
+                logger.warning(f"[ANA-D._handle_init] StableCircuit sync failed or timed out: {e}")
 
             # 2. Sync Library
             sync_payload_lib = SyncPayload(
@@ -176,7 +178,7 @@ class ANADStateMachine:
                     timeout=60.0
                 )
             except Exception as e:
-                logger.warning(f"Library sync failed or timed out: {e}")
+                logger.warning(f"[ANA-D._handle_init] Library sync failed or timed out: {e}")
 
         result_msg = message.copy()
         
@@ -184,13 +186,13 @@ class ANADStateMachine:
         observations = message.get("observations",[])
         
         if self.workspace_manager.is_first_iteration() and (num_iterations := self.workspace_manager.get_session_iteration_count() > 0):
-            logger.warning(f"[ANA-D SM INIT] Iteration_{self.workspace_manager.get_session_iteration_count()}: Resetting first iteration flag. Current session iteration count: {num_iterations}")
+            logger.warning(f"[ANA-D._handle_init] Iteration_{self.workspace_manager.get_session_iteration_count()}: Resetting first iteration flag. Current session iteration count: {num_iterations}")
             self.workspace_manager.reset_first_iteration()
 
         # Check how many iterations are present in session
         if (self.workspace_manager.is_first_iteration()) and (len(observations)>0):
             last_iteration_id_suffix = str(uuid.uuid4()).split("-")[0][:8] # First 8 characters of UUID
-            logger.info(f"[ANA-D SM INIT] First iteration Error Correction Mode. Preparing iteration directory with provided circuit code. Suffix: {last_iteration_id_suffix}")
+            logger.info(f"[ANA-D._handle_init] First iteration Error Correction Mode. Preparing iteration directory with provided circuit code. Suffix: {last_iteration_id_suffix}")
 
             # get the circuit code path from Stable/ directory. Pass to prepare_iteration_with_files
             # NOTE: Assumption: Before reaching init, workspace sync is carried out between VHL Runtime and Agent backend. Hence Stable/ directory contents are in sync with VHL runtime.
@@ -198,7 +200,7 @@ class ANADStateMachine:
             self.workspace_manager.prepare_iteration_with_files(source_file=str(circuit_code_path), iteration_id_suffix=last_iteration_id_suffix)
             
         else: # Debug observability
-            logger.info(f"[ANA-D SM INIT] Starting new iteration {self.workspace_manager.get_iteration_count()}. \nObservations: {observations}, First Iteration: {self.workspace_manager.is_first_iteration()}")
+            logger.info(f"[ANA-D._handle_init] Starting new iteration {self.workspace_manager.get_iteration_count()}. \nObservations: {observations}, First Iteration: {self.workspace_manager.is_first_iteration()}")
         
         iteration_id_suffix = str(uuid.uuid4()).split("-")[0][:8]
         iteration_path = self.workspace_manager.create_new_iteration(iteration_id_suffix)
@@ -213,14 +215,15 @@ class ANADStateMachine:
         return result_msg
 
     async def _handle_observe(self, message: Dict[str, Any]) -> Dict[str, Any]:
-        logger.info(f"[ANA-D SM Observe] State: OBSERVE. Triggered from: {message.get('from_state_id')}\n{"*"*30}\n{message}\n{"*"*30}")
+        logger.info(f"[ANA-D._handle_observe] State: OBSERVE. Triggered from: {message.get('from_state_id')}")
+        logger.debug(f"[ANA-D._handle_observe] Message: {message}")
         result_msg = message.copy()
         result_msg["state_id"] = State.OBSERVE
         
         observations = result_msg.get("observations", [])
         
         if self.workspace_manager.is_first_iteration():
-            logger.info("[ANA-D SM Observe] First iteration. Skipping observation of previous iteration.")
+            logger.info("[ANA-D._handle_observe] First iteration. Skipping observation of previous iteration.")
             
             # Check if result message contain intent_status or error_class. If not, observe is triggered from user message
             if (len(observations)>0) and ("intent_status" not in result_msg and "error_class" not in result_msg): # Triggered directly through user message
@@ -229,11 +232,11 @@ class ANADStateMachine:
                     "observations": observations,
                     "error_class" : "LOCAL"
                 })
-                logger.info(f"[ANA-D SM Observe] First iteration through user message. Observations: {observations}")
+                logger.info(f"[ANA-D._handle_observe] First iteration through user message. Observations: {observations}")
             return result_msg
         
         if("ACCEPT"== result_msg.get("vap_decision")):
-            logger.info(f"[ANA-D SM Observe] Previous iteration had vap_decision status: {result_msg.get("vap_decision")}.")
+            logger.info(f"[ANA-D._handle_observe] Previous iteration had vap_decision status: {result_msg.get('vap_decision')}.")
             # For now we don't implement intent level analysis on the circuit code. Instead let the user decide if intent is satisfied or not.
             result_msg.update({
                     "intent_status": "satisfied",
@@ -245,10 +248,10 @@ class ANADStateMachine:
         previous_dir = self.workspace_manager.previous_iteration_path
         if previous_dir:
             previous_dir = str(previous_dir)
-        logger.info(f"[ANA-D SM Observe] Observing previous iteration: {previous_dir}")
+        logger.info(f"[ANA-D._handle_observe] Observing previous iteration: {previous_dir}")
         
         if os.environ.get("STUBS") == "true":
-            logger.info("[ANA-D SM Observe] Running Observer in STUB mode")
+            logger.info("[ANA-D._handle_observe] Running Observer in STUB mode")
             await asyncio.to_thread(
                 run_observer_stub,
                 mode="validation_error",
@@ -262,14 +265,14 @@ class ANADStateMachine:
                     mode=ObserverMode("validation_error"),
                     iteration_dir=previous_dir,
                 )
-                logger.info(f"[ANA-D SM Observe] Observation Result: {json.dumps(result, indent=2)}")
+                logger.info(f"[ANA-D._handle_observe] Observation Result: {json.dumps(result, indent=2)}")
             except Exception as e:
-                logger.exception(f"Error during observation: {e}")
+                logger.exception(f"[ANA-D._handle_observe] Error during observation: {e}")
                 sys.exit(1)
             finally:
                 observer.close()
         
-        logger.info("[ANA-D SM Observe] Awaiting commit from Observer Agent via MCP...")
+        logger.info("[ANA-D._handle_observe] Awaiting commit from Observer Agent via MCP...")
         observation_mcp = await asyncio.to_thread(self.mcp_manager.poll_for_observation)
 
         if observation_mcp:
@@ -298,7 +301,7 @@ class ANADStateMachine:
                 "observations": observations,
                 "error_class" : error_class
             })
-            logger.info(f"[ANA-D SM Observe] Added observation: {observation_str}")
+            logger.info(f"[ANA-D._handle_observe] Added observation: {observation_str}")
         else:
             # Clear status if no observation found
             result_msg.pop("intent_status", None)
@@ -306,7 +309,8 @@ class ANADStateMachine:
         return result_msg
 
     async def _handle_authorize(self, message: Dict[str, Any]) -> Dict[str, Any]:
-        logger.info(f"[ANA-D SM] State: AUTHORIZE. Triggered from: {message.get('from_state_id')}\n{"*"*30}\n{message}\n{"*"*30}")
+        logger.info(f"[ANA-D._handle_authorize] State: AUTHORIZE. Triggered from: {message.get('from_state_id')}")
+        logger.debug(f"[ANA-D._handle_authorize] Message: {message}")
         
         result_msg = message.copy()
         result_msg["state_id"] = State.AUTHORIZE
@@ -316,8 +320,7 @@ class ANADStateMachine:
         intent_status = result_msg.get("intent_status")
         auto_fix_count = result_msg.get("auto_fix_count", 0)
 
-        logger.info(f"[ANA-D SM] State: AUTHORIZE. VAP={vap_decision}, Error={error_class}, Intent={intent_status}, Auto-fix Count={auto_fix_count}")
-        logger.info(f"[ANA-D SM] Triggered by: {message.get('from_state_id')}")
+        logger.info(f"[ANA-D._handle_authorize] VAP={vap_decision}, Error={error_class}, Intent={intent_status}, Auto-fix Count={auto_fix_count}")
 
         # Propose next state based on logic
         proposed_next = State.PREPARE_HIL 
@@ -351,14 +354,16 @@ class ANADStateMachine:
         return result_msg
 
     async def _handle_prepare_fix(self, message: Dict[str, Any]) -> Dict[str, Any]:
-        logger.info(f"[ANA-D SM] State: PREPARE_FIX. Triggered from: {message.get('from_state_id')}\n{"*"*30}\n{message}\n{"*"*30}")
+        logger.info(f"[ANA-D._handle_prepare_fix] State: PREPARE_FIX. Triggered from: {message.get('from_state_id')}")
+        logger.debug(f"[ANA-D._handle_prepare_fix] Message: {message}")
         
         result_msg = message.copy()
         result_msg["state_id"] = State.PREPARE_FIX
         return result_msg
 
     async def _handle_trigger_w1(self, message: Dict[str, Any]) -> Dict[str, Any]:
-        logger.info(f"[ANA-D SM] State: TRIGGER_W1. Triggered from: {message.get('from_state_id')}\n{"*"*30}\n{message}\n{"*"*30}")
+        logger.info(f"[ANA-D._handle_trigger_w1] State: TRIGGER_W1. Triggered from: {message.get('from_state_id')}")
+        logger.debug(f"[ANA-D._handle_trigger_w1] Message: {message}")
         
         result_msg = message.copy()
         result_msg["state_id"] = State.TRIGGER_W1
@@ -384,14 +389,14 @@ class ANADStateMachine:
             previous_iter_dir = self.workspace_manager.previous_iteration_path
             
             if os.environ.get("STUBS") == "true":
-                logger.info("[ANA-D SM] Running ANA-W1 in STUB mode")
+                logger.info("[ANA-D._handle_trigger_w1] Running ANA-W1 in STUB mode")
                 await asyncio.to_thread(
                     run_ana_w1_stub,
                     workspace=str(current_iter_dir),
                     circuit_name=self.circuit_name
                 )
             elif len(observations)>0 and previous_iter_dir:
-                logger.info("[ANA-D SM] ANA-W1 in error correction mode (triggered from PREPARE_FIX).")
+                logger.info("[ANA-D._handle_trigger_w1] ANA-W1 in error correction mode (triggered from PREPARE_FIX).")
                 await asyncio.to_thread(
                     run_ana_w1_agent,
                     workspace=str(current_iter_dir),
@@ -402,7 +407,7 @@ class ANADStateMachine:
                     previous_iteration_dir=str(previous_iter_dir),
                 )
             else:
-                logger.info("[ANA-D SM] ANA-W1 in synthesis mode (not triggered from PREPARE_FIX).")
+                logger.info("[ANA-D._handle_trigger_w1] ANA-W1 in synthesis mode (not triggered from PREPARE_FIX).")
                 await asyncio.to_thread(
                     run_ana_w1_agent,
                     workspace=str(current_iter_dir),
@@ -413,7 +418,7 @@ class ANADStateMachine:
                 )
             
             if not os.path.exists(self.workspace_manager.get_circuit_tsx_path()):
-                logger.error(f"[ANA-D SM] ANA-W1 did not produce circuit file")
+                logger.error(f"[ANA-D._handle_trigger_w1] ANA-W1 did not produce circuit file")
                 result_msg["hil_wait_packet"] = {"reason":"ANA_ERROR", "message": "ANA-W1 did not produce circuit file"}
                 result_msg["proposed_next_state"] = State.PREPARE_HIL
                 return result_msg
@@ -421,13 +426,14 @@ class ANADStateMachine:
             result_msg["observations"] = []
             return result_msg
         except Exception as e:
-            logger.error(f"Error in TRIGGER_W1: {e}")
+            logger.error(f"[ANA-D._handle_trigger_w1] Error in TRIGGER_W1: {e}")
             result_msg["hil_wait_packet"] = {"reason":"ANA_ERROR", "message": f"Error in TRIGGER_W1: {e}"}
             result_msg["proposed_next_state"] = State.PREPARE_HIL
             return result_msg
 
     async def _handle_trigger_w2(self, message: Dict[str, Any]) -> Dict[str, Any]:
-        logger.info(f"[ANA-D SM] State: TRIGGER_W2. Triggered from: {message.get('from_state_id')}\n{"*"*30}\n{message}\n{"*"*30}")
+        logger.info(f"[ANA-D._handle_trigger_w2] State: TRIGGER_W2. Triggered from: {message.get('from_state_id')}")
+        logger.debug(f"[ANA-D._handle_trigger_w2] Message: {message}")
         result_msg = message.copy()
         result_msg["state_id"] = State.TRIGGER_W2
         
@@ -436,6 +442,7 @@ class ANADStateMachine:
             sync_client=self.sync_client,
             project_id=self.project_id
         )
+        logger.info("[ANA-D._handle_trigger_w2] Initialized ANA-W2")
         try:
             result = await agent.validate_circuit(
                 self.circuit_name, 
@@ -445,10 +452,10 @@ class ANADStateMachine:
             vap_decision = result.get("decision")
             result_msg["vap_decision"] = vap_decision
             result_msg["task_id"] = result.get("task_id")
-            logger.info(f"[ANA-D SM] VAP decision: {vap_decision}")
+            logger.info(f"[ANA-D._handle_trigger_w2] VAP decision: {vap_decision}")
             return result_msg
         except Exception as e:
-            logger.exception(f"Error during validation: {e}")
+            logger.exception(f"[ANA-D._handle_trigger_w2] Error during validation: {e}")
             # Clear decision on failure
             result_msg.pop("vap_decision", None)
             raise e
@@ -456,16 +463,17 @@ class ANADStateMachine:
             agent.close()
 
     async def _handle_prepare_hil(self, message: Dict[str, Any]) -> Dict[str, Any]:
-        logger.info(f"[ANA-D SM] State: PREPARE_HIL. Triggered from: {message.get('from_state_id')}\n{"*"*30}\n{message}\n{"*"*30}")
+        logger.info(f"[ANA-D._handle_prepare_hil] State: PREPARE_HIL. Triggered from: {message.get('from_state_id')}")
+        logger.debug(f"[ANA-D._handle_prepare_hil] Message: {message}")
         result_msg = message.copy()
         result_msg["state_id"] = State.PREPARE_HIL
         hil_packet = result_msg.get("hil_wait_packet", None)
         if not hil_packet:
-            logger.warning("[ANA-D SM] No HIL packet found in message. Using default packet.")
+            logger.warning("[ANA-D._handle_prepare_hil] No HIL packet found in message. Using default packet.")
             hil_packet = {"reason":"HIL_REQUIRED", "message": "Unknown reason. Human intervention required."}
-
+        
         if self.parent_notify:
-            logger.info(f"[ANA-D SM] Notifying parent of HIL requirement. HIL packet content: {hil_packet}")
+            logger.info(f"[ANA-D._handle_prepare_hil] Notifying parent of HIL requirement. HIL packet content: {hil_packet}")
             
             await self.parent_notify(
                 payload={
@@ -477,20 +485,21 @@ class ANADStateMachine:
         return result_msg
 
     async def _handle_hil_wait(self, message: Dict[str, Any]) -> Dict[str, Any]:
-        logger.info(f"[ANA-D SM] State: HIL_WAIT. Triggered from: {message.get('from_state_id')}\n{"*"*30}\n{message}\n{"*"*30}")
+        logger.info(f"[ANA-D._handle_hil_wait] State: HIL_WAIT. Triggered from: {message.get('from_state_id')}")
+        logger.debug(f"[ANA-D._handle_hil_wait] Message: {message}")
         result_msg = message.copy()
         result_msg["state_id"] = State.HIL_WAIT
         
-        logger.info("[ANA-D SM] Waiting for message in inbox queue...")
+        logger.info("[ANA-D._handle_hil_wait] Waiting for message in inbox queue...")
         # Wait for message from AOSM via inbox queue
         inbox_message = await self.inbox_queue.get()
-        logger.info(f"[ANA-D SM] Received message from inbox queue: {inbox_message}")
+        logger.info(f"[ANA-D._handle_hil_wait] Received message from inbox queue: {inbox_message}")
         
         event = inbox_message.get("event")
         data = inbox_message.get("data")
         
         if event == "human_response":
-            logger.info(f"[ANA-D SM] Human responded: {data}")
+            logger.info(f"[ANA-D._handle_hil_wait] Human responded: {data}")
             # Add human response to observations
             observations = result_msg.get("observations", [])
             observations.append(f"[HIL] {data}")
@@ -499,7 +508,7 @@ class ANADStateMachine:
             result_msg["proposed_next_state"] = State.AUTHORIZE
             return result_msg
         elif event == "abort":
-            logger.info("[ANA-D SM] Process aborted by human. Transitioning to EXIT_ABORT.")
+            logger.info("[ANA-D._handle_hil_wait] Process aborted by human. Transitioning to EXIT_ABORT.")
             result_msg["proposed_next_state"] = State.EXIT_ABORT
             return result_msg
         
@@ -515,20 +524,20 @@ class ANADStateMachine:
 
     async def run(self):
         """Runs the state machine loop until a terminal state is reached."""
-        logger.info("--- Starting State Machine ---")
+        logger.info("[ANA-D.run] --- Starting State Machine ---")
         try:
             while not self.is_terminal():
                 await self.step()
         except Exception as e:
             task_id = self.current_message.get("task_id", None)
-            logger.exception(f"Unexpected error in ANA-D SM run loop: {e}")    
+            logger.exception(f"[ANA-D.run] Unexpected error in ANA-D SM run loop: {e}")    
             payload = {"reason":"ERROR","task_id":task_id, "decision":"ERROR", "message": str(e)}
             await self.parent_notify(payload)
             return
         
         task_id = self.current_message.get("task_id", None)
         if self.state == State.EXIT_SUCCESS:
-            logger.info("Simulation Finished: SUCCESS")
+            logger.info("[ANA-D.run] Simulation Finished: SUCCESS")
             payload = {"reason":"EXIT",
                        "task_id":task_id, 
                        "decision":"ACCEPT", 
@@ -537,7 +546,7 @@ class ANADStateMachine:
             await self.parent_notify(payload)
             
         elif self.state == State.EXIT_ABORT:
-            logger.info("Simulation Finished: ABORTED")
+            logger.info("[ANA-D.run] Simulation Finished: ABORTED")
             payload = {"reason":"EXIT","task_id":task_id, "decision":"REJECT", "from_state":self.current_message.get("from_state_id")}
             await self.parent_notify(payload)
             

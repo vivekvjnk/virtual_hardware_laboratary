@@ -25,6 +25,7 @@ class AOSM:
     Always-on, time-aware control layer for VHL.
     """
     def __init__(self, ws_url: str = "ws://localhost:1080"):
+        logger.info(f"[AOSM.__init__] Initializing AOSM with ws_url: {ws_url}")
         self.state = AOSMState.STARTUP
         self.ws_client = VHLWebSocketClient(
             url=ws_url,
@@ -55,14 +56,14 @@ class AOSM:
 
     async def start(self):
         """Starts AOSM and the WebSocket client."""
-        logger.info("Starting AOSM...")
+        logger.info("[AOSM.start] Starting AOSM...")
         self.ws_client.add_subscriber(self._handle_ws_event)
         await self.ws_client.start()
         self._main_loop_task = asyncio.create_task(self._main_loop())
 
     async def stop(self):
         """Stops AOSM and the WebSocket client."""
-        logger.info("Stopping AOSM...")
+        logger.info("[AOSM.stop] Stopping AOSM...")
         self.ws_client.remove_subscriber(self._handle_ws_event)
         if self._main_loop_task:
             self._main_loop_task.cancel()
@@ -70,7 +71,7 @@ class AOSM:
 
     async def _handle_ws_event(self, event: BaseEvent):
         """Callback for received WebSocket events."""
-        logger.debug(f"AOSM received event: {event.type}")
+        logger.debug(f"[AOSM._handle_ws_event] AOSM received event: {event.type}")
         await self.event_queue.put(event)
 
     async def _main_loop(self):
@@ -80,7 +81,7 @@ class AOSM:
             try:
                 await self.process_event(event)
             except Exception as e:
-                logger.error(f"Error processing event: {e}", exc_info=True)
+                logger.error(f"[AOSM._main_loop] Error processing event: {e}", exc_info=True)
             finally:
                 self.event_queue.task_done()
 
@@ -88,7 +89,7 @@ class AOSM:
         """
         Processes a single event and triggers state transitions.
         """
-        logger.info(f"Processing event: {event.type} in state: {self.state}\n Payload: {event.payload}")
+        logger.info(f"[AOSM.process_event] Processing event: {event.type} in state: {self.state}\n Event: {event}")
         
         # Dispatch to handler based on current state and event
         handler_name = f"_handle_{self.state.name.lower()}"
@@ -97,7 +98,7 @@ class AOSM:
         if handler:
             await handler(event)
         else:
-            logger.warning(f"No handler defined for state {self.state}")
+            logger.warning(f"[AOSM.process_event] No handler defined for state {self.state}")
 
     async def transition_to(self, next_state: AOSMState, reason: str = "", payload: Optional[Dict[str, Any]] = None):
         """Transitions to a new state and emits a state transition event.
@@ -126,7 +127,7 @@ class AOSM:
         
         
         
-        logger.info(f"[transition_to] Transitioning: {from_state.name} -> {next_state.name} (Reason: {reason})\nPayload: {payload}")
+        logger.info(f"[AOSM.transition_to] Transitioning: {from_state.name} -> {next_state.name} (Reason: {reason})\nPayload: {payload}")
         # Push an internal transition event to the queue to trigger any "on_enter" logic
         # or immediate next steps in the state machine loop.
         await self.event_queue.put(BaseEvent(
@@ -140,7 +141,7 @@ class AOSM:
         """
         Callback passed to child state machines (like ANA) to notify AOSM of events.
         """
-        logger.info(f"[AOSM] Received parent notification with payload: {payload}")
+        logger.info(f"[AOSM._parent_notify] Received parent notification with payload: {payload}")
         await self.event_queue.put(BaseEvent(
             type=EventType.ANA_NOTIFY,
             source=EventSource.ANA,
@@ -150,7 +151,7 @@ class AOSM:
     # --- State Handlers ---
 
     async def _handle_startup(self, event: BaseEvent):
-        logger.info(f"[AOSM] In STARTUP state... Event: {event}")
+        logger.info(f"[AOSM._handle_startup] In STARTUP state... Event: {event}")
         if event.type == EventType.CREATE_PROJECT:
             payload = event.payload or {}
             project_name = payload.get("project_name", "untitled")
@@ -158,7 +159,7 @@ class AOSM:
             project_id = f"{project_name}_{uuid.uuid4().hex[:8]}"
             self.project_id = project_id
             
-            logger.info(f"[AOSM] Creating new project: {project_id}")
+            logger.info(f"[AOSM._handle_startup] Creating new project: {project_id}")
             project_root = self.workspace_manager.create_project(project_id)
             
             # Store project root information in class variable
@@ -183,10 +184,10 @@ class AOSM:
             project_id = payload.get("project_id")
             
             if not project_id:
-                logger.error("[AOSM] Missing project_id in LOAD_PROJECT event")
+                logger.error("[AOSM._handle_startup] Missing project_id in LOAD_PROJECT event")
                 return
 
-            logger.info(f"[AOSM] Loading project: {project_id}")
+            logger.info(f"[AOSM._handle_startup] Loading project: {project_id}")
             try:
                 project_root = self.workspace_manager.load_project(project_id)
                 self.project_id = project_id
@@ -217,12 +218,12 @@ class AOSM:
                     if os.path.exists(lib_path):
                         await self.sync_client.propose_upload(project_id, "Library")
                 except Exception as e:
-                    logger.warning(f"[AOSM] Auto-sync failed on project load (this is expected if project is empty): {e}")
+                    logger.warning(f"[AOSM._handle_startup] Auto-sync failed on project load (this is expected if project is empty): {e}")
 
                 # Transition to IDLE state
                 await self.transition_to(AOSMState.IDLE, f"Project {project_id} loaded successfully")
             except Exception as e:
-                logger.error(f"[AOSM] Failed to load project {project_id}: {e}")
+                logger.error(f"[AOSM._handle_startup] Failed to load project {project_id}: {e}")
                 await self.ws_client.emit_event(BaseEvent(
                     type=EventType.ERROR,
                     source=EventSource.BACKEND,
@@ -232,12 +233,12 @@ class AOSM:
                 ))
         
         elif event.type == EventType.LIST_PROJECTS:
-            logger.info("[AOSM] Listing projects...")
+            logger.info("[AOSM._handle_startup] Listing projects...")
             projects = self.workspace_manager.list_projects()
             await self.ws_client.emit_projects_list(projects)
 
     async def _handle_idle(self, event: BaseEvent):
-        logger.info(f"[AOSM] In IDLE state... Event: {event}")
+        logger.info(f"[AOSM._handle_idle] In IDLE state... Event: {event}")
         if event.type == EventType.REFERENCE_UPLOADED:
             await self.transition_to(AOSMState.BOOTSTRAP_PIPELINE, "New schematic uploaded", payload=event.payload)
         elif event.type == EventType.HUMAN_INPUT:
@@ -246,11 +247,11 @@ class AOSM:
         elif event.type == EventType.SYNTHESIZE_CIRCUIT:
             info = self.workspace_manager.get_workspace_info()
             if info.get("is_synthesizable"):
-                logger.info(f"Circuit is synthesizable. Transitioning to TRIGGER_ANA")
+                logger.info(f"[AOSM._handle_idle] Circuit is synthesizable. Transitioning to TRIGGER_ANA")
                 self.current_message["circuit_id"] = info.get("circuit_name")
                 await self.transition_to(AOSMState.TRIGGER_ANA, "User triggered synthesis")
             else:
-                logger.warning("[AOSM] SYNTHESIZE_CIRCUIT received but project not synthesizable")
+                logger.warning("[AOSM._handle_idle] SYNTHESIZE_CIRCUIT received but project not synthesizable")
                 await self.ws_client.emit_event(BaseEvent(
                     type=EventType.ERROR,
                     source=EventSource.BACKEND,
@@ -274,12 +275,12 @@ class AOSM:
                     )
                     await self.ws_client.emit(EventType.SYNC_TRIGGER, sync_payload)
                     # Wait for SYNC_COMPLETE
-                    logger.info(f"[AOSM] Waiting for Library sync to complete...")
+                    logger.info(f"[AOSM._handle_bootstrap_pipeline] Waiting for Library sync to complete...")
                     await self.ws_client.wait_for_event(
                         EventType.SYNC_COMPLETE,
                         filter_func=lambda e: e.payload.get("resource_type") == "Library"
                     )
-                    logger.info(f"[BOOTSTRAP_PIPELINE] Library sync completed. Transitioning to TRIGGER_ANA")
+                    logger.info(f"[AOSM._handle_bootstrap_pipeline] Library sync completed. Transitioning to TRIGGER_ANA")
 
                     # Transition to TRIGGER_ANA to start the ANA-D state machine
                     await self.transition_to(AOSMState.TRIGGER_ANA, "Bootstrap and Component resolution completed")
@@ -289,7 +290,7 @@ class AOSM:
                 raise ValueError(f"scud_path is null. {scud_path}")
     
     async def _handle_present_result(self, event: BaseEvent):
-        logger.info(f"[AOSM] Presenting results to user... Event: {event}")
+        logger.info(f"[AOSM._handle_present_result] Presenting results to user... Event: {event}")
         if event.type == EventType.VAP_DECISION:
             decision = event.payload.get("decision")
             iteration_dir = event.payload.get("iteration_dir") 
@@ -306,17 +307,17 @@ class AOSM:
     async def _handle_intent_classify(self, event: BaseEvent):
         # In a real scenario, an agent would classify the intent here.
         # For the wireframe, we assume valid modification request.
-        logger.info(f"[AOSM] Classifying intent...\n event: {event}")
+        logger.info(f"[AOSM._handle_intent_classify] Classifying intent...\n event: {event}")
         # Add user message to the current message observations
         self.current_message["observations"].append(event.payload.get("content", "No message provided"))
-        logger.info(f"[AOSM] Current message: {self.current_message}")
+        logger.info(f"[AOSM._handle_intent_classify] Current message: {self.current_message}")
         
         # Transition to PREPARE_ANA_RUN
         await self.transition_to(AOSMState.PREPARE_ANA_RUN, "Intent classified as modification", payload=event.payload)
         
         # Request workspace sync for StableCircuit and Library (Runtime to Agent)
         if self.project_id:
-            logger.info("[AOSM] Triggering sync for StableCircuit and Library")
+            logger.info("[AOSM._handle_intent_classify] Triggering sync for StableCircuit and Library")
             await self.ws_client.emit(EventType.SYNC_TRIGGER, SyncPayload(
                 sync_id=str(uuid.uuid4()),
                 project_id=self.project_id,
@@ -327,15 +328,15 @@ class AOSM:
     async def _handle_trigger_ana(self, event: BaseEvent):
 
         if event.type == EventType.STATE_TRANSITION:
-            logger.info(f"[AOSM] Triggering ANA-D on state entry.")
+            logger.info(f"[AOSM._handle_trigger_ana] Triggering ANA-D on state entry.")
             # Check, under which condition ANA is triggered. Circuit synthesis or circuit correction
             observations = self.current_message.get("observations", None)
             circuit_id = self.current_message.get("circuit_id")
 
-            logger.info(f"[AOSM-TRIGGER ANA]: Circuit name/id: {circuit_id}, observations: {observations}")
+            logger.info(f"[AOSM._handle_trigger_ana] Circuit name/id: {circuit_id}, observations: {observations}")
             
             if not observations:
-                logger.info(f"[AOSM-TRIGGER ANA]: Ana is in synthesis mode. Observations is None")
+                logger.info(f"[AOSM._handle_trigger_ana] Ana is in synthesis mode. Observations is None")
             
             
             # Initialize inbox queue for bidirectional communication
@@ -355,7 +356,7 @@ class AOSM:
             asyncio.create_task(self.active_ana_sm.run())
             await self.transition_to(AOSMState.WAIT_FOR_ANA, "ANA-D started")
         else:
-            logger.info(f"[Trigger ANA] Received event: {event.type}")
+            logger.info(f"[AOSM._handle_trigger_ana] Received event: {event.type}")
         
         
 
@@ -363,7 +364,7 @@ class AOSM:
 
         if event.type == EventType.ANA_NOTIFY:
             # Handle notification from ANA (e.g., HIL_REQUEST)
-            logger.info(f"[AOSM-WAIT_FOR_ANA] ANA notification: {event.payload}")
+            logger.info(f"[AOSM._handle_wait_for_ana] ANA notification: {event.payload}")
             
             ana_event = event.payload.get("reason")
             ana_task_id = event.payload.get("task_id")
@@ -390,7 +391,7 @@ class AOSM:
         elif event.type == EventType.HUMAN_INPUT:
             # Relaying human input to ANA's inbox
             if self.ana_inbox:
-                logger.info(f"[AOSM-WAIT_FOR_ANA] Relaying human input to ANA: {event.payload}")
+                logger.info(f"[AOSM._handle_wait_for_ana] Relaying human input to ANA: {event.payload}")
                 content = event.payload.get("content", "")
                 
                 # Check for abort command
@@ -399,13 +400,14 @@ class AOSM:
                 else:
                     await self.ana_inbox.put({"event": "human_response", "data": content})
             else:
-                logger.warning("[AOSM-WAIT_FOR_ANA] Received human input but ANA inbox is not initialized")
+                logger.warning("[AOSM._handle_wait_for_ana] Received human input but ANA inbox is not initialized")
 
     async def _handle_cancel_pipeline(self, event: BaseEvent):
-        logger.info("[AOSM] Cleaning up cancelled pipeline...")
+        logger.info("[AOSM._handle_cancel_pipeline] Cleaning up cancelled pipeline...")
         await self.transition_to(AOSMState.IDLE, "Cleanup complete")
 
     async def _handle_error_presented(self, event: BaseEvent):
+        logger.info(f"[AOSM._handle_error_presented] In ERROR_PRESENTED state... Event: {event}")
         if event.type == EventType.HUMAN_INPUT:
             content = event.payload.get("content", "").lower()
             if "retry" in content:
@@ -415,6 +417,7 @@ class AOSM:
                 await self.transition_to(AOSMState.IDLE, "User aborted after error")
 
     async def _handle_wait_for_user(self, event: BaseEvent):
+        logger.info(f"[AOSM._handle_wait_for_user] In WAIT_FOR_USER state... Event: {event}")
         if event.type == EventType.HUMAN_INPUT:
              await self.transition_to(AOSMState.INTENT_CLASSIFY, "Clarification received")
 
@@ -422,17 +425,17 @@ class AOSM:
 
     async def _run_bootstrap(self, event: BaseEvent):
         """Logic for BOOTSTRAP_PIPELINE."""
-        logger.info("Executing Bootstrap Pipeline...")
+        logger.info("[AOSM._run_bootstrap] Executing Bootstrap Pipeline...")
         
         payload = event.payload or {}
         filename = payload.get("filename", "unnamed.png")
         base64_img = payload.get("base64")
         
         if not base64_img:
-            logger.error(f"[AOSM-BOOTSTRAP] Missing base64 in payload: {payload}")
+            logger.error(f"[AOSM._run_bootstrap] Missing base64 in payload: {payload}")
             await self.transition_to(AOSMState.ERROR_PRESENTED, "Bootstrap failed: Missing image data")
             return
-
+        
         # Generate image_id: <file_name_without_extension>_<5 digit uid>
         stem = Path(filename).stem
         uid = uuid.uuid4().hex[:5]
@@ -440,7 +443,7 @@ class AOSM:
 
         project_root = self.workspace_manager.project_root
         if not project_root:
-            logger.error("[AOSM-BOOTSTRAP] Project root not set in workspace manager")
+            logger.error("[AOSM._run_bootstrap] Project root not set in workspace manager")
             await self.transition_to(AOSMState.ERROR_PRESENTED, "Bootstrap failed: Project not initialized")
             return
 
@@ -451,18 +454,18 @@ class AOSM:
         image_path = user_artefacts_dir / f"{image_id}.png"
         
         try:
-            logger.info(f"[AOSM-BOOTSTRAP] Saving reference image to {image_path}")
+            logger.info(f"[AOSM._run_bootstrap] Saving reference image to {image_path}")
             with open(image_path, "wb") as f:
                 f.write(base64.b64decode(base64_img))
         except Exception as e:
-            logger.error(f"[AOSM-BOOTSTRAP] Failed to save image: {e}")
+            logger.error(f"[AOSM._run_bootstrap] Failed to save image: {e}")
             await self.transition_to(AOSMState.ERROR_PRESENTED, f"Bootstrap failed: Image save error: {str(e)}")
             return
 
         # 2. Trigger Archy
-        logger.info(f"[AOSM-BOOTSTRAP] Triggering Archy orchestration for image: {image_id}")
+        logger.info(f"[AOSM._run_bootstrap] Triggering Archy orchestration for image: {image_id}")
         if os.environ.get("STUBS") == "true":
-            logger.info("[AOSM-BOOTSTRAP] Running Archy in STUB mode")
+            logger.info("[AOSM._run_bootstrap] Running Archy in STUB mode")
             scud_path = _archy_build_scud_stub(workspace_path=project_root, image_id=image_id)
         else:    
             try:
@@ -472,11 +475,11 @@ class AOSM:
                     workspace_path=project_root, 
                     image_id=image_id
                 )
-                logger.info(f"[AOSM-BOOTSTRAP] Archy completed successfully. SCUD generated at: {scud_path}")    
+                logger.info(f"[AOSM._run_bootstrap] Archy completed successfully. SCUD generated at: {scud_path}")    
                 # Update current message with the SCUD path for ANA trigger
                 
             except Exception as e:
-                logger.error(f"[AOSM-BOOTSTRAP] Archy orchestration failed: {e}")
+                logger.error(f"[AOSM._run_bootstrap] Archy orchestration failed: {e}")
                 await self.transition_to(AOSMState.ERROR_PRESENTED, f"Archy failed: {str(e)}")
                 return None
             
@@ -484,26 +487,26 @@ class AOSM:
 
     async def _run_librarian(self, scud_path: Path):
         """Logic for triggering Librarian Agent to resolve components."""
-        logger.info(f"[AOSM-BOOTSTRAP] Triggering Librarian Agent for SCUD: {scud_path}")
+        logger.info(f"[AOSM._run_librarian] Triggering Librarian Agent for SCUD: {scud_path}")
         try:
             if os.environ.get("STUBS") == "true":
-                logger.info("[AOSM-BOOTSTRAP] Running Librarian in STUB mode")
+                logger.info("[AOSM._run_librarian] Running Librarian in STUB mode")
                 await asyncio.to_thread(process_scud_stub, str(scud_path))
             else:
                 # LibrarianAgent defaults to http://localhost:8080/mcp
                 librarian = LibrarianAgent()
                 # process_scud involves network/LLM, run in thread
                 await asyncio.to_thread(librarian.process_scud, str(scud_path))
-            logger.info(f"[AOSM-BOOTSTRAP] Librarian Agent completed successfully")
+            logger.info(f"[AOSM._run_librarian] Librarian Agent completed successfully")
         except Exception as e:
-            logger.error(f"[AOSM-BOOTSTRAP] Librarian Agent failed: {e}")
+            logger.error(f"[AOSM._run_librarian] Librarian Agent failed: {e}")
             # We proceed even if Librarian fails, but log the error
 
 def main():
     # Test stub
     logging.basicConfig(
         level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        format='%(asctime)s - %(name)s - %(funcName)s - %(levelname)s - %(message)s'
     )
     aosm = AOSM()
     loop = asyncio.new_event_loop()

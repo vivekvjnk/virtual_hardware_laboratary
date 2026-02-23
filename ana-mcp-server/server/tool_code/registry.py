@@ -10,7 +10,6 @@ class ToolRegistry:
         self._tools: Dict[str, CommitTool] = {}
         self._scoped_tools: Dict[str, List[CommitTool]] = {
             "/mcp/observe": [],
-            "/mcp/prepare_fix": [],
         }
         self.register_tools()
 
@@ -34,16 +33,6 @@ class ToolRegistry:
                 schema=ObservationCommit,
                 target_channel="OBSERVATION_MESSAGE",
                 visibility_scope="/mcp/observe",
-            )
-        )
-
-        # Commit Tool 2 — Prepare Fix (Proposal Only)
-        self.register(
-            CommitTool(
-                name="commit_fix_proposal",
-                schema=FixProposalCommit,
-                target_channel="FIX_PROPOSAL_MESSAGE",
-                visibility_scope="/mcp/prepare_fix",
             )
         )
 

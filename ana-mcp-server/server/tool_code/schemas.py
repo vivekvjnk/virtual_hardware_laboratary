@@ -23,9 +23,3 @@ class ObservationCommit(BaseModel):
     confidence: confloat(ge=0.0, le=1.0) = Field(..., description="Confidence level of the  classification (0.0 to 1.0).")
     observations: str = Field(None, description="All observations on the error/s in simple string format.")
 
-
-class FixProposalCommit(BaseModel):
-    summary: str = Field(..., description="A summary of the proposed fix.")
-    proposed_changes: Optional[List[Dict[str, Any]]] = Field(None, description="References to proposed changes (e.g., nets, components, SCUD sections).")
-    confidence: confloat(ge=0.0, le=1.0) = Field(..., description="Confidence level of the fix proposal (0.0 to 1.0).")
-

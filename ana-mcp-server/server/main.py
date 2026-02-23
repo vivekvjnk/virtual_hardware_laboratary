@@ -63,11 +63,6 @@ async def process_mcp_request(request: JSONRPCRequest) -> JSONRPCResponse:
                 "name": "commit_observation",
                 "description": "Commit an observation found during analysis. An observation can be about an issue or a confirmation of correctness.",
                 "inputSchema": ObservationCommit.model_json_schema()
-            },
-            {
-                "name": "commit_fix_proposal",
-                "description": "Commit a proposal for a fix to a detected issue.",
-                "inputSchema": FixProposalCommit.model_json_schema()
             }
         ]
         return JSONRPCResponse(
@@ -97,18 +92,6 @@ async def process_mcp_request(request: JSONRPCRequest) -> JSONRPCResponse:
                     }
                 )
 
-            elif tool_name == "commit_fix_proposal":
-                raw_payload = arguments.get("payload", arguments) if isinstance(arguments, dict) else arguments
-                payload_obj = FixProposalCommit(**raw_payload)
-                result = commit_fix_proposal(payload_obj)
-
-                return JSONRPCResponse(
-                    id=request.id,
-                    result={
-                        "content": [{"type": "text", "text": str(result)}]
-                    }
-                )
-            
             else:
                  return JSONRPCResponse(
                     id=request.id,
@@ -240,13 +223,6 @@ async def get_tools_endpoint(scope_endpoint: str):
             "schema": ObservationCommit.model_json_schema(),
             "target_channel": "OBSERVATION_MESSAGE",
             "visibility_scope": "/mcp/observe"
-        })
-    elif full_endpoint == "/mcp/prepare_fix":
-         tools.append({
-            "name": "commit_fix_proposal",
-            "schema": FixProposalCommit.model_json_schema(),
-            "target_channel": "FIX_PROPOSAL_MESSAGE",
-            "visibility_scope": "/mcp/prepare_fix"
         })
         
     return tools

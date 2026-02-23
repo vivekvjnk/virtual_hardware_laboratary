@@ -10,7 +10,7 @@ class CommitTool:
         name: str,
         schema: Type[BaseModel],
         target_channel: str,
-        visibility_scope: Literal["/mcp/observe", "/mcp/prepare_fix"]
+        visibility_scope: Literal["/mcp/observe"]
     ):
         self.name = name
         self.schema = schema
