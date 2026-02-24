@@ -26,6 +26,7 @@ export class WorkspaceClient implements WorkspaceSender {
     private currentDevServerPath: string | null = null;
     private currentProjectId: string | null = null;
     private currentProjectName: string | null = null;
+    private currentCircuitName: string | null = null;
     private syncManager: SyncManager;
     private isSynthesizable: boolean = false;
 
@@ -139,6 +140,7 @@ export class WorkspaceClient implements WorkspaceSender {
                 this.currentProjectId = project_id;
                 this.currentProjectName = project_id;
                 this.isSynthesizable = !!workspace_info?.is_synthesizable;
+                this.currentCircuitName = workspace_info?.current_circuit_name || null;
 
                 this.projectDir = path.join(this.workspaceDir, project_id);
                 setProjectDir(this.projectDir);
@@ -158,11 +160,12 @@ export class WorkspaceClient implements WorkspaceSender {
 
                 // Construct the targeted reload URL
                 const relativePath = path.relative(this.workspaceDir, this.projectDir!);
-                const targetFile = path.join(relativePath, "index.circuit.tsx");
+                const entryFile = this.currentCircuitName ? `${this.currentCircuitName}.tsx` : "index.circuit.tsx";
+                const targetFile = path.join(relativePath, entryFile);
                 const reloadUrl = `http://localhost:3020/#file=${encodeURIComponent(targetFile)}`;
 
                 // Start dev server for the project
-                await this.startDevServer(this.projectDir);
+                await this.startDevServer(this.projectDir, entryFile);
 
                 this.send({
                     id: randomUUID(),
@@ -173,7 +176,8 @@ export class WorkspaceClient implements WorkspaceSender {
                     payload: {
                         url: reloadUrl,
                         project_id,
-                        project_dir: this.projectDir
+                        project_dir: this.projectDir,
+                        current_circuit_name: this.currentCircuitName
                     }
                 });
 
@@ -206,18 +210,20 @@ export class WorkspaceClient implements WorkspaceSender {
                     // Reset to root
                     this.currentProjectId = null;
                     this.currentProjectName = null;
+                    this.currentCircuitName = null;
                     this.isSynthesizable = false;
                 }
 
                 // Construct URL
                 const relativePath = path.relative(this.workspaceDir, fullPath);
-                // If relativePath is empty, we are at root. Otherwise we target index.circuit.tsx in that folder.
-                const targetFile = relativePath === "" ? "" : path.join(relativePath, "index.circuit.tsx");
+                // If relativePath is empty, we are at root. Otherwise we target our circuit file or default to index.circuit.tsx
+                const entryFile = this.currentCircuitName ? `${this.currentCircuitName}.tsx` : "index.circuit.tsx";
+                const targetFile = relativePath === "" ? "" : path.join(relativePath, entryFile);
                 const reloadUrl = `http://localhost:3020/${targetFile ? `#file=${encodeURIComponent(targetFile)}` : ""}`;
 
                 // Only restart if the path is different
                 if (this.currentDevServerPath !== fullPath) {
-                    await this.startDevServer(fullPath);
+                    await this.startDevServer(fullPath, entryFile);
                 } else {
                     // Already running, just trigger reload
                     this.send({
@@ -228,7 +234,8 @@ export class WorkspaceClient implements WorkspaceSender {
                         source: "vhl_workspace",
                         payload: {
                             url: reloadUrl,
-                            project_path: fullPath
+                            project_path: fullPath,
+                            current_circuit_name: this.currentCircuitName
                         }
                     });
                 }
@@ -251,9 +258,11 @@ export class WorkspaceClient implements WorkspaceSender {
                         state,
                         project_id: this.currentProjectId,
                         project_name: this.currentProjectName,
+                        current_circuit_name: this.currentCircuitName,
                         project_dir: this.projectDir,
                         workspace_info: {
-                            is_synthesizable: this.isSynthesizable
+                            is_synthesizable: this.isSynthesizable,
+                            current_circuit_name: this.currentCircuitName
                         }
                     }
                 });
@@ -324,7 +333,36 @@ export class WorkspaceClient implements WorkspaceSender {
         }, 2000);
     }
 
-    private async startDevServer(projectPath: string) {
+    public async onStableCircuitUpdated(circuitName: string): Promise<void> {
+        console.log(`[WorkspaceClient] Stable circuit updated: ${circuitName}`);
+        this.currentCircuitName = circuitName;
+
+        if (this.projectDir) {
+            const entryFile = `${circuitName}.tsx`;
+            await this.startDevServer(this.projectDir, entryFile);
+
+            // Construct and send DEV_SERVER_READY
+            const relativePath = path.relative(this.workspaceDir, this.projectDir);
+            const targetFile = path.join(relativePath, entryFile);
+            const reloadUrl = `http://localhost:3020/#file=${encodeURIComponent(targetFile)}`;
+
+            this.send({
+                id: randomUUID(),
+                type: "DEV_SERVER_READY",
+                artifact_id: null,
+                timestamp: new Date().toISOString(),
+                source: "vhl_workspace",
+                payload: {
+                    url: reloadUrl,
+                    project_id: this.currentProjectId,
+                    project_dir: this.projectDir,
+                    current_circuit_name: this.currentCircuitName
+                }
+            });
+        }
+    }
+
+    private async startDevServer(projectPath: string, entryFile: string = ".") {
         if (this.devServerProcess) {
             console.log("[WorkspaceClient] Stopping existing dev server...");
             this.devServerProcess.kill();
@@ -342,7 +380,7 @@ export class WorkspaceClient implements WorkspaceSender {
         };
 
         try {
-            this.devServerProcess = spawn("tsci", ["dev", "."], {
+            this.devServerProcess = spawn("tsci", ["dev", entryFile], {
                 cwd: projectPath,
                 env,
                 stdio: ['ignore', 'pipe', 'pipe']
@@ -354,7 +392,7 @@ export class WorkspaceClient implements WorkspaceSender {
 
                 // Detection logic: wait for "Local: http://localhost:..."
                 if (output.includes("http://localhost:")) {
-                    console.log("[WorkspaceClient] Dev server ready event detected: ",projectPath);
+                    console.log("[WorkspaceClient] Dev server ready event detected: ", projectPath);
                     // Only send generic ready message if we are at the workspace root.
                     // Specific project ready messages (with hashes) are handled by the callers 
                     // of startDevServer or specialized sync handlers.

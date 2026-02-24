@@ -110,8 +110,8 @@ export class SyncManager {
                 ? await computeDirectoryHash(localPath)
                 : await computeFileHash(localPath);
         }
-
-        console.log(`[Sync] Comparing hashes for ${resource_type}: Local=${localHash}, Remote=${remoteHash}`);
+        console.log(`[Sync - handleHashResponse] Local path = ${localPath}`)
+        console.log(`[Sync - handleHashResponse] Comparing hashes for ${resource_type}: Local=${localHash}, Remote=${remoteHash}`);
 
         // 1. If hashes match and both are not null, we are in sync
         if (localHash === remoteHash && localHash !== null) {
@@ -308,24 +308,8 @@ export class SyncManager {
                         console.warn(`[Sync] Failed to remove ${indexPath}:`, err);
                     }
 
-                    setTimeout(() => {
-                        console.log(`[Sync] Updated StableCircuit, requesting UI reload for ${targetPath}`);
-                        const relativeTarget = path.relative(this.workspaceDir, targetPath);
-                        const reloadUrl = `http://localhost:3020/#file=${encodeURIComponent(relativeTarget)}`;
-
-                        this.sender.send({
-                            id: randomUUID(),
-                            type: "DEV_SERVER_READY",
-                            artifact_id: null,
-                            timestamp: new Date().toISOString(),
-                            source: "vhl_workspace",
-                            payload: {
-                                url: reloadUrl,
-                                project_id: project_id,
-                                target_path: targetPath
-                            }
-                        });
-                    }, 500);
+                    const circuitName = payload.data?.circuit_name || "circuit";
+                    await this.sender.onStableCircuitUpdated(circuitName);
                 }
             }
 
