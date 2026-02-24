@@ -10,37 +10,21 @@ import tempfile
 from pathlib import Path
 import asyncio
 import uuid, shutil
+from workspace.manager import WorkspaceManager
 
 logger = logging.getLogger(__name__)
 
 class SyncClient:
-    def __init__(self, ws_client: VHLWebSocketClient, base_dir: str):
+    def __init__(self, ws_client: VHLWebSocketClient, workspace_manager: WorkspaceManager):
         self.ws_client = ws_client
-        self.base_dir = base_dir
+        self.workspace_manager = workspace_manager
+        self.base_dir = str(workspace_manager.workspace_root)
         self.minio = get_minio_client()
         self.ws_client.add_subscriber(self.handle_runtime_message)
 
-    def get_resource_path(self, project_id: str, resource_type: str, iteration_id: Optional[str] = None, data: Optional[Dict[str, Any]] = None) -> str:
-        """Resolve the local filesystem path for a resource."""
-        # This logic should match the WorkspaceManager's directory layout
-        project_root = os.path.join(self.base_dir, project_id)
-        
-        if resource_type == "Library":
-            return os.path.join(project_root, "lib/imports")
-        elif resource_type == "Circuit":
-            circuit_name = data.get("circuit_name") if data else "circuit"
-            if iteration_id:
-                return os.path.join(project_root, "Iterations", iteration_id, f"{circuit_name}.tsx")
-            return os.path.join(project_root, f"{circuit_name}.tsx")
-        elif resource_type == "Evaluation":
-            if iteration_id:
-                return os.path.join(project_root, "Iterations", iteration_id, "eval_results")
-            return os.path.join(project_root, "eval_results")
-        elif resource_type == "StableCircuit":
-            circuit_name = data.get("circuit_name") if data else "circuit"
-            return os.path.join(project_root, "Stable", f"{circuit_name}.tsx")
-        
-        raise ValueError(f"Unknown resource type: {resource_type}")
+    def get_resource_path(self, project_id: str, resource_type: str, iteration_id: Optional[str] = None) -> str:
+        """Resolve the local filesystem path for a resource using standard workspace conventions."""
+        return str(self.workspace_manager.resolve_resource_path(project_id, resource_type, iteration_id))
 
     async def handle_runtime_message(self, event: BaseEvent):
         if event.type not in [EventType.HASH_REQUEST, EventType.DOWNLOAD_REQUEST, EventType.UPLOAD_REQUEST]:
@@ -57,8 +41,7 @@ class SyncClient:
                     payload.project_id, 
                     payload.resource_type, 
                     payload.iteration_id, 
-                    payload.intent, 
-                    payload.data
+                    payload.intent
                 )
         except Exception as e:
             logger.error(f"[SyncClient.handle_runtime_message] Error handling sync message {event.type}: {e}", exc_info=True)
@@ -68,7 +51,7 @@ class SyncClient:
 
     async def handle_hash_request(self, payload: SyncPayload):
         logger.info(f"[SyncClient.handle_hash_request] Handling HASH_REQUEST for {payload.resource_type} (sync_id={payload.sync_id}); Payload:{payload}")
-        path = self.get_resource_path(payload.project_id, payload.resource_type, payload.iteration_id, payload.data)
+        path = self.get_resource_path(payload.project_id, payload.resource_type, payload.iteration_id)
         
         hash_val = None
         if os.path.exists(path):
@@ -91,7 +74,7 @@ class SyncClient:
 
     async def handle_download_request(self, payload: SyncPayload):
         logger.info(f"[SyncClient.handle_download_request] Handling DOWNLOAD_REQUEST for {payload.resource_type} (sync_id={payload.sync_id})")
-        target_path = self.get_resource_path(payload.project_id, payload.resource_type, payload.iteration_id, payload.data)
+        target_path = self.get_resource_path(payload.project_id, payload.resource_type, payload.iteration_id)
         #make sure target path exists
         os.makedirs(os.path.dirname(target_path), exist_ok=True)
 
@@ -140,10 +123,10 @@ class SyncClient:
             if scratch_dir.exists():
                 shutil.rmtree(str(scratch_dir))
 
-    async def propose_upload(self, project_id: str, resource_type: str, iteration_id: Optional[str] = None, intent: Optional[str] = None, data: Optional[Dict[str, Any]] = None):
+    async def propose_upload(self, project_id: str, resource_type: str, iteration_id: Optional[str] = None, intent: Optional[str] = None):
         """Trigger an upload proposal from the agent side."""
         sync_id = str(uuid.uuid4())
-        path = Path(self.get_resource_path(project_id, resource_type, iteration_id, data))
+        path = Path(self.get_resource_path(project_id, resource_type, iteration_id))
 
         if not path.exists():
             logger.warning(f"[SyncClient.propose_upload] Resource path does not exist: {path}")
@@ -173,8 +156,7 @@ class SyncClient:
                 resource_type=resource_type,
                 intent=intent,
                 hash=hash_val,
-                blob_id=blob_id,
-                data=data
+                blob_id=blob_id
             )
             
             await self.ws_client.emit(EventType.UPLOAD_PROPOSAL, proposal_payload)

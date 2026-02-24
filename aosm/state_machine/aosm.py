@@ -42,7 +42,7 @@ class AOSM:
         self.ana_inbox: Optional[asyncio.Queue] = None
         self._main_loop_task: Optional[asyncio.Task] = None
         self.project_id: Optional[str] = None
-        self.sync_client = SyncClient(self.ws_client, "vhl_workspace")
+        self.sync_client = SyncClient(self.ws_client, self.workspace_manager)
         
         # Minio configuration (should ideally be from env)
         self.s3_client = boto3.client(

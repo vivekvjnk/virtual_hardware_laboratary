@@ -50,8 +50,7 @@ class ANA_validation_agent:
                 project_id=self.project_id,
                 resource_type="Circuit",
                 iteration_id=iteration_id,
-                intent="EVALUATION",
-                data={"circuit_name": circuit_name}
+                intent="EVALUATION"
             )
             # Find blob_id (SyncClient provides it in UPLOAD_PROPOSAL, but we need it for VAP_INIT)
             # Actually, compute it here too or have SyncClient return it

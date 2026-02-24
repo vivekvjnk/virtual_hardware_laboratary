@@ -411,3 +411,35 @@ class WorkspaceManager:
     
     def get_current_iteration_id(self):
         return self.current_iteration_id
+
+    def resolve_resource_path(self, project_id: str, resource_type: str, iteration_id: Optional[str] = None) -> Path:
+        """Resolve the local filesystem path for a resource using workspace conventions."""
+        project_root = self.workspace_root / project_id
+        
+        # Determine circuit name for path resolution
+        res_circuit_name = self.circuit_name
+        if self.project_id != project_id:
+            # Look for any .scud file to infer the circuit name
+            scud_files = list(project_root.glob("*.scud"))
+            if scud_files:
+                res_circuit_name = scud_files[0].stem
+            else:
+                res_circuit_name = "circuit"
+        
+        if not res_circuit_name:
+             res_circuit_name = "circuit"
+
+        if resource_type == "Library":
+            return project_root / "lib" / "imports"
+        elif resource_type == "Circuit":
+            if iteration_id:
+                return project_root / "Iterations" / iteration_id / f"{res_circuit_name}.tsx"
+            return project_root / f"{res_circuit_name}.tsx"
+        elif resource_type == "Evaluation":
+            if iteration_id:
+                return project_root / "Iterations" / iteration_id / "eval_results"
+            return project_root / "eval_results"
+        elif resource_type == "StableCircuit":
+            return project_root / "Stable" / f"{res_circuit_name}.tsx"
+        
+        raise ValueError(f"Unknown resource type: {resource_type}")
