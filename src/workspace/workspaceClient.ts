@@ -354,18 +354,23 @@ export class WorkspaceClient implements WorkspaceSender {
 
                 // Detection logic: wait for "Local: http://localhost:..."
                 if (output.includes("http://localhost:")) {
-                    console.log("[WorkspaceClient] Dev server ready, notifying clients...");
-                    this.send({
-                        id: randomUUID(),
-                        type: "DEV_SERVER_READY",
-                        artifact_id: null,
-                        timestamp: new Date().toISOString(),
-                        source: "vhl_workspace",
-                        payload: {
-                            url: "http://localhost:3020",
-                            project_path: projectPath
-                        }
-                    });
+                    console.log("[WorkspaceClient] Dev server ready event detected: ",projectPath);
+                    // Only send generic ready message if we are at the workspace root.
+                    // Specific project ready messages (with hashes) are handled by the callers 
+                    // of startDevServer or specialized sync handlers.
+                    if (projectPath === this.workspaceDir) {
+                        this.send({
+                            id: randomUUID(),
+                            type: "DEV_SERVER_READY",
+                            artifact_id: null,
+                            timestamp: new Date().toISOString(),
+                            source: "vhl_workspace",
+                            payload: {
+                                url: "http://localhost:3020",
+                                project_path: projectPath
+                            }
+                        });
+                    }
                 }
             });
 
