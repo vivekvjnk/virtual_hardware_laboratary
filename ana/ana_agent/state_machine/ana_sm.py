@@ -1,12 +1,10 @@
 import logging
 import asyncio
 import shutil
-import time
 import os
 import json
 import sys
 from typing import Optional, Dict, Any, List
-from pathlib import Path
 import uuid
 
 from ana_agent.observer import ObserverAgent, ObserverMode
@@ -97,6 +95,7 @@ class ANADStateMachine:
             State.TRIGGER_W2: self._handle_trigger_w2,
             State.PREPARE_HIL: self._handle_prepare_hil,
             State.HIL_WAIT: self._handle_hil_wait,
+            State.EXIT_SUCCESS: self._handle_exit_success,
         }
 
         handler = handlers.get(self.state)
@@ -516,12 +515,51 @@ class ANADStateMachine:
             result_msg["proposed_next_state"] = State.EXIT_ABORT
             return result_msg
         
-        # If unknown message, stay in HIL_WAIT (but actually we just consumed one item)
-        # Maybe we should put it back or handle it. For now, assume it's one of these.
+        return result_msg
+    
+    async def _handle_exit_success(self, message: Dict[str, Any]) -> Dict[str, Any]:
+        logger.info(f"[ANADStateMachine._handle_exit_success] State: EXIT_SUCCESS. Triggered from: {message.get('from_state_id')}")
+        result_msg = message.copy()
+        result_msg["state_id"] = State.EXIT_SUCCESS
+        
+        # 1. Move contents of the last iteration directory to Stable/
+        previous_iter_dir = self.workspace_manager.previous_iteration_path
+        if previous_iter_dir:
+            logger.info(f"[ANADStateMachine._handle_exit_success] Populating Stable/ from {previous_iter_dir}")
+            self.workspace_manager.populate_stable(str(previous_iter_dir))
+        
+        # 2. Delete the un-necessary iteration directory created by handle_init
+        current_iter_dir = self.workspace_manager.current_iteration_path
+        if current_iter_dir and os.path.exists(current_iter_dir):
+            logger.info(f"[ANADStateMachine._handle_exit_success] Deleting unnecessary iteration directory: {current_iter_dir}")
+            shutil.rmtree(current_iter_dir)
+            # Clear current iteration path as it no longer exists
+            self.workspace_manager.current_iteration_path = None
+        
+        # 3. Trigger synchronization with the VHL_runtime for the stable directory
+        if self.project_id and self.ws_client:
+            logger.info(f"[ANADStateMachine._handle_exit_success] Triggering StableCircuit sync for project {self.project_id}")
+            sync_payload_stable = SyncPayload(
+                sync_id=str(uuid.uuid4()),
+                project_id=self.project_id,
+                resource_type="StableCircuit",
+                data={"circuit_name": self.circuit_name}
+            )
+            await self.ws_client.emit(EventType.SYNC_TRIGGER, sync_payload_stable)
+            try:
+                await self.ws_client.wait_for_event(
+                    EventType.SYNC_COMPLETE, 
+                    filter_func=lambda e: e.payload.get("resource_type") == "StableCircuit",
+                    timeout=60.0
+                )
+            except Exception as e:
+                logger.warning(f"[ANADStateMachine._handle_exit_success] StableCircuit sync failed or timed out: {e}")
+
+        result_msg["proposed_next_state"] = State.COMPLETED
         return result_msg
 
     def is_terminal(self) -> bool:
-        return self.state in [State.EXIT_SUCCESS, State.EXIT_ABORT]
+        return self.state in [State.COMPLETED, State.EXIT_ABORT]
 
     def cleanup(self):
         self.mcp_manager.cleanup()
@@ -540,7 +578,7 @@ class ANADStateMachine:
             return
         
         task_id = self.current_message.get("task_id", None)
-        if self.state == State.EXIT_SUCCESS:
+        if self.state == State.COMPLETED:
             logger.info("[ANADStateMachine.run] Simulation Finished: SUCCESS")
             payload = {"reason":"EXIT",
                        "task_id":task_id, 

@@ -13,3 +13,4 @@ class State(Enum):
     HIL_WAIT = auto()
     EXIT_SUCCESS = auto()
     EXIT_ABORT = auto()
+    COMPLETED = auto()

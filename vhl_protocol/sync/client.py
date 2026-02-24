@@ -67,7 +67,7 @@ class SyncClient:
                  await self.send_sync_error(event.payload["sync_id"], event.payload["project_id"], str(e))
 
     async def handle_hash_request(self, payload: SyncPayload):
-        logger.info(f"[SyncClient.handle_hash_request] Handling HASH_REQUEST for {payload.resource_type} (sync_id={payload.sync_id})")
+        logger.info(f"[SyncClient.handle_hash_request] Handling HASH_REQUEST for {payload.resource_type} (sync_id={payload.sync_id}); Payload:{payload}")
         path = self.get_resource_path(payload.project_id, payload.resource_type, payload.iteration_id, payload.data)
         
         hash_val = None
