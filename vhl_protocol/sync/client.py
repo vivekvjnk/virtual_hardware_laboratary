@@ -149,6 +149,7 @@ class SyncClient:
         try:
             await asyncio.to_thread(self.minio.upload_file, blob_to_upload, blob_id)
             
+            data = {"circuit_name":self.workspace_manager.circuit_name}
             proposal_payload = SyncPayload(
                 sync_id=sync_id,
                 project_id=project_id,
@@ -156,7 +157,8 @@ class SyncClient:
                 resource_type=resource_type,
                 intent=intent,
                 hash=hash_val,
-                blob_id=blob_id
+                blob_id=blob_id,
+                data=data
             )
             
             await self.ws_client.emit(EventType.UPLOAD_PROPOSAL, proposal_payload)
