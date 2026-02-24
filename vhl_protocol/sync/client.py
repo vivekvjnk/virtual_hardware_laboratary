@@ -67,7 +67,8 @@ class SyncClient:
             project_id=payload.project_id,
             iteration_id=payload.iteration_id,
             resource_type=payload.resource_type,
-            hash=hash_val
+            hash=hash_val,
+            data={"circuit_name":self.workspace_manager.circuit_name}
         )
         
         await self.ws_client.emit(EventType.HASH_RESPONSE, response_payload)

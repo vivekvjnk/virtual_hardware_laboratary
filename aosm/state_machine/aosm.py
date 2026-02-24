@@ -313,7 +313,8 @@ class AOSM:
                     sync_payload_stable = SyncPayload(
                         sync_id=str(uuid.uuid4()),
                         project_id=self.project_id,
-                        resource_type="StableCircuit"
+                        resource_type="StableCircuit",
+                        data={"circuit_name":self.workspace_manager.circuit_name}
                     )
                     await self.ws_client.emit(EventType.SYNC_TRIGGER, sync_payload_stable)
                     try:
@@ -330,7 +331,9 @@ class AOSM:
             elif "REJECT" == decision:
                 # Instruct workspace manager to move all iteration directories to archives/    
                 logger.info("[AOSM._handle_present_result] Decision was REJECT. Archiving iterations.")
-                self.workspace_manager.move_iterations_to_archives()
+            
+            # Move all iterations to archives
+            self.workspace_manager.move_iterations_to_archives()
             
             # After presenting/handling, transition back to IDLE
             await self.transition_to(AOSMState.IDLE, f"Finished processing ANA result: {decision}")
@@ -343,8 +346,8 @@ class AOSM:
         self.current_message["observations"].append(event.payload.get("content", "No message provided"))
         logger.info(f"[AOSM._handle_intent_classify] Current message: {self.current_message}")
         
-        # Transition to PREPARE_ANA_RUN
-        await self.transition_to(AOSMState.PREPARE_ANA_RUN, "Intent classified as modification", payload=event.payload)
+        # Transition to TRIGGER_ANA
+        await self.transition_to(AOSMState.TRIGGER_ANA, "Intent classified as modification", payload=event.payload)
         
         # Request workspace sync for StableCircuit and Library (Runtime to Agent)
         if self.project_id:
@@ -352,9 +355,10 @@ class AOSM:
             await self.ws_client.emit(EventType.SYNC_TRIGGER, SyncPayload(
                 sync_id=str(uuid.uuid4()),
                 project_id=self.project_id,
-                resource_type="StableCircuit"
+                resource_type="StableCircuit",
+                data = {"circuit_name":self.workspace_manager.circuit_name}
             ))
-            # Library sync will be handled in PREPARE_ANA_RUN or sequence
+            # Library sync will be handled in TRIGGER_ANA or sequence
 
     async def _handle_trigger_ana(self, event: BaseEvent):
 

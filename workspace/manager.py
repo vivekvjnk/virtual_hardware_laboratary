@@ -1,6 +1,7 @@
 import os, shutil
 import logging
 from pathlib import Path
+from datetime import datetime
 from typing import List, Optional, Dict, Any
 
 logger = logging.getLogger(__name__)
@@ -16,13 +17,22 @@ class WorkspaceManager:
         self.project_root: Optional[Path] = None
         self.project_id: Optional[str] = None
         self.circuit_name: Optional[str] = None
+        
         self.current_iteration_path: Optional[Path] = None
-        self.previous_iteration_path: Optional[Path] = None
-        self._iteration_count: Optional[int] = None
         self._session_first_iteration: bool = True
+        self._iteration_count: Optional[int] = None
+        self.previous_iteration_path: Optional[Path] = None
         self._session_iteration_count: int = 0
         self.current_iteration_id = None
         logger.info(f"[WorkspaceManager.__init__] WorkspaceManager initialized with root: {self.workspace_root}")
+
+    def reset_iterations(self):
+        self.current_iteration_path = None
+        self._session_first_iteration = True
+        self._iteration_count = None
+        self.previous_iteration_path = None
+        self._session_iteration_count = 0
+        self.current_iteration_id = None
 
     def set_circuit_name(self, name: str):
         """Sets the circuit name for the current project."""
@@ -104,6 +114,7 @@ class WorkspaceManager:
         (self.project_root / "Iterations").mkdir(exist_ok=True)
         (self.project_root / "Stable").mkdir(exist_ok=True)
         (self.project_root / "UserArtefacts").mkdir(exist_ok=True)
+        (self.project_root / "Archives").mkdir(exist_ok=True)
         
         
         logger.info(f"[WorkspaceManager.create_project] Project created at: {self.project_root}")
@@ -227,7 +238,7 @@ class WorkspaceManager:
         iteration_path = self.create_new_iteration(iteration_id_suffix)
         dest_path = iteration_path / f"{self.circuit_name}.tsx"
         
-        if dest_path.lexists():
+        if dest_path.exists():
             dest_path.unlink()
             
         shutil.copy2(source_path, dest_path)
@@ -272,6 +283,20 @@ class WorkspaceManager:
             raise RuntimeError("Project root not set.")
         
         stable_dir = self.project_root / "Stable"
+        
+        # Archive existing Stable directory if it has content
+        if stable_dir.exists() and any(stable_dir.iterdir()):
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            archive_stable_dir = self.project_root / "Archives" / "Stable" / timestamp
+            archive_stable_dir.mkdir(parents=True, exist_ok=True)
+            logger.info(f"[WorkspaceManager.populate_stable] Archiving existing Stable directory to {archive_stable_dir}")
+            
+            for item in stable_dir.iterdir():
+                # Don't archive symlinks if they are just part of the structure, 
+                # but usually Stable contains real files and some symlinks created by _setup_symlinks.
+                # If we want a clean slate, moving everything is safest.
+                shutil.move(item, archive_stable_dir / item.name)
+        
         stable_dir.mkdir(exist_ok=True)
         
         # Determine iteration directory
@@ -282,6 +307,7 @@ class WorkspaceManager:
             
         if not iteration_dir.exists():
             raise FileNotFoundError(f"Iteration directory not found: {iteration_dir}")
+        
         # Copy iteration files and directories to stable directory
         for item in iteration_dir.iterdir(): # make sure we only copy files and directories that are not symlinks
             if item.is_symlink():
@@ -299,14 +325,33 @@ class WorkspaceManager:
         return stable_dir
 
     def move_iterations_to_archives(self):
-        """Moves all directories under Iterations/ to Archives/"""
-        iterations_dir = self.project_root/"Iterations"
-        archives_dir = self.project_root/"Archives"
-        for item in iterations_dir.iterdir(): # make sure we only copy files and directories that are not symlinks
-            if item.is_symlink():
-                continue
-            shutil.move(item, archives_dir)
+        """Moves all directories under Iterations/ to a timestamped subdirectory in Archives/"""
+        if not self.project_root:
+            raise RuntimeError("Project root not set.")
             
+        iterations_dir = self.project_root / "Iterations"
+        if not iterations_dir.exists():
+            return
+
+        # Check if there are any iterations to move
+        iterations = [item for item in iterations_dir.iterdir() if not item.is_symlink()]
+        if not iterations:
+            logger.info("[WorkspaceManager.move_iterations_to_archives] No iterations to archive.")
+            return
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        session_archive_dir = self.project_root / "Archives" / timestamp
+        session_archive_dir.mkdir(parents=True, exist_ok=True)
+        
+        for item in iterations:
+            shutil.move(item, session_archive_dir)
+        
+        logger.info(f"[WorkspaceManager.move_iterations_to_archives] Archived {len(iterations)} iterations to {session_archive_dir}")
+        
+        # Reset all variables related to iteration
+        self.reset_iterations()
+        logger.info(f"All iteration related paths are reset. Workspace manager is ready for next synthesis.")
+
     def _setup_symlinks(self, target_dir: Path):
         """Sets up symbolic links to project-level files and directories."""
         # Symbolic links should include schematic_images/ dir, scud file and pin mapping file.
@@ -418,28 +463,23 @@ class WorkspaceManager:
         
         # Determine circuit name for path resolution
         res_circuit_name = self.circuit_name
-        if self.project_id != project_id:
-            # Look for any .scud file to infer the circuit name
-            scud_files = list(project_root.glob("*.scud"))
-            if scud_files:
-                res_circuit_name = scud_files[0].stem
-            else:
-                res_circuit_name = "circuit"
-        
-        if not res_circuit_name:
-             res_circuit_name = "circuit"
-
+        resolved_path = None
         if resource_type == "Library":
-            return project_root / "lib" / "imports"
+            resolved_path= project_root / "lib" / "imports"
         elif resource_type == "Circuit":
             if iteration_id:
-                return project_root / "Iterations" / iteration_id / f"{res_circuit_name}.tsx"
-            return project_root / f"{res_circuit_name}.tsx"
+                resolved_path = project_root / "Iterations" / iteration_id / f"{res_circuit_name}.tsx"
+            else:
+                resolved_path= project_root / f"{res_circuit_name}.tsx"
         elif resource_type == "Evaluation":
             if iteration_id:
-                return project_root / "Iterations" / iteration_id / "eval_results"
-            return project_root / "eval_results"
+                resolved_path= project_root / "Iterations" / iteration_id / "eval_results"
+            else:
+                resolved_path= project_root / "eval_results"
         elif resource_type == "StableCircuit":
-            return project_root / "Stable" / f"{res_circuit_name}.tsx"
+            resolved_path= project_root / "Stable" / f"{res_circuit_name}.tsx"
         
+        if resolved_path:
+            logger.info(f"[WorkspaceManager.resolve_resource_path] resolved resource path: {resolved_path}")
+            return resolved_path
         raise ValueError(f"Unknown resource type: {resource_type}")

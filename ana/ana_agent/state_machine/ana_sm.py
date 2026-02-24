@@ -150,7 +150,8 @@ class ANADStateMachine:
             sync_payload_stable = SyncPayload(
                 sync_id=str(uuid.uuid4()),
                 project_id=self.project_id,
-                resource_type="StableCircuit"
+                resource_type="StableCircuit",
+                data={"circuit_name":self.workspace_manager.circuit_name}
             )
             await self.ws_client.emit(EventType.SYNC_TRIGGER, sync_payload_stable)
             try:
