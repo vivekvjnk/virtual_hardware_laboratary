@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import shutil
 import boto3
 from typing import Optional, Dict, Any
 from pathlib import Path
@@ -291,19 +292,49 @@ class AOSM:
     
     async def _handle_present_result(self, event: BaseEvent):
         logger.info(f"[AOSM._handle_present_result] Presenting results to user... Event: {event}")
-        if event.type == EventType.VAP_DECISION:
-            decision = event.payload.get("decision")
-            iteration_dir = event.payload.get("iteration_dir") 
+        
+        # Handle state transition which carries the ANA results from WAIT_FOR_ANA
+        if event.type == EventType.STATE_TRANSITION:
+            payload = event.payload or {}
+            decision = payload.get("decision")
+            iteration_dir = payload.get("iteration_dir")
+            
+            if not decision:
+                logger.error("[AOSM._handle_present_result] No decision found in payload. Returning to IDLE.")
+                await self.transition_to(AOSMState.IDLE, "No decision in result")
+                return
+
             # if decision is ACCEPT copy current iteration directory to Stable directory
             if "ACCEPT" == decision:
-                # Instruct workspace manager to move content from iteration_dir/ to Stable/ directory
-                self.workspace_manager.populate_stable(iteration_dir)
+                
+                # Sync StableCircuit (Agent to Runtime)
+                if self.project_id:
+                    logger.info(f"[AOSM._handle_present_result] Triggering StableCircuit sync for project {self.project_id}")
+                    sync_payload_stable = SyncPayload(
+                        sync_id=str(uuid.uuid4()),
+                        project_id=self.project_id,
+                        resource_type="StableCircuit"
+                    )
+                    await self.ws_client.emit(EventType.SYNC_TRIGGER, sync_payload_stable)
+                    try:
+                        # Wait for sync to complete
+                        await self.ws_client.wait_for_event(
+                            EventType.SYNC_COMPLETE, 
+                            filter_func=lambda e: e.payload.get("resource_type") == "StableCircuit",
+                            timeout=60.0 # Timeout for sync
+                        )
+                        logger.info(f"[AOSM._handle_present_result] StableCircuit sync completed successfully")
+                    except Exception as e:
+                        logger.warning(f"[AOSM._handle_present_result] StableCircuit sync failed or timed out: {e}")
+
             elif "REJECT" == decision:
                 # Instruct workspace manager to move all iteration directories to archives/    
+                logger.info("[AOSM._handle_present_result] Decision was REJECT. Archiving iterations.")
                 self.workspace_manager.move_iterations_to_archives()
-            else:
-                raise ValueError(f"Unexpected decision: {decision}")
- 
+            
+            # After presenting/handling, transition back to IDLE
+            await self.transition_to(AOSMState.IDLE, f"Finished processing ANA result: {decision}")
+
     async def _handle_intent_classify(self, event: BaseEvent):
         # In a real scenario, an agent would classify the intent here.
         # For the wireframe, we assume valid modification request.
@@ -382,7 +413,8 @@ class AOSM:
                 )
             elif ana_event == "EXIT":
                 ana_decision = event.payload.get("decision")
-                self.transition_to(AOSMState.PRESENT_RESULT)
+                # Transition with payload so that PRESENT_RESULT can carry out directory management and sync
+                await self.transition_to(AOSMState.PRESENT_RESULT, reason="ANA finished task", payload=event.payload)
                 await self.ws_client.emit_evaluation_update(task_id=ana_task_id, decision=ana_decision)
 
             else:

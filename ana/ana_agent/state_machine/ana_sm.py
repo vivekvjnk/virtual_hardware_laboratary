@@ -534,25 +534,6 @@ class ANADStateMachine:
             shutil.rmtree(current_iter_dir)
             # Clear current iteration path as it no longer exists
             self.workspace_manager.current_iteration_path = None
-        
-        # 3. Trigger synchronization with the VHL_runtime for the stable directory
-        if self.project_id and self.ws_client:
-            logger.info(f"[ANADStateMachine._handle_exit_success] Triggering StableCircuit sync for project {self.project_id}")
-            sync_payload_stable = SyncPayload(
-                sync_id=str(uuid.uuid4()),
-                project_id=self.project_id,
-                resource_type="StableCircuit"
-            )
-            await self.ws_client.emit(EventType.SYNC_TRIGGER, sync_payload_stable)
-            try:
-                await self.ws_client.wait_for_event(
-                    EventType.SYNC_COMPLETE, 
-                    filter_func=lambda e: e.payload.get("resource_type") == "StableCircuit",
-                    timeout=60.0
-                )
-            except Exception as e:
-                logger.warning(f"[ANADStateMachine._handle_exit_success] StableCircuit sync failed or timed out: {e}")
-
         result_msg["proposed_next_state"] = State.COMPLETED
         return result_msg
 
