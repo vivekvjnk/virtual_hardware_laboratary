@@ -30,13 +30,13 @@ class MinioObjectStore:
         """
         try:
             self.s3.head_bucket(Bucket=self.bucket_name)
-            logger.info(f"Bucket '{self.bucket_name}' already exists.")
+            logger.info(f"[MinioObjectStore._ensure_bucket_exists] Bucket '{self.bucket_name}' already exists.")
         except Exception:
-            logger.info(f"Bucket '{self.bucket_name}' does not exist. Creating...")
+            logger.info(f"[MinioObjectStore._ensure_bucket_exists] Bucket '{self.bucket_name}' does not exist. Creating...")
             try:
                 self.s3.create_bucket(Bucket=self.bucket_name)
             except Exception as e:
-                logger.error(f"Failed to create bucket '{self.bucket_name}': {e}")
+                logger.error(f"[MinioObjectStore._ensure_bucket_exists] Failed to create bucket '{self.bucket_name}': {e}")
                 raise
 
     def upload_tsx_files(self, directory_path: str) -> Dict[str, str]:
@@ -46,7 +46,7 @@ class MinioObjectStore:
         """
         mapping = {}
         if not os.path.exists(directory_path):
-            logger.warning(f"Directory {directory_path} does not exist.")
+            logger.warning(f"[MinioObjectStore.upload_tsx_files] Directory {directory_path} does not exist.")
             return mapping
 
         for filename in os.listdir(directory_path):
@@ -58,9 +58,9 @@ class MinioObjectStore:
                 try:
                     self.s3.upload_file(file_path, self.bucket_name, object_key)
                     mapping[filename] = object_key
-                    logger.info(f"{__file__}:{__class__}:Uploaded {filename} to {self.bucket_name}/{object_key}")
+                    logger.info(f"[MinioObjectStore.upload_tsx_files] Uploaded {filename} to {self.bucket_name}/{object_key}")
                 except Exception as e:
-                    logger.error(f"Failed to upload {filename}: {e}")
+                    logger.error(f"[MinioObjectStore.upload_tsx_files] Failed to upload {filename}: {e}")
         
         return mapping
 
@@ -74,10 +74,10 @@ class MinioObjectStore:
         
         try:
             self.s3.upload_file(file_path, self.bucket_name, object_key)
-            logger.info(f"{__file__}:{__class__}:Uploaded {file_path} to {self.bucket_name}/{object_key}")
+            logger.info(f"[MinioObjectStore.upload_file] Uploaded {file_path} to {self.bucket_name}/{object_key}")
             return object_key
         except Exception as e:
-            logger.error(f"{__file__}:{__class__}:Failed to upload {file_path}: {e}")
+            logger.error(f"[MinioObjectStore.upload_file] Failed to upload {file_path}: {e}")
             raise
 
     def download_file(self, object_key: str, download_path: str):
@@ -86,9 +86,9 @@ class MinioObjectStore:
         """
         try:
             self.s3.download_file(self.bucket_name, object_key, download_path)
-            logger.info(f"{__file__}:{__class__}:Downloaded {object_key} to {download_path}")
+            logger.info(f"[MinioObjectStore.download_file] Downloaded {object_key} to {download_path}")
         except Exception as e:
-            logger.error(f"{__file__}:{__class__}:Failed to download {object_key}: {e}")
+            logger.error(f"[MinioObjectStore.download_file] Failed to download {object_key}: {e}")
             raise
 
     def get_object_url(self, object_key: str) -> str:

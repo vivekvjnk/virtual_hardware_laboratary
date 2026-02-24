@@ -22,12 +22,12 @@ class WorkspaceManager:
         self._session_first_iteration: bool = True
         self._session_iteration_count: int = 0
         self.current_iteration_id = None
-        logger.info(f"WorkspaceManager initialized with root: {self.workspace_root}")
+        logger.info(f"[WorkspaceManager.__init__] WorkspaceManager initialized with root: {self.workspace_root}")
 
     def set_circuit_name(self, name: str):
         """Sets the circuit name for the current project."""
         self.circuit_name = name
-        logger.info(f"Circuit name set to: {self.circuit_name}")
+        logger.info(f"[WorkspaceManager.set_circuit_name] Circuit name set to: {self.circuit_name}")
 
     def list_projects(self) -> List[str]:
         """Lists all project IDs available in the workspace."""
@@ -63,7 +63,7 @@ class WorkspaceManager:
                 
                 # Initialize _iteration_count with the highest number found
                 self._iteration_count = int(self.current_iteration_path.name[:4])
-                logger.info(f"Loaded project {project_id}. Latest iteration: {self._iteration_count}")
+                logger.info(f"[WorkspaceManager.load_project] Loaded project {project_id}. Latest iteration: {self._iteration_count}")
             else:
                 self._iteration_count = 0
                 self.current_iteration_path = None
@@ -77,16 +77,16 @@ class WorkspaceManager:
         scud_files = list(self.project_root.glob("*.scud"))
         if scud_files:
             self.circuit_name = scud_files[0].stem
-            logger.info(f"Circuit name set to: {self.circuit_name}")
+            logger.info(f"[WorkspaceManager.load_project] Circuit name set to: {self.circuit_name}")
         else:
-            logger.warning(f"No .scud file found in project root: {self.project_root}")
+            logger.warning(f"[WorkspaceManager.load_project] No .scud file found in project root: {self.project_root}")
         
         # Ensure other standard directories exist or at least we know about them
         (self.project_root / "Stable").mkdir(exist_ok=True)
         (self.project_root / "UserArtefacts").mkdir(exist_ok=True)
         (self.project_root / "Archives").mkdir(exist_ok=True)
         
-        logger.info(f"Project loaded: {self.project_id} at {self.project_root}")
+        logger.info(f"[WorkspaceManager.load_project] Project loaded: {self.project_id} at {self.project_root}")
         return self.project_root
 
     def create_project(self, project_id: str) -> Path:
@@ -106,7 +106,7 @@ class WorkspaceManager:
         (self.project_root / "UserArtefacts").mkdir(exist_ok=True)
         
         
-        logger.info(f"Project created at: {self.project_root}")
+        logger.info(f"[WorkspaceManager.create_project] Project created at: {self.project_root}")
         return self.project_root
 
     def register_project_root(self, path: str) -> Path:
@@ -125,7 +125,7 @@ class WorkspaceManager:
         (self.project_root / "UserArtefacts").mkdir(exist_ok=True)
         (self.project_root / "Archives").mkdir(exist_ok=True)
             
-        logger.info(f"Project root registered at: {self.project_root}")
+        logger.info(f"[WorkspaceManager.register_project_root] Project root registered at: {self.project_root}")
         return self.project_root
 
     def add_project_files(self, files: List[str], target_dir: str):
@@ -144,13 +144,13 @@ class WorkspaceManager:
         for file in files:
             shutil.copy(file, self.project_root / target_dir)
 
-        logger.info(f"{files} added to target directory: {target_dir}")
+        logger.info(f"[WorkspaceManager.add_project_files] {files} added to target directory: {target_dir}")
     
     def add_ref_schematic_image(self, image_path: str, target_dir: str = "UserArtefacts"):
         """Add a reference schematic image to the project root."""
         self.add_project_files([image_path], target_dir)
         
-        logger.info(f"Reference schematic image added: {image_path}")
+        logger.info(f"[WorkspaceManager.add_ref_schematic_image] Reference schematic image added: {image_path}")
     
 
     def _get_next_iteration_number(self) -> int:
@@ -208,9 +208,9 @@ class WorkspaceManager:
                 dest = iteration_path / tsx_file.name
                 dest.unlink(missing_ok=True)
                 shutil.copy2(tsx_file, dest)
-                logger.info(f"Carried over {tsx_file.name} from previous iteration")
+                logger.info(f"[WorkspaceManager.create_new_iteration] Carried over {tsx_file.name} from previous iteration")
         
-        logger.info(f"New iteration created: {iteration_path}")
+        logger.info(f"[WorkspaceManager.create_new_iteration] New iteration created: {iteration_path}")
         return iteration_path
 
     def prepare_iteration_with_files(self, source_file: str, iteration_id_suffix: str) -> Path:
@@ -231,7 +231,7 @@ class WorkspaceManager:
             dest_path.unlink()
             
         shutil.copy2(source_path, dest_path)
-        logger.info(f"Prepared iteration with file: {source_file} -> {dest_path}")
+        logger.info(f"[WorkspaceManager.prepare_iteration_with_files] Prepared iteration with file: {source_file} -> {dest_path}")
         return iteration_path
 
     def get_circuit_path_from_stable(self) -> Path:
@@ -255,7 +255,7 @@ class WorkspaceManager:
                 preferred = self.current_iteration_path / f"{self.circuit_name}.scud"
                 if preferred.exists():
                     return preferred
-            logger.warning(f"Multiple .scud files found in {self.current_iteration_path}, returning first one: {scud_files[0]}")
+            logger.warning(f"[WorkspaceManager.get_scud_path] Multiple .scud files found in {self.current_iteration_path}, returning first one: {scud_files[0]}")
         return scud_files[0]
 
     def get_circuit_tsx_path(self) -> Path:
@@ -295,7 +295,7 @@ class WorkspaceManager:
         # Setup symbolic links
         self._setup_symlinks(stable_dir)
         
-        logger.info(f"Stable directory populated at: {stable_dir}")
+        logger.info(f"[WorkspaceManager.populate_stable] Stable directory populated at: {stable_dir}")
         return stable_dir
 
     def move_iterations_to_archives(self):
@@ -372,7 +372,7 @@ class WorkspaceManager:
             # Create a relative symlink for better portability
             rel_source = os.path.relpath(source, target_dir)
             os.symlink(rel_source, link_path)
-            logger.debug(f"Created symlink: {link_path} -> {rel_source}")
+            logger.debug(f"[WorkspaceManager._setup_symlinks] Created symlink: {link_path} -> {rel_source}")
 
     def get_workspace_info(self) -> Dict[str, Any]:
         """Returns information about the current workspace status."""
@@ -387,7 +387,7 @@ class WorkspaceManager:
             if has_user_artefacts:
                 has_images = any(f.suffix.lower() in ['.png', '.jpg', '.jpeg'] for f in (self.project_root / "UserArtefacts").iterdir() if f.is_file())
 
-            logger.info(f"has_schematic_images: {has_schematic_images}, has_user_artefacts: {has_user_artefacts}, has_images: {has_images}, scud_files: {scud_files}")
+            logger.info(f"[WorkspaceManager.get_workspace_info] has_schematic_images: {has_schematic_images}, has_user_artefacts: {has_user_artefacts}, has_images: {has_images}, scud_files: {scud_files}")
 
             if has_schematic_images and has_user_artefacts and has_images and scud_files:
                 is_synthesizable = True

@@ -35,15 +35,15 @@ class ANA_validation_agent:
         """
         Process the circuit file: upload to object store, invoke VAP, poll for status, and collect results.
         """
-        logger.info(f"Identified circuit for validation: {circuit_name}")
+        logger.info(f"[ANA_validation_agent.validate_circuit] Identified circuit for validation: {circuit_name}")
 
         # Find path of the specified circuit file
         circuit_path = os.path.join(workspace, f"{circuit_name}.tsx")
         
-        logger.info(f"Using circuit file: {circuit_path}")
+        logger.info(f"[ANA_validation_agent.validate_circuit] Using circuit file: {circuit_path}")
 
         # 1. Sync the circuit tsx file to Runtime
-        logger.info(f"Step 1: Syncing {circuit_path} to VHL Runtime...")
+        logger.info(f"[ANA_validation_agent.validate_circuit] Step 1: Syncing {circuit_path} to VHL Runtime...")
         if self.sync_client and self.project_id:
             # Workflow 1.2: Agent -> Runtime upload proposal for Circuit
             await self.sync_client.propose_upload(
@@ -61,13 +61,13 @@ class ANA_validation_agent:
             blob_id = f"{self.project_id}/Circuit/{file_hash}"
             self.object_store.upload_file(circuit_path,object_key=blob_id)
         else:
-            logger.warning("SyncClient or ProjectID not available, falling back to manual upload")
+            logger.warning("[ANA_validation_agent.validate_circuit] SyncClient or ProjectID not available, falling back to manual upload")
             blob_id = self.object_store.upload_file(circuit_path)
         
-        logger.info(f"Uploaded as blob_id: {blob_id}")
+        logger.info(f"[ANA_validation_agent.validate_circuit] Uploaded as blob_id: {blob_id}")
 
         # 2. Invoke VAP with the circuit object id
-        logger.info(f"Step 2: Invoking VAP for circuit: {circuit_name}")
+        logger.info(f"[ANA_validation_agent.validate_circuit] Step 2: Invoking VAP for circuit: {circuit_name}")
         await self.ws_client.emit_vap_init(circuit_name, blob_id,iteration_id=iteration_id)
         
         # Wait for the initial VAP_STATUS to get task_id
@@ -77,10 +77,10 @@ class ANA_validation_agent:
         )
         
         task_id = init_response.payload.get("task_id")
-        logger.info(f"VAP initialized with task_id: {task_id}")
+        logger.info(f"[ANA_validation_agent.validate_circuit] VAP initialized with task_id: {task_id}")
 
         # 3. Poll for status of the evaluation
-        logger.info(f"Step 3: Polling for status of task: {task_id}")
+        logger.info(f"[ANA_validation_agent.validate_circuit] Step 3: Polling for status of task: {task_id}")
         results = None
         evaluation_metadata = {}
         status = "unknown"
@@ -92,31 +92,31 @@ class ANA_validation_agent:
             )
             status_data = status_event.payload
             
-            logger.info(f"Received status event: {status_data}")
+            logger.info(f"[ANA_validation_agent.validate_circuit] Received status event: {status_data}")
             status = status_data.get("eval_status", "unknown")
             decision = status_data.get("decision", "N/A")
             
-            logger.info(f"VAP decision for {task_id}: {decision}")
-            logger.info(f"VAP status for {task_id}: {status}")
+            logger.info(f"[ANA_validation_agent.validate_circuit] VAP decision for {task_id}: {decision}")
+            logger.info(f"[ANA_validation_agent.validate_circuit] VAP status for {task_id}: {status}")
             
             evaluation_metadata = status_data.get("metadata", {})
             
             if decision == "ACCEPT":
-                logger.info("VAP evaluation completed successfully.")
+                logger.info("[ANA_validation_agent.validate_circuit] VAP evaluation completed successfully.")
                 results = status_data.get("results")
                 break
             elif decision == "REJECT":
                 error_msg = status_data.get("error", "Unknown error")
-                logger.warning(f"VAP evaluation failed: {error_msg}")
+                logger.warning(f"[ANA_validation_agent.validate_circuit] VAP evaluation failed: {error_msg}")
                 break
             elif decision == "UNDECIDED":
-                logger.info("VAP evaluation still in progress. Waiting for next update...")
+                logger.info("[ANA_validation_agent.validate_circuit] VAP evaluation still in progress. Waiting for next update...")
             else:
-                logger.error(f"Unknown decision '{decision}' received.")
+                logger.error(f"[ANA_validation_agent.validate_circuit] Unknown decision '{decision}' received.")
                 raise RuntimeError(f"Unknown decision '{decision}' received from VAP.")
 
         # 4. Once evaluation is complete, sync evaluation results
-        logger.info("Step 4: Syncing evaluation results...")
+        logger.info("[ANA_validation_agent.validate_circuit] Step 4: Syncing evaluation results...")
         output_dir = os.path.join(workspace, "eval_results")
         
         if self.sync_client and self.project_id:
@@ -143,11 +143,11 @@ class ANA_validation_agent:
                 with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                     zip_ref.extractall(output_dir)
             
-        logger.info("Step 4: Sync complete.")
+        logger.info("[ANA_validation_agent.validate_circuit] Step 4: Sync complete.")
 
         # 5. Delegate back to ANA-D
         # The return value provides all necessary info for ANA-D to continue.
-        logger.info("Step 5: Process complete. Returning results to orchestrator.")
+        logger.info("[ANA_validation_agent.validate_circuit] Step 5: Process complete. Returning results to orchestrator.")
         return {
             "task_id": task_id,
             "decision": decision,
@@ -182,7 +182,7 @@ if __name__ == "__main__":
         print(json.dumps(result, indent=2))
     except Exception as e:
         print(f"Error during validation: {e}")
-        logger.exception("Full stack trace:")
+        logger.exception("[main] Full stack trace:")
         sys.exit(1)
     finally:
         agent.close()

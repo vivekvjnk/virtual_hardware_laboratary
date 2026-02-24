@@ -61,13 +61,13 @@ class SyncClient:
                     payload.data
                 )
         except Exception as e:
-            logger.error(f"Error handling sync message {event.type}: {e}", exc_info=True)
+            logger.error(f"[SyncClient.handle_runtime_message] Error handling sync message {event.type}: {e}", exc_info=True)
             # We should probably send a SYNC_ERROR here if we have a sync_id
             if hasattr(event.payload, "sync_id"):
                  await self.send_sync_error(event.payload["sync_id"], event.payload["project_id"], str(e))
 
     async def handle_hash_request(self, payload: SyncPayload):
-        logger.info(f"[SyncClient: handle_hash_request] Handling HASH_REQUEST for {payload.resource_type} (sync_id={payload.sync_id})")
+        logger.info(f"[SyncClient.handle_hash_request] Handling HASH_REQUEST for {payload.resource_type} (sync_id={payload.sync_id})")
         path = self.get_resource_path(payload.project_id, payload.resource_type, payload.iteration_id, payload.data)
         
         hash_val = None
@@ -77,7 +77,7 @@ class SyncClient:
             else:
                 hash_val = compute_file_hash(path)
         else:
-            logger.info(f"[SyncClient: handle_hash_request] Path doesn't exist: {path}")
+            logger.info(f"[SyncClient.handle_hash_request] Path doesn't exist: {path}")
 
         response_payload = SyncPayload(
             sync_id=payload.sync_id,
@@ -90,7 +90,7 @@ class SyncClient:
         await self.ws_client.emit(EventType.HASH_RESPONSE, response_payload)
 
     async def handle_download_request(self, payload: SyncPayload):
-        logger.info(f"Handling DOWNLOAD_REQUEST for {payload.resource_type} (sync_id={payload.sync_id})")
+        logger.info(f"[SyncClient.handle_download_request] Handling DOWNLOAD_REQUEST for {payload.resource_type} (sync_id={payload.sync_id})")
         target_path = self.get_resource_path(payload.project_id, payload.resource_type, payload.iteration_id, payload.data)
         #make sure target path exists
         os.makedirs(os.path.dirname(target_path), exist_ok=True)
@@ -107,21 +107,21 @@ class SyncClient:
                 extract_dir.mkdir(parents=True, exist_ok=True)
                 decompress_zip(str(tmp_file), str(extract_dir))
                 computed_hash = compute_directory_hash(str(extract_dir))
-                logger.info(f"[handle_download_request]Computed hash: {computed_hash}, Declared hash: {payload.hash}")
+                logger.info(f"[SyncClient.handle_download_request] Computed hash: {computed_hash}, Declared hash: {payload.hash}")
                 if computed_hash != payload.hash:
                     raise ValueError(f"Hash mismatch! Expected {payload.hash}, got {computed_hash}")
                 
                 atomic_replace_directory(str(extract_dir), str(target_path))
             else:
                 computed_hash = compute_file_hash(str(tmp_file))
-                logger.info(f"[handle_download_request]Computed hash: {computed_hash}, Declared hash: {payload.hash}")
+                logger.info(f"[SyncClient.handle_download_request] Computed hash: {computed_hash}, Declared hash: {payload.hash}")
                 if computed_hash != payload.hash:
                     raise ValueError(f"Hash mismatch! Expected {payload.hash}, got {computed_hash}")
-                logger.info(f"[handle_download_request]Hash verified for {payload.resource_type}")
+                logger.info(f"[SyncClient.handle_download_request] Hash verified for {payload.resource_type}")
                 atomic_replace_file(str(tmp_file), str(target_path))
 
             # Notify completion
-            logger.info(f"[handle_download_request]Completed download for {payload.resource_type}")
+            logger.info(f"[SyncClient.handle_download_request] Completed download for {payload.resource_type}")
             complete_payload = SyncPayload(
                 sync_id=payload.sync_id,
                 project_id=payload.project_id,
@@ -131,7 +131,7 @@ class SyncClient:
             await self.ws_client.emit(EventType.SYNC_COMPLETE, complete_payload)
         
         except Exception as e:
-            logger.error(f"Error handling download request for {payload.resource_type}: {e}", exc_info=True)
+            logger.error(f"[SyncClient.handle_download_request] Error handling download request for {payload.resource_type}: {e}", exc_info=True)
             # We should probably send a SYNC_ERROR here if we have a sync_id
             if hasattr(payload, "sync_id"):
                 await self.send_sync_error(payload.sync_id, payload.project_id, str(e))
@@ -146,7 +146,7 @@ class SyncClient:
         path = Path(self.get_resource_path(project_id, resource_type, iteration_id, data))
 
         if not path.exists():
-            raise FileNotFoundError(f"Resource path does not exist: {path}")
+            logger.warning(f"[SyncClient.propose_upload] Resource path does not exist: {path}")
 
         hash_val = None
         blob_to_upload = None

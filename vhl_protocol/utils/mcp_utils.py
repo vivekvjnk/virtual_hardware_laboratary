@@ -168,7 +168,7 @@ def sanitize_mcp_tool_observation(mcp_observation: MCPToolObservation) -> str:
     for cand in candidates:
         try:
             json.loads(cand)
-            logger.debug(f"Sanitized MCP observation: {cand}")
+            logger.debug(f"[sanitize_mcp_tool_observation] Sanitized MCP observation: {cand}")
             return cand
         except json.JSONDecodeError:
             continue

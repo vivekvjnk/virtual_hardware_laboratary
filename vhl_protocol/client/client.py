@@ -47,7 +47,7 @@ class VHLWebSocketClient:
             return
         self._is_running = True
         self._connect_task = asyncio.create_task(self._run())
-        logger.info(f"VHL WebSocket Client (role={self.role}) starting background loop...")
+        logger.info(f"[VHLWebSocketClient.start] VHL WebSocket Client (role={self.role}) starting background loop...")
 
     async def stop(self):
         """Stops the client and closes the connection."""
@@ -60,7 +60,7 @@ class VHLWebSocketClient:
                 await self._connect_task
             except asyncio.CancelledError:
                 pass
-        logger.info("VHL WebSocket Client stopped.")
+        logger.info("[VHLWebSocketClient.stop] VHL WebSocket Client stopped.")
 
     async def _run(self):
         """Internal main loop for connecting and processing messages."""
@@ -68,7 +68,7 @@ class VHLWebSocketClient:
             try:
                 async with websockets.connect(self.url) as ws:
                     self._ws = ws
-                    logger.info(f"Connected to VHL Relay at {self.url}")
+                    logger.info(f"[VHLWebSocketClient._run] Connected to VHL Relay at {self.url}")
                     
                     # 1. Identify ourselves to the relay
                     await self._send_identify()
@@ -87,14 +87,14 @@ class VHLWebSocketClient:
                         
             except (websockets.ConnectionClosed, ConnectionRefusedError) as e:
                 if self._is_running:
-                    logger.warning(f"Connection lost or failed: {e}. Retrying in 5 seconds...")
+                    logger.warning(f"[VHLWebSocketClient._run] Connection lost or failed: {e}. Retrying in 5 seconds...")
                     self._ws = None
                     await asyncio.sleep(5)
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 if self._is_running:
-                    logger.error(f"Unexpected error in VHL WebSocket Client: {e}", exc_info=True)
+                    logger.error(f"[VHLWebSocketClient._run] Unexpected error in VHL WebSocket Client: {e}", exc_info=True)
                     self._ws = None
                     await asyncio.sleep(5)
 
@@ -106,7 +106,7 @@ class VHLWebSocketClient:
             payload={"role": self.role}
         )
         await self._ws.send(identify_event.model_dump_json(by_alias=True))
-        logger.info(f"Sent IDENTIFY as {self.role}")
+        logger.info(f"[VHLWebSocketClient._send_identify] Sent IDENTIFY as {self.role}")
 
     async def _notify_subscribers(self, event: BaseEvent):
         """Notifies all registered subscribers of an event."""
@@ -114,7 +114,7 @@ class VHLWebSocketClient:
             try:
                 await subscriber(event)
             except Exception as e:
-                logger.error(f"Error in subscriber callback: {e}")
+                logger.error(f"[VHLWebSocketClient._notify_subscribers] Error in subscriber callback: {e}")
 
     async def _receive_loop(self):
         """Listens for messages from the WebSocket."""
@@ -123,14 +123,14 @@ class VHLWebSocketClient:
                 try:
                     data = json.loads(message)
                     event = BaseEvent.model_validate(data)
-                    logger.debug(f"Received event: {event.type}")
+                    logger.debug(f"[VHLWebSocketClient._receive_loop] Received event: {event.type}")
                     
                     # Notify all subscribers
                     await self._notify_subscribers(event)
                 except Exception as e:
-                    logger.error(f"Error parsing received event: {e}. Data: {message}")
+                    logger.error(f"[VHLWebSocketClient._receive_loop] Error parsing received event: {e}. Data: {message}")
         except websockets.ConnectionClosed:
-            logger.info("Receive loop stopped due to connection close.")
+            logger.info("[VHLWebSocketClient._receive_loop] Receive loop stopped due to connection close.")
 
     async def _send_loop(self):
         """Sends messages from the internal queue."""
@@ -140,11 +140,11 @@ class VHLWebSocketClient:
                 try:
                     if self._ws and (self._ws.state == websockets.protocol.State.OPEN):
                         await self._ws.send(event.model_dump_json(by_alias=True))
-                        logger.debug(f"Sent event: {event.type}")
+                        logger.debug(f"[VHLWebSocketClient._send_loop] Sent event: {event.type}")
                     else:
-                        logger.warning(f"WS not open, dropping event: {event.type}")
+                        logger.warning(f"[VHLWebSocketClient._send_loop] WS not open, dropping event: {event.type}")
                 except Exception as e:
-                    logger.error(f"Error sending event {event.type}: {e}")
+                    logger.error(f"[VHLWebSocketClient._send_loop] Error sending event {event.type}: {e}")
                     raise e # Trigger reconnection
                 finally:
                     self._send_queue.task_done()
@@ -200,7 +200,7 @@ class VHLWebSocketClient:
         try:
             return await asyncio.wait_for(queue.get(), timeout=timeout)
         except asyncio.TimeoutError:
-            logger.error(f"Timed out waiting for event {event_type}")
+            logger.error(f"[VHLWebSocketClient.wait_for_event] Timed out waiting for event {event_type}")
             raise
         finally:
             self.remove_subscriber(subscriber)

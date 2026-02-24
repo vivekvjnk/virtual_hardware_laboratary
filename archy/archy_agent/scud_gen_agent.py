@@ -24,7 +24,7 @@ logger = get_logger(__name__)
 
 api_key = os.getenv("LLM_API_KEY")
 if not api_key:
-    logger.warning("LLM_API_KEY environment variable is not set. Using dummy key for initialization check.")
+    logger.warning("[scud_gen_agent] LLM_API_KEY environment variable is not set. Using dummy key for initialization check.")
     api_key = "dummy_key"
 
 model = os.getenv("LLM_MODEL", "anthropic/claude-sonnet-4-5-20250929")
@@ -97,8 +97,8 @@ def archy_build_scud(
 
     conversation.run()
 
-    logger.info("Agent 1 completed SCUD construction")
-    logger.info(f"Total cost: {llm.metrics.accumulated_cost}")
+    logger.info("[archy_build_scud] Agent 1 completed SCUD construction")
+    logger.info(f"[archy_build_scud] Total cost: {llm.metrics.accumulated_cost}")
 
 
 if __name__ == "__main__":

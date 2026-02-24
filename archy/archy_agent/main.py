@@ -22,35 +22,35 @@ def _archy_build_scud_stub(image_id: str, workspace_path: Path):
     # Consistent with standard naming and scud_gen_agent's expected structure
     output_dir = workspace / "schematic_images" / image_id
     
-    logger.info(f"Starting orchestration for image_id: {image_id}")
-    logger.info(f"Workspace: {workspace}")
-    logger.info(f"Source Image Path: {image_path}")
+    logger.info(f"[_archy_build_scud_stub] Starting orchestration for image_id: {image_id}")
+    logger.info(f"[_archy_build_scud_stub] Workspace: {workspace}")
+    logger.info(f"[_archy_build_scud_stub] Source Image Path: {image_path}")
     
     if not image_path.exists():
         raise FileNotFoundError(f"Source image not found at {image_path}")
 
     # Step 1: Run Segmentation Pipeline
-    logger.info("Running image segmentation pipeline...")
+    logger.info("[_archy_build_scud_stub] Running image segmentation pipeline...")
     try:
         segmentation_result = run_schematic_segmentation_pipeline(
             output_dir=output_dir,
             image_path=image_path
         )
-        logger.info(f"Segmentation pipeline finished. Detections: {segmentation_result.get('num_detections', 0)}")
+        logger.info(f"[_archy_build_scud_stub] Segmentation pipeline finished. Detections: {segmentation_result.get('num_detections', 0)}")
     except Exception as e:
-        logger.error(f"Error during image segmentation: {e}")
+        logger.error(f"[_archy_build_scud_stub] Error during image segmentation: {e}")
         raise
 
     # Validation: Verify segments were created
     if not output_dir.exists() or not any(output_dir.glob("*.png")):
         raise RuntimeError(f"Validation failed: No cropped images found in segment directory {output_dir}")
     
-    logger.info(f"Validation success: Segments found in {output_dir}")
+    logger.info(f"[_archy_build_scud_stub] Validation success: Segments found in {output_dir}")
 
     
     
     # Step 2
-    logger.info(f"[STUB] Generating dummy SCUD document for image_id: {image_id}")
+    logger.info(f"[_archy_build_scud_stub] [STUB] Generating dummy SCUD document for image_id: {image_id}")
     
     # Create dummy SCUD file
     scud_file = workspace / f"{image_id}.scud"
@@ -61,7 +61,7 @@ def _archy_build_scud_stub(image_id: str, workspace_path: Path):
     with open(scud_file, "w") as f:
         f.write(scud_content)
 
-    logger.info(f"[STUB] Dummy SCUD document generated: {scud_file}")
+    logger.info(f"[_archy_build_scud_stub] [STUB] Dummy SCUD document generated: {scud_file}")
     return scud_file
     
 def orchestrate_archy(workspace_path: Union[str, Path], image_id: str):
@@ -91,33 +91,33 @@ def orchestrate_archy(workspace_path: Union[str, Path], image_id: str):
     # Consistent with standard naming and scud_gen_agent's expected structure
     output_dir = workspace / "schematic_images" / image_id
     
-    logger.info(f"Starting orchestration for image_id: {image_id}")
-    logger.info(f"Workspace: {workspace}")
-    logger.info(f"Source Image Path: {image_path}")
+    logger.info(f"[orchestrate_archy] Starting orchestration for image_id: {image_id}")
+    logger.info(f"[orchestrate_archy] Workspace: {workspace}")
+    logger.info(f"[orchestrate_archy] Source Image Path: {image_path}")
     
     if not image_path.exists():
         raise FileNotFoundError(f"Source image not found at {image_path}")
 
     # Step 1: Run Segmentation Pipeline
-    logger.info("Running image segmentation pipeline...")
+    logger.info("[orchestrate_archy] Running image segmentation pipeline...")
     try:
         segmentation_result = run_schematic_segmentation_pipeline(
             output_dir=output_dir,
             image_path=image_path
         )
-        logger.info(f"Segmentation pipeline finished. Detections: {segmentation_result.get('num_detections', 0)}")
+        logger.info(f"[orchestrate_archy] Segmentation pipeline finished. Detections: {segmentation_result.get('num_detections', 0)}")
     except Exception as e:
-        logger.error(f"Error during image segmentation: {e}")
+        logger.error(f"[orchestrate_archy] Error during image segmentation: {e}")
         raise
 
     # Validation: Verify segments were created
     if not output_dir.exists() or not any(output_dir.glob("*.png")):
         raise RuntimeError(f"Validation failed: No cropped images found in segment directory {output_dir}")
     
-    logger.info(f"Validation success: Segments found in {output_dir}")
+    logger.info(f"[orchestrate_archy] Validation success: Segments found in {output_dir}")
 
     # Step 2: Trigger Archy Agent (Scud Generation)
-    logger.info("Step 2/2: Triggering Archy agent for SCUD generation...")
+    logger.info("[orchestrate_archy] Step 2/2: Triggering Archy agent for SCUD generation...")
     if os.environ.get("ARCHY_STUB") == "true":
         _archy_build_scud_stub(image_id=image_id, workspace_path=workspace)
     else:
@@ -128,7 +128,7 @@ def orchestrate_archy(workspace_path: Union[str, Path], image_id: str):
                 workspace=workspace
             )
         except Exception as e:
-            logger.error(f"Error during SCUD generation: {e}")
+            logger.error(f"[orchestrate_archy] Error during SCUD generation: {e}")
             raise
 
     # Final Verification: Check if scud document is created in workspace
@@ -136,7 +136,7 @@ def orchestrate_archy(workspace_path: Union[str, Path], image_id: str):
     if not scud_file.exists():
         raise RuntimeError(f"Final verification failed: SCUD document not found at {scud_file}")
     
-    logger.info(f"Workflow completed successfully. SCUD document generated: {scud_file}")
+    logger.info(f"[orchestrate_archy] Workflow completed successfully. SCUD document generated: {scud_file}")
     return scud_file
 
 if __name__ == "__main__":
@@ -150,5 +150,5 @@ if __name__ == "__main__":
     try:
         orchestrate_archy(ws_v_path, img_v_id)
     except Exception as e:
-        logger.error(f"Orchestration failed: {e}")
+        logger.error(f"[main] Orchestration failed: {e}")
         sys.exit(1)

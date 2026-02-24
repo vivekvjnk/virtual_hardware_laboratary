@@ -91,7 +91,7 @@ class LibrarianAgent:
             workspace=cwd,
         )
 
-        logger.info(f"Starting Librarian Agent for SCUD: {scud_path}")
+        logger.info(f"[LibrarianAgent.process_scud] Starting Librarian Agent for SCUD: {scud_path}")
         
         # We send a message to kick off the process
         # The system prompt already tells the agent what to do, but we need to point it to the file.
@@ -105,7 +105,7 @@ class LibrarianAgent:
         conversation.send_message(user_message)
         conversation.run()
         
-        logger.info("Librarian Agent finished processing.")
+        logger.info("[LibrarianAgent.process_scud] Librarian Agent finished processing.")
 
 
 if __name__ == "__main__":

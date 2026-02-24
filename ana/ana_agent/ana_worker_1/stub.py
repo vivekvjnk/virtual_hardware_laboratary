@@ -13,7 +13,7 @@ def run_ana_w1_stub(workspace: str, circuit_name: str, **kwargs):
     Expected workspace: str (path to current iteration directory)
     Expected circuit_name: str (name of the circuit file without extension)
     """
-    logger.info(f"[ANA-W1 Stub] Mocking synthesis for {circuit_name}\n Input params: {workspace}, {kwargs}")
+    logger.info(f"[run_ana_w1_stub] Mocking synthesis for {circuit_name}\n Input params: {workspace}, {kwargs}")
     
     # The target location expected by WorkspaceManager.get_circuit_tsx_path()
     target_path = Path(workspace) / f"{circuit_name}.tsx"
@@ -30,6 +30,6 @@ def run_ana_w1_stub(workspace: str, circuit_name: str, **kwargs):
         logger.info(f"Found previous iteration dir: {prev_dir}")
 
 
-    logger.info(f"[ANA-W1 Stub] Copying {source_path} to {target_path}")
+    logger.info(f"[run_ana_w1_stub] Copying {source_path} to {target_path}")
     shutil.copy2(source_path, target_path)
-    logger.info(f"[ANA-W1 Stub] Successfully generated mock circuit file: {target_path}")
+    logger.info(f"[run_ana_w1_stub] Successfully generated mock circuit file: {target_path}")

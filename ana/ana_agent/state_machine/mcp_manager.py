@@ -21,7 +21,7 @@ class MCPManager:
         Verifies that the MCP server is up and running.
         Since it's managed by VHL Runtime, we just wait for it to become healthy.
         """
-        logger.info(f"[MCP Manager] Verifying MCP Server at {self.mcp_endpoint}...")
+        logger.info(f"[MCPManager.ensure_server_running] Verifying MCP Server at {self.mcp_endpoint}...")
         
         # Parse port from endpoint for socket check
         try:
@@ -41,15 +41,15 @@ class MCPManager:
                 with httpx.Client() as client:
                     response = client.get(f"{self.mcp_endpoint}/health", timeout=2.0)
                     if response.status_code == 200:
-                        logger.info(f"[MCP Manager] MCP Server is healthy at {self.mcp_endpoint}")
+                        logger.info(f"[MCPManager.ensure_server_running] MCP Server is healthy at {self.mcp_endpoint}")
                         self._sync_state()
                         return
             except (ConnectionRefusedError, socket.timeout, httpx.RequestError):
                 if i % 5 == 0:
-                    logger.info(f"[MCP Manager] Waiting for MCP Server... (attempt {i+1}/{max_retries})")
+                    logger.info(f"[MCPManager.ensure_server_running] Waiting for MCP Server... (attempt {i+1}/{max_retries})")
                 time.sleep(1)
         
-        logger.error(f"[MCP Manager] MCP Server at {self.mcp_endpoint} is not responding.")
+        logger.error(f"[MCPManager.ensure_server_running] MCP Server at {self.mcp_endpoint} is not responding.")
 
     def _sync_state(self):
         """Syncs the internal commit ID with the server's current state to avoid processing old commits."""
@@ -62,14 +62,14 @@ class MCPManager:
                     if obs_commits:
                         latest_commit = max(obs_commits, key=lambda x: x["commit_id"])
                         self.last_commit_id = latest_commit["commit_id"]
-                        logger.info(f"[MCP Manager] Synced state. Last commit ID: {self.last_commit_id}")
+                        logger.info(f"[MCPManager._sync_state] Synced state. Last commit ID: {self.last_commit_id}")
         except Exception as e:
-            logger.warning(f"[MCP Manager] Failed to sync state: {e}")
+            logger.warning(f"[MCPManager._sync_state] Failed to sync state: {e}")
 
     def poll_for_observation(self) -> Optional[Dict[str, Any]]:
         """Polls MCP for a new observation commit."""
         url = f"{self.mcp_endpoint}/mcp/commits"
-        logger.info(f"[MCP Manager] Polling {url} for latest observation...")
+        logger.info(f"[MCPManager.poll_for_observation] Polling {url} for latest observation...")
         
         while True:
             try:
@@ -88,9 +88,9 @@ class MCPManager:
                 
                 time.sleep(2)
             except Exception as e:
-                logger.debug(f"[MCP Manager] Polling error: {e}")
+                logger.debug(f"[MCPManager.poll_for_observation] Polling error: {e}")
                 time.sleep(2)
 
     def cleanup(self):
         """Cleanup handler. No process to kill anymore as it's managed externally."""
-        logger.info("[MCP Manager] Cleaning up MCP Manager.")
+        logger.info("[MCPManager.cleanup] Cleaning up MCP Manager.")

@@ -30,16 +30,16 @@ class MinioClient:
             try:
                 self.s3.create_bucket(Bucket=self.bucket_name)
             except Exception as e:
-                logger.error(f"Failed to create bucket '{self.bucket_name}': {e}")
+                logger.error(f"[MinioClient._ensure_bucket_exists] Failed to create bucket '{self.bucket_name}': {e}")
                 raise
 
     def upload_file(self, file_path: str, object_key: str):
         """Uploads a single file to the bucket."""
         try:
             self.s3.upload_file(file_path, self.bucket_name, object_key)
-            logger.info(f"Uploaded {file_path} to {object_key}")
+            logger.info(f"[MinioClient.upload_file] Uploaded {file_path} to {object_key}")
         except Exception as e:
-            logger.error(f"Failed to upload {file_path}: {e}")
+            logger.error(f"[MinioClient.upload_file] Failed to upload {file_path}: {e}")
             raise
 
     def download_file(self, object_key: str, download_path: str):
@@ -47,9 +47,9 @@ class MinioClient:
         try:
             os.makedirs(os.path.dirname(download_path), exist_ok=True)
             self.s3.download_file(self.bucket_name, object_key, download_path)
-            logger.info(f"Downloaded {object_key} to {download_path}")
+            logger.info(f"[MinioClient.download_file] Downloaded {object_key} to {download_path}")
         except Exception as e:
-            logger.error(f"Failed to download {object_key}: {e}")
+            logger.error(f"[MinioClient.download_file] Failed to download {object_key}: {e}")
             raise
 
     def object_exists(self, object_key: str) -> bool:

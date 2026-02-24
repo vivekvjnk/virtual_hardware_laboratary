@@ -58,7 +58,7 @@ class ObserverAgent:
         # Configure LLM
         api_key = llm_api_key or os.getenv("LLM_API_KEY")
         if not api_key:
-            logger.warning("LLM_API_KEY not provided. Using dummy key for initialization.")
+            logger.warning("[ObserverAgent.__init__] LLM_API_KEY not provided. Using dummy key for initialization.")
             api_key = "dummy_key"
         
         model = llm_model or os.getenv("LLM_MODEL", "anthropic/claude-sonnet-4-5-20250929")
@@ -86,7 +86,7 @@ class ObserverAgent:
             }
         }
 
-        logger.info(f"Observer Agent initialized with MCP URL: {mcp_url}")
+        logger.info(f"[ObserverAgent.__init__] Observer Agent initialized with MCP URL: {mcp_url}")
     
     def observe(
         self,
@@ -139,14 +139,14 @@ class ObserverAgent:
             iteration_dir=iteration_dir,
         )
         
-        logger.info(f"Starting observation in mode: {mode}")
-        logger.info(f"User message: {user_message}")
+        logger.info(f"[ObserverAgent.observe] Starting observation in mode: {mode}")
+        logger.info(f"[ObserverAgent.observe] User message: {user_message}")
         
         # Send message and run conversation
         conversation.send_message(user_message)
         conversation.run()
         
-        logger.info(f"Observation committed successfully")
+        logger.info(f"[ObserverAgent.observe] Observation committed successfully")
         
         return {
             "mode": mode.value,
@@ -177,7 +177,7 @@ class ObserverAgent:
         """Cleanup resources."""
         if hasattr(self, 'commit_tool'):
             self.commit_tool.close()
-        logger.info("Observer Agent closed.")
+        logger.info("[ObserverAgent.close] Observer Agent closed.")
 
 
 if __name__ == "__main__":
@@ -210,7 +210,7 @@ if __name__ == "__main__":
         print(json.dumps(result, indent=2))
     except Exception as e:
         print(f"Error during observation: {e}")
-        logger.exception("Full stack trace:")
+        logger.exception("[main] Full stack trace:")
         sys.exit(1)
     finally:
         observer.close()

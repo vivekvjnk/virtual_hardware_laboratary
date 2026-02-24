@@ -10,7 +10,7 @@ def run_observer_stub(mode: str, iteration_dir: str, mcp_url: str = "http://loca
     Mock replacement for ObserverAgent.observe.
     Commits an observation via MCP TOOL.
     """
-    logger.info(f"[Observer Stub] Mocking observation for {iteration_dir} in mode {mode}")
+    logger.info(f"[run_observer_stub] Mocking observation for {iteration_dir} in mode {mode}")
     
     # Heuristic/Stub logic: decide what to commit
     issue_kind = "NONE"
@@ -37,7 +37,7 @@ def run_observer_stub(mode: str, iteration_dir: str, mcp_url: str = "http://loca
     
     # The MCP server at :8081 expects the payload either flattened or in a 'payload' key
     # Based on server/main.py: arguments.get("payload", arguments)
-    logger.info(f"[Observer Stub] Committing observation: {payload}")
+    logger.info(f"[run_observer_stub] Committing observation: {payload}")
     try:
         # Note: the url in observer_agent is http://localhost:8081/mcp/observe
         # call_mcp_function takes a base URL for SSE. 
@@ -53,9 +53,9 @@ def run_observer_stub(mode: str, iteration_dir: str, mcp_url: str = "http://loca
         
         # Correct URL for SSE in MCPInvoker/call_mcp_function
         result = call_mcp_function(mcp_url, "commit_observation", arguments=payload)
-        logger.info(f"[Observer Stub] Successfully committed observation. Result: {result}")
+        logger.info(f"[run_observer_stub] Successfully committed observation. Result: {result}")
     except Exception as e:
-        logger.error(f"[Observer Stub] Failed to commit observation: {e}")
+        logger.error(f"[run_observer_stub] Failed to commit observation: {e}")
         # We don't raise here to avoid crashing the state machine if the MCP server isn't responsive in stub mode
         # But wait, ana_sm polls for it, so if we don't commit, it will wait forever.
         raise

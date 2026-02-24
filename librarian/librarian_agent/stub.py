@@ -60,7 +60,7 @@ def resolve_component_stub(part_number: str, mcp_url: str) -> Optional[Dict]:
     """
     Stub for the 3-step resolve_component process.
     """
-    logger.info(f"[LibrarianStub] Resolving: {part_number}")
+    logger.info(f"[resolve_component_stub] Resolving: {part_number}")
     
     try:
         start_res = call_mcp_function(mcp_url, "resolve_component_start", {"component_name": part_number})
@@ -100,7 +100,7 @@ def resolve_component_stub(part_number: str, mcp_url: str) -> Optional[Dict]:
                     })
             time.sleep(1)
         except Exception as e:
-            logger.error(f"[LibrarianStub] resolve_component_status error: {e}")
+            logger.error(f"[resolve_component_stub] resolve_component_status error: {e}")
             time.sleep(1)
             
     return None
@@ -109,7 +109,7 @@ def process_scud_stub(scud_path: str, mcp_url: str = "http://localhost:8080/mcp"
     """
     Stub for LibrarianAgent.process_scud.
     """
-    logger.info(f"[LibrarianStub] STUB MODE: Processing SCUD: {scud_path}")
+    logger.info(f"[process_scud_stub] STUB MODE: Processing SCUD: {scud_path}")
     if not os.path.exists(scud_path):
         return
 
@@ -148,4 +148,4 @@ def process_scud_stub(scud_path: str, mcp_url: str = "http://localhost:8080/mcp"
     with open(scud_path, 'w') as f:
         f.write(new_content)
     
-    logger.info(f"[LibrarianStub] SCUD file updated at {scud_path}")
+    logger.info(f"[process_scud_stub] SCUD file updated at {scud_path}")
