@@ -146,7 +146,7 @@ export async function handleVapDecision(
     try {
         if (decision === "ACCEPT") {
             console.log(`[Workspace] Committing changes for task ${taskId} to ${projectDir}`);
-            await COWWorkspaceManager.commit(taskId, projectDir);
+            // await COWWorkspaceManager.commit(taskId, projectDir);
         } else {
             console.log(`[Workspace] Rejecting changes for task ${taskId}`);
         }

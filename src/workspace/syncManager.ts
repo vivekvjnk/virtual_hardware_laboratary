@@ -40,7 +40,8 @@ export class SyncManager {
                 return path.join(projectRoot, "eval_results");
             case "StableCircuit": {
                 const name = data?.circuit_name || "circuit";
-                return path.join(projectRoot, "Stable", `${name}.tsx`);
+                // return path.join(projectRoot, "Stable", `${name}.tsx`);
+                return path.join(projectRoot, `${name}.tsx`);
             }
         }
     }
@@ -293,6 +294,39 @@ export class SyncManager {
                 // Atomic replace
                 console.log(`[Sync] Performing atomic file replacement for ${targetPath}`);
                 await this.atomicReplaceFile(localFile, targetPath);
+
+                if (resource_type === "StableCircuit") {
+                    const projectRoot = path.join(this.workspaceDir, project_id);
+                    const indexPath = path.join(projectRoot, "index.circuit.tsx");
+
+                    try {
+                        if (indexPath !== targetPath && await fs.stat(indexPath).catch(() => null)) {
+                            console.log(`[Sync] Removing default entry point: ${indexPath}`);
+                            await fs.unlink(indexPath);
+                        }
+                    } catch (err) {
+                        console.warn(`[Sync] Failed to remove ${indexPath}:`, err);
+                    }
+
+                    setTimeout(() => {
+                        console.log(`[Sync] Updated StableCircuit, requesting UI reload for ${targetPath}`);
+                        const relativeTarget = path.relative(this.workspaceDir, targetPath);
+                        const reloadUrl = `http://localhost:3020/#file=${encodeURIComponent(relativeTarget)}`;
+
+                        this.sender.send({
+                            id: randomUUID(),
+                            type: "DEV_SERVER_READY",
+                            artifact_id: null,
+                            timestamp: new Date().toISOString(),
+                            source: "vhl_workspace",
+                            payload: {
+                                url: reloadUrl,
+                                project_id: project_id,
+                                target_path: targetPath
+                            }
+                        });
+                    }, 500);
+                }
             }
 
             // Cleanup
