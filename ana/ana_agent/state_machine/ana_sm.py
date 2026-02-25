@@ -196,7 +196,9 @@ class ANADStateMachine:
             # get the circuit code path from Stable/ directory. Pass to prepare_iteration_with_files
             # NOTE: Assumption: Before reaching init, workspace sync is carried out between VHL Runtime and Agent backend. Hence Stable/ directory contents are in sync with VHL runtime.
             circuit_code_path = self.workspace_manager.get_circuit_path_from_stable()
-            self.workspace_manager.prepare_iteration_with_files(source_file=str(circuit_code_path), iteration_id_suffix=last_iteration_id_suffix)
+            self.workspace_manager.prepare_iteration_with_files(source_file=str(circuit_code_path), 
+                                                                iteration_id_suffix=last_iteration_id_suffix,
+                                                                observations=observations)
             
         else: # Debug observability
             logger.info(f"[ANADStateMachine._handle_init] Starting new iteration {self.workspace_manager.get_iteration_count()}. \nObservations: {observations}, First Iteration: {self.workspace_manager.is_first_iteration()}")

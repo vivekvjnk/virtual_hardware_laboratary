@@ -224,7 +224,7 @@ class WorkspaceManager:
         logger.info(f"[WorkspaceManager.create_new_iteration] New iteration created: {iteration_path}")
         return iteration_path
 
-    def prepare_iteration_with_files(self, source_file: str, iteration_id_suffix: str) -> Path:
+    def prepare_iteration_with_files(self, source_file: str, iteration_id_suffix: str,observations=None) -> Path:
         """Creates a new iteration and copies a specific source file into it as the circuit file."""
         if not self.project_root:
             raise RuntimeError("Project root not set")
@@ -243,6 +243,13 @@ class WorkspaceManager:
             
         shutil.copy2(source_path, dest_path)
         logger.info(f"[WorkspaceManager.prepare_iteration_with_files] Prepared iteration with file: {source_file} -> {dest_path}")
+
+        # IF observations are not None, copy it under observations.md file
+        if observations:
+            with open(iteration_path/f"{self.circuit_name}.observations","w") as f:
+                f.write(str(observations))
+                logger.info(f"[WorkspaceManager.prepare_iteration_with_files] Updated observations...")
+        
         return iteration_path
 
     def get_circuit_path_from_stable(self) -> Path:
