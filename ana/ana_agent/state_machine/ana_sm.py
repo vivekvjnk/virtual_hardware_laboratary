@@ -375,6 +375,8 @@ class ANADStateMachine:
         
         try:
             scud_path = self.workspace_manager.get_scud_path()
+            library_path = self.workspace_manager.get_library_path()
+
             current_iter_dir = self.workspace_manager.current_iteration_path
             schematic_images_path = os.path.join(current_iter_dir, "schematic_images")
             observations = result_msg.get("observations", [])
@@ -399,6 +401,7 @@ class ANADStateMachine:
                     circuit_name=self.circuit_name,
                     observations=observations,
                     previous_iteration_dir=str(previous_iter_dir),
+                    library_path = library_path,
                 )
             elif len(observations)>0 and previous_iter_dir:
                 logger.info("[ANADStateMachine._handle_trigger_w1] ANA-W1 in error correction mode (triggered from PREPARE_FIX).")
@@ -410,6 +413,7 @@ class ANADStateMachine:
                     circuit_name=self.circuit_name,
                     observations=observations,
                     previous_iteration_dir=str(previous_iter_dir),
+                    library_path = library_path,
                 )
             else:
                 logger.info("[ANADStateMachine._handle_trigger_w1] ANA-W1 in synthesis mode (not triggered from PREPARE_FIX).")
@@ -419,7 +423,8 @@ class ANADStateMachine:
                     schematic_images_path=schematic_images_path,
                     scud_path=str(scud_path),
                     circuit_name=self.circuit_name,
-                    observations=observations
+                    observations=observations,
+                    library_path = library_path,
                 )
             
             if not os.path.exists(self.workspace_manager.get_circuit_tsx_path()):

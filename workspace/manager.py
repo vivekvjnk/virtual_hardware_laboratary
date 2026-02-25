@@ -276,6 +276,11 @@ class WorkspaceManager:
             logger.warning(f"[WorkspaceManager.get_scud_path] Multiple .scud files found in {self.current_iteration_path}, returning first one: {scud_files[0]}")
         return scud_files[0]
 
+    
+    def get_library_path(self)->Path:
+        current_lib_path = self.current_iteration_path/ "lib/imports"
+        return current_lib_path
+
     def get_circuit_tsx_path(self) -> Path:
         """Returns the path to the main circuit .tsx file in the current iteration."""
         if not self.current_iteration_path:
@@ -395,25 +400,19 @@ class WorkspaceManager:
             if scud_src.name != "circuit.scud":
                 links.append(("circuit.scud", scud_src))
 
-        # 2. Pin Mapping link
-        # Check both names: component_pin_mapping.md and pin_mapping.md
-        pin_mapping_src = None
-        for name in ["component_pin_mapping.md", "pin_mapping.md"]:
-            p = self.project_root / name
-            if p.exists():
-                pin_mapping_src = p
-                break
-        
-        if pin_mapping_src:
-            links.append((pin_mapping_src.name, pin_mapping_src))
-            if pin_mapping_src.name != "pin_mapping.md":
-                links.append(("pin_mapping.md", pin_mapping_src))
+        # 2. Library imports link
+        lib_imports_src = self.project_root / "lib" / "imports"
+        if lib_imports_src.exists() and lib_imports_src.is_dir():
+            # We link the whole lib/imports directory
+            links.append(("lib/imports", lib_imports_src))
         
         for link_name, source in links:
             if not source.exists():
                 continue
                 
             link_path = target_dir / link_name
+            # Ensure parent directory exists for nested links
+            link_path.parent.mkdir(parents=True, exist_ok=True)
             # Remove if exists (could be a broken link or an old one)
             if os.path.lexists(link_path):
                 if link_path.is_symlink() or link_path.is_file():
@@ -422,7 +421,7 @@ class WorkspaceManager:
                     shutil.rmtree(link_path)
             
             # Create a relative symlink for better portability
-            rel_source = os.path.relpath(source, target_dir)
+            rel_source = os.path.relpath(source, link_path.parent)
             os.symlink(rel_source, link_path)
             logger.debug(f"[WorkspaceManager._setup_symlinks] Created symlink: {link_path} -> {rel_source}")
 

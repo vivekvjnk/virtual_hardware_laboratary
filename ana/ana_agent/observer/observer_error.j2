@@ -106,6 +106,7 @@ Cannot find module './lib/imports/BQ79616PAPQ'
 
 ```
 → issue_kind: LOCAL
+→ note: Component is not present under the import path. Validate if component library contains the component
 
 ---
 
@@ -116,6 +117,7 @@ Invalid footprint function, got "pinheader"
 
 ```
 → issue_kind: LOCAL
+→ note: Wrong footprint function name. Refer tscircuit user manual for root cause analysis
 
 ---
 
@@ -126,6 +128,15 @@ Multiple nets unresolved after evaluation
 
 ```
 → issue_kind: NON_LOCAL
+
+Example 4:
+```
+
+Could not find port for selector ".U1 > .GND". Component "BAT" found, but does not have pin "GND". It has no ports[39m[0m
+
+```
+→ issue_kind: LOCAL
+→ note: Review the component library for root cause analysis. This error implies circuit code refers to a pin name which doesn't exist in the library component.
 
 ────────────────────────────────────────────
 COMMIT DISCIPLINE

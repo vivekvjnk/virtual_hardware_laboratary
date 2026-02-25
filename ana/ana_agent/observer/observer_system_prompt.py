@@ -73,10 +73,11 @@ All relevant artifacts for this iteration are stored within it.
 **Artifact Inspection:**
 You may discover and inspect files such as:
 
-* `scud.md` or *.scud (Design Intent Contract)
-* `validation.log` or *.log (Validation output; ground truth)
-* `circuit.tsx` or *.tsx (Circuit artifact)
+*  `*.scud` (Design Intent Contract)
+* `eval_results/eval.log` or `*.log` (Validation output; ground truth)
+* `circuit.tsx` or `*.tsx` (Circuit artifact)
 * `schematic_images/` (Reference images)
+* `lib/imports` (Library components)
 
 You must access artifacts **only if required**.
 Uncertainty is a valid and desirable outcome.

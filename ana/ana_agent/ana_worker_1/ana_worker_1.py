@@ -69,7 +69,7 @@ def conversation_callback(event: Event):
 
 logger.info("[ANA-W1] ANA-W1: Agent initialized successfully.")
 
-def run_ana_w1_agent(workspace:str,scud_path: str, schematic_images_path: str = None,component_pin_mapping_path: str = None,circuit_name: str = None,previous_iteration_dir: str = None, observations: List[str] = None):
+def run_ana_w1_agent(workspace:str,scud_path: str, schematic_images_path: str = None,library_path: str = None,circuit_name: str = None,previous_iteration_dir: str = None, observations: List[str] = None):
     """
     Process a SCUD file and analyze its components.
     
@@ -138,8 +138,8 @@ def run_ana_w1_agent(workspace:str,scud_path: str, schematic_images_path: str = 
     if schematic_images_path:
         user_message += f"\n\nYou may refer to schematic images located at '{schematic_images_path}' for visual clarification. You can use file_editor tool to view these images as needed."
 
-    if component_pin_mapping_path:
-        user_message += f"\n\nYou may refer component_pin_mapping.md at '{component_pin_mapping_path}' for component pin mapping information if needed."
+    if library_path:
+        user_message += f"\n\nYou may refer component lirbary files at '{library_path}' for component pin mapping information if needed."
     
     # Add observations if provided
     if observations:
@@ -154,12 +154,12 @@ def run_ana_w1_agent(workspace:str,scud_path: str, schematic_images_path: str = 
         user_message += "\nPlease correct your circuit based on these observations. If corrections are highly local and targetted, directly apply them on circuit code. You don't have to explore SCUD file or schematic images."
     else:
         logger.warning("[run_ana_w1_agent] No observations found. Could be first iteration..")
-        user_message += "\n\nAll local library components are available under './lib/imports/' in the execution environment. The execution environment is a remote container. Any other path would produce import errors during validation."
+        user_message += "\n\nAll local library components are available under './lib/imports/' in the execution environment. Any other path would produce import errors during validation."
         # Information on execution environment and the process
         user_message += "\n\nYou should generate and store tsx circuit file in the current workspace directory. The circuit file will be evaluated by the backend in a a remote execution environment. All the imports in the circuit will be resolved in this execution environment. Libraries are available under ./lib/imports/ directory in the execution environment."
 
         
-        user_message += f"Ensure the circuit file is named '{circuit_name}.tsx'." if circuit_name else "Ensure the circuit file is named appropriately with a .tsx extension."
+        user_message += f"Ensure the circuit file is named '{circuit_name}.tsx'."
 
     logger.info(f"[run_ana_w1_agent] Final user message {'*'*100}\n{user_message}")
 
