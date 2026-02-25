@@ -45,10 +45,15 @@ class ANADStateMachine:
         self.parent_notify = parent_notify
         self.inbox_queue = inbox_queue if inbox_queue is not None else asyncio.Queue()
         
-        # Project Info
-        self.circuit_name = circuit_name # NOTE : circuit_name should never contain extension
         self.workspace_manager = workspace_manager
-        self.workspace_manager.set_circuit_name(self.circuit_name)
+        
+        # Project Info
+        if circuit_name:
+            self.circuit_name = circuit_name  # NOTE : circuit_name should never contain extension
+            self.workspace_manager.set_circuit_name(self.circuit_name)
+        else:
+            self.circuit_name = self.workspace_manager.circuit_name
+            
 
         # Managers
         self.mcp_manager = MCPManager(endpoint="http://localhost:8081")

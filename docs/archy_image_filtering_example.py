@@ -8,7 +8,7 @@ multiple image crops.
 
 from pathlib import Path
 from openhands.sdk import AgentConfig, LocalConversation
-from openhands.sdk.conversation.event_filter_config import EventFilterConfig
+
 from openhands.sdk.llm import LLM
 
 
@@ -63,8 +63,6 @@ def orchestrate_archy_with_image_filtering(
     conversation = LocalConversation(
         agent_config=agent_config,
         workspace=workspace_path,
-        # Pass the filter config to enable filtering
-        # event_filter_config=filter_config,  # Uncomment when integrated
     )
     
     # Step 5: Process image crops
@@ -75,7 +73,7 @@ def orchestrate_archy_with_image_filtering(
     crop_files = sorted(crops_dir.glob("crop_*.png"))
     
     print(f"Processing {len(crop_files)} image crops with filtering enabled")
-    print(f"Keeping images for last {filter_config.recent_event_threshold} observations")
+    
     
     # Initialize SCUD document
     conversation.add_message(

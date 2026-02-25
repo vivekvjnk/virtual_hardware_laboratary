@@ -14,7 +14,6 @@ from openhands.sdk import (
 from openhands.sdk.tool import Tool
 from openhands.tools.file_editor import FileEditorTool
 from openhands.tools.terminal import TerminalTool
-from openhands.sdk.conversation.event_filter_config import EventFilterConfig
 
 from pathlib import Path
 

@@ -36,9 +36,12 @@ class WorkspaceManager:
 
     def set_circuit_name(self, name: str):
         """Sets the circuit name for the current project."""
-        self.circuit_name = name
-        logger.info(f"[WorkspaceManager.set_circuit_name] Circuit name set to: {self.circuit_name}")
-
+        if name:
+            self.circuit_name = name
+            logger.info(f"[WorkspaceManager.set_circuit_name] Circuit name set to: {self.circuit_name}")
+        else:
+            logger.error(f"[WorkspaceManager.set_circuit_name] Triggered with None for circuit name")
+            
     def list_projects(self) -> List[str]:
         """Lists all project IDs available in the workspace."""
         if not self.workspace_root.exists():
@@ -86,8 +89,7 @@ class WorkspaceManager:
         # If any .scud file is available in the project root, set the circuit name
         scud_files = list(self.project_root.glob("*.scud"))
         if scud_files:
-            self.circuit_name = scud_files[0].stem
-            logger.info(f"[WorkspaceManager.load_project] Circuit name set to: {self.circuit_name}")
+            self.set_circuit_name(scud_files[0].stem)
         else:
             logger.warning(f"[WorkspaceManager.load_project] No .scud file found in project root: {self.project_root}")
         

@@ -15,7 +15,7 @@ from openhands.sdk import (
 from openhands.sdk.tool.spec import Tool
 from openhands.tools.file_editor import FileEditorTool
 from pathlib import Path
-from openhands.sdk.conversation.event_filter_config import EventFilterConfig
+# from openhands.sdk.conversation.event_filter_config import EventFilterConfig
 
 from openhands.sdk import get_logger
 
@@ -57,11 +57,11 @@ def archy_build_scud(
         model=model,
         api_key=SecretStr(os.getenv("LLM_API_KEY")),
     )
-    filter_config = EventFilterConfig(
-            enabled=True,
-            recent_event_threshold=1,  # Keep last 5 images
-            target_tools=["file_editor"],
-        )
+    # filter_config = EventFilterConfig(
+    #         enabled=True,
+    #         recent_event_threshold=1,  # Keep last 5 images
+    #         target_tools=["file_editor"],
+    #     )
     
     agent = Agent(
         llm=llm,
@@ -76,7 +76,6 @@ def archy_build_scud(
         agent=agent,
         workspace=str(workspace),
         persistence_dir = persistence_dir,
-        event_filter_config = filter_config
     )
 
     user_msg = (
