@@ -99,6 +99,19 @@ export class SyncManager {
         }
     }
 
+    private isLocalAuthoritative(resourceType: ResourceType): boolean {
+        switch (resourceType) {
+            case "Library":
+            case "Evaluation":
+                return true;
+            case "Circuit":
+            case "StableCircuit":
+                return false;
+            default:
+                return true;
+        }
+    }
+
     private async handleHashResponse(payload: SyncPayload) {
         const { sync_id, project_id, iteration_id, resource_type, hash: remoteHash, intent } = payload;
         const localPath = this.getResourcePath(project_id, resource_type, iteration_id, payload.data);
@@ -119,50 +132,37 @@ export class SyncManager {
             return this.sendSyncComplete(sync_id, project_id, resource_type);
         }
 
-        // 2. Specialized Authority Logic for Library
-        if (resource_type === "Library") {
-            if (localHash === null && remoteHash === null) {
-                console.log(`[Sync] Both hashes null for Library. Provision for Librarian trigger in syncfsm.`);
-                // We complete the sync phase here; syncfsm can decide to trigger librarian
-                return this.sendSyncComplete(sync_id, project_id, resource_type);
-            }
+        const localIsAuthority = this.isLocalAuthoritative(resource_type);
+        console.log(`[Sync] Authority for ${resource_type}: ${localIsAuthority ? 'Local (Runtime)' : 'Remote (Agent)'}`);
 
+        if (localIsAuthority) {
             if (localHash !== null) {
-                // Runtime is authoritative if it has library content (even if backend has different content)
-                // This covers: Normal New Project workflow AND Special Cases where backend is null/corrupted
+                // Rule 2: Authority has it, transfer to slave
+                console.log(`[Sync] Authority (Local) has ${resource_type}. Transferring to Slave (Remote).`);
                 await this.requestDownload(payload, localHash);
-            } else {
-                // localHash is null, remoteHash is NOT null
-                // Case: Project Load - Backend has library, Runtime starts as blank slate.
+            } else if (remoteHash !== null) {
+                // Rule 3: Authority missing, Slave has it, transfer to Authority
+                console.log(`[Sync] Authority (Local) missing ${resource_type}, but Slave (Remote) has it. Transferring to Authority.`);
                 await this.requestUpload(payload);
-            }
-            return;
-        }
-
-        // 3. Authority logic for other resources (Evaluation, Circuit, StableCircuit)
-        const isAgentAuthoritative = (resource_type === "Circuit" && intent === "EVALUATION");
-
-        if (isAgentAuthoritative) {
-            // Agent is authoritative for evaluations
-            if (remoteHash === null) {
-                console.log(`[Sync] Agent is authority but remote hash is null for ${resource_type}. Skipping.`);
+            } else {
+                // Rule 4: Both missing
+                console.log(`[Sync] Both sides missing ${resource_type}. Skipping.`);
                 return this.sendSyncComplete(sync_id, project_id, resource_type);
             }
-            await this.requestUpload(payload);
         } else {
-            // Runtime is authoritative for StableCircuits and normal Circuits
-            if (localHash === null) {
-                // Mismatch or first-time load: if Agent has it, we pull it to Runtime
-                if (remoteHash !== null) {
-                    console.log(`[Sync] Runtime (authority) misses ${resource_type}, but Agent has it. Pulling from Agent.`);
-                    await this.requestUpload(payload);
-                } else {
-                    console.log(`[Sync] Both sides missing ${resource_type}. Skipping.`);
-                    return this.sendSyncComplete(sync_id, project_id, resource_type);
-                }
-            } else {
-                // Runtime has it, we sync it to Agent (Agent should match Runtime)
+            // Remote is Authority
+            if (remoteHash !== null) {
+                // Rule 2: Authority has it, transfer to slave
+                console.log(`[Sync] Authority (Remote) has ${resource_type}. Transferring to Slave (Local).`);
+                await this.requestUpload(payload);
+            } else if (localHash !== null) {
+                // Rule 3: Authority missing, Slave has it, transfer to Authority
+                console.log(`[Sync] Authority (Remote) missing ${resource_type}, but Slave (Local) has it. Transferring to Authority.`);
                 await this.requestDownload(payload, localHash);
+            } else {
+                // Rule 4: Both missing
+                console.log(`[Sync] Both sides missing ${resource_type}. Skipping.`);
+                return this.sendSyncComplete(sync_id, project_id, resource_type);
             }
         }
     }
