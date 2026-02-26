@@ -25,8 +25,14 @@ export ANA_PORT=8081
 node dist/mcp/ana/index.js &
 ANA_PID=$!
 
+# Start Terminal MCP Server in background (SSE mode)
+echo "Starting Terminal MCP Server..."
+export VHL_TERMINAL_MCP_PORT=8082
+/app/venv/bin/python3 src/mcp/python_servers/terminal_server.py > /app/terminal_server.log 2>&1 &
+TERMINAL_PID=$!
+
 # Wait for any process to exit
-wait -n $LIBRARY_PID $WS_SERVER_PID $WS_CLIENT_PID $ANA_PID
+wait -n $LIBRARY_PID $WS_SERVER_PID $WS_CLIENT_PID $ANA_PID $TERMINAL_PID
 
 # Exit with status of process that exited first
 exit $?
