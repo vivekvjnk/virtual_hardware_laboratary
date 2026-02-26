@@ -20,7 +20,7 @@ from pathlib import Path
 logger = get_logger(__name__)
 
 class LibrarianAgent:
-    def __init__(self, mcp_url: str = "http://localhost:8080/mcp"):
+    def __init__(self, mcp_url: str = "http://localhost:8082/sse"):
         self.mcp_url = mcp_url
         self.llm = self._setup_llm()
         self.agent = self._setup_agent()
@@ -45,7 +45,7 @@ class LibrarianAgent:
         tools = [
             Tool(name=FileEditorTool.name),
             # Terminal tool might be useful for debugging or file ops, but FileEditor is primary
-            Tool(name=TerminalTool.name), 
+            # Tool(name=TerminalTool.name), 
         ]
 
         mcp_config = {
@@ -61,7 +61,7 @@ class LibrarianAgent:
         condenser = LLMSummarizingCondenser(llm=llm_condenser, max_size=80, keep_first=8)
     
         submodule_root = Path(__file__).resolve().parent
-        sys_prompt_path = os.path.join(submodule_root,"librarian_prompt_minimal.j2")
+        sys_prompt_path = os.path.join(submodule_root,"librarian_prompt.j2")
 
         return Agent(
             llm=self.llm,
@@ -109,5 +109,5 @@ class LibrarianAgent:
 
 if __name__ == "__main__":
     agent = LibrarianAgent()
-    scud_file_path = "ana_workspace/bms_bq79616_f5fdd834/bq79616_aba80.scud"  # Update this path to your SCUD file
+    scud_file_path = "vhl_workspace/bms_communication_852f986d/bms_communication_852f986d_BQ79600_eval_board_da255.scud"  # Update this path to your SCUD file
     agent.process_scud(scud_file_path)
