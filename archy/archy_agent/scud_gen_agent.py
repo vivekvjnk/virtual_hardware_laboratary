@@ -14,7 +14,6 @@ from openhands.sdk import (
 )
 from openhands.sdk.tool.spec import Tool
 from openhands.tools.file_editor import FileEditorTool
-from pathlib import Path
 # from openhands.sdk.conversation.event_filter_config import EventFilterConfig
 
 from openhands.sdk import get_logger
@@ -40,6 +39,7 @@ llm_condenser = LLM(
 def archy_build_scud(
     image_id: str,
     workspace: Path,
+    image_path: Path = None,
 ):
     """
     Agent 1: Incrementally builds the SCUD (Shared Circuit Understanding Document)
@@ -57,11 +57,6 @@ def archy_build_scud(
         model=model,
         api_key=SecretStr(os.getenv("LLM_API_KEY")),
     )
-    # filter_config = EventFilterConfig(
-    #         enabled=True,
-    #         recent_event_threshold=1,  # Keep last 5 images
-    #         target_tools=["file_editor"],
-    #     )
     
     agent = Agent(
         llm=llm,
@@ -78,8 +73,11 @@ def archy_build_scud(
         persistence_dir = persistence_dir,
     )
 
+    # Use the provided image_path or default to original
+    final_image_path = image_path if image_path else workspace / "UserArtefacts" / f"{image_id}.png"
+
     user_msg = (
-        f"The original schematic image is located in '{workspace}/UserArtefacts/{image_id}.png'.\n"
+        f"The original schematic image is located in '{final_image_path}'.\n"
         f"Segmented schematic images are available under '{workspace}/schematic_images/{image_id}/'.\n"
         f"Please construct the SCUD file and save it as '{workspace}/{image_id}.scud'.\n"
         f"Use the FileEditorTool to read the image files."
