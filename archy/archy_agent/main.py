@@ -3,20 +3,47 @@ import sys
 import logging
 from pathlib import Path
 from typing import Union
+from PIL import Image, ImageEnhance, ImageOps
 from archy_agent.image_to_schematic.image_to_segments import run_schematic_segmentation_pipeline
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("archy_orchestrator")
 
-def _archy_build_scud_stub(image_id: str, workspace_path: Path):
+def _preprocess_image(image_path: Path, output_path: Path, contrast_factor: float = 1.3):
+    """Preprocess image by converting to grayscale and increasing contrast."""
+    logger.info(f"Preprocessing image: {image_path} -> {output_path}")
+    try:
+        with Image.open(image_path) as img:
+            # Convert to Grayscale
+            grayscale_img = ImageOps.grayscale(img)
+            # Increase Contrast
+            enhancer = ImageEnhance.Contrast(grayscale_img)
+            processed_img = enhancer.enhance(contrast_factor)
+            # Save results
+            processed_img.save(output_path)
+            logger.info("Image preprocessing completed successfully.")
+    except Exception as e:
+        logger.error(f"Error during image preprocessing: {e}")
+        raise
+
+def _archy_build_scud_stub(image_id: str, workspace_path: Path, image_path: Path = None):
     """Stub implementation of archy_build_scud for faster validation."""
 
-    # Step 1
     workspace = Path(workspace_path).resolve()    
-    # 1. Image Segmentation
+    source_image_path = workspace / "UserArtefacts" / f"{image_id}.png"
+    processed_image_path = workspace / "UserArtefacts" / f"{image_id}_preprocessed.png"
+
+    if not image_path:
+        if not source_image_path.exists():
+            raise FileNotFoundError(f"Source image not found at {source_image_path}")
+        _preprocess_image(source_image_path, processed_image_path)
+        image_path = processed_image_path
+    
+    # Step 1: Segmentation (uses processed image)
     # Source image is assumed to be at <workspace>/UserArtefacts/<image_id>.png
-    image_path = workspace / "UserArtefacts" / f"{image_id}.png"
+    # But we now use the preprocessed image
+    image_path = processed_image_path
     
     # Predefined output directory for segments
     # Consistent with standard naming and scud_gen_agent's expected structure
@@ -83,9 +110,10 @@ def orchestrate_archy(workspace_path: Union[str, Path], image_id: str):
     workspace = Path(workspace_path).resolve()
     
     
-    # 1. Image Segmentation
+    # 1. Step 0: Image Preprocessing
     # Source image is assumed to be at <workspace>/UserArtefacts/<image_id>.png
-    image_path = workspace / "UserArtefacts" / f"{image_id}.png"
+    source_image_path = workspace / "UserArtefacts" / f"{image_id}.png"
+    processed_image_path = workspace / "UserArtefacts" / f"{image_id}_preprocessed.png"
     
     # Predefined output directory for segments
     # Consistent with standard naming and scud_gen_agent's expected structure
@@ -93,10 +121,15 @@ def orchestrate_archy(workspace_path: Union[str, Path], image_id: str):
     
     logger.info(f"[orchestrate_archy] Starting orchestration for image_id: {image_id}")
     logger.info(f"[orchestrate_archy] Workspace: {workspace}")
-    logger.info(f"[orchestrate_archy] Source Image Path: {image_path}")
+    logger.info(f"[orchestrate_archy] Source Image Path: {source_image_path}")
     
-    if not image_path.exists():
-        raise FileNotFoundError(f"Source image not found at {image_path}")
+    if not source_image_path.exists():
+        raise FileNotFoundError(f"Source image not found at {source_image_path}")
+
+    # Preprocess image before segmentation
+    _preprocess_image(source_image_path, processed_image_path)
+    # Use preprocessed image as baseline for all downstream tasks
+    image_path = processed_image_path
 
     # Step 1: Run Segmentation Pipeline
     logger.info("[orchestrate_archy] Running image segmentation pipeline...")
@@ -119,13 +152,14 @@ def orchestrate_archy(workspace_path: Union[str, Path], image_id: str):
     # Step 2: Trigger Archy Agent (Scud Generation)
     logger.info("[orchestrate_archy] Step 2/2: Triggering Archy agent for SCUD generation...")
     if os.environ.get("ARCHY_STUB") == "true":
-        _archy_build_scud_stub(image_id=image_id, workspace_path=workspace)
+        _archy_build_scud_stub(image_id=image_id, workspace_path=workspace, image_path=image_path)
     else:
         from archy_agent.scud_gen_agent import archy_build_scud
         try:
             archy_build_scud(
                 image_id=image_id,
-                workspace=workspace
+                workspace=workspace,
+                image_path=image_path
             )
         except Exception as e:
             logger.error(f"[orchestrate_archy] Error during SCUD generation: {e}")
