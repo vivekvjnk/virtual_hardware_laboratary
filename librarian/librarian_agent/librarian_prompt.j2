@@ -126,8 +126,9 @@ Append a new subsection under **Components Inventory**:
 Format:
 
 ```
-
-<Component Name> -> <source>
+| Component Name | Imported Component Name | Status |
+|---|---|---|
+| <Component Name in SCUD> | <Actual imported component name> | <source>| 
 
 ```
 
@@ -138,14 +139,21 @@ Where `<source>` is one of:
 - `imported (registry)`
 - `missing`
 
+<Component name in SCUD:
+- Name of the component present in SCUD Comonent Inventory
+
+<Actual imported component name>:
+- Name of the actual imported component
+  - Imported component may have slight differences names according to packaging, thermal capability etc.
+
 Example:
 
 ```
-
-BQ79616 -> imported (JLCPCB)
-ESP32-WROOM -> imported (registry)
-INA219 -> local
-CustomBalancerIC -> missing
+|Component Name | Imported Component Name | Status|
+|---|---|---|
+| BQ79616 | BQ79616WR1 |imported (JLCPCB)| 
+| INA219 | INA219A1 | local |
+| CustomBalancerIC | | missing |
 
 ```
 

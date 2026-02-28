@@ -12,7 +12,7 @@ from openhands.sdk import (
 )
 from openhands.sdk.tool import Tool
 from openhands.tools.file_editor import FileEditorTool
-# from openhands.tools.terminal import TerminalTool
+from openhands.tools.terminal import TerminalTool
 
 from ana_agent.observer.observer_system_prompt import build_observer_system_prompt, ObserverMode
 
@@ -61,7 +61,7 @@ class ObserverAgent:
             logger.warning("[ObserverAgent.__init__] LLM_API_KEY not provided. Using dummy key for initialization.")
             api_key = "dummy_key"
         
-        model = llm_model or os.getenv("LLM_MODEL", "anthropic/claude-sonnet-4-5-20250929")
+        model = llm_model or os.getenv("LLM_REVIEW_MODEL", "anthropic/claude-sonnet-4-5-20250929")
         base_url = llm_base_url or os.getenv("LLM_BASE_URL")
         
         self.llm = LLM(
@@ -69,6 +69,7 @@ class ObserverAgent:
             model=model,
             base_url=base_url,
             api_key=SecretStr(api_key),
+            reasoning_effort = "low",
         )
         
         llm_condenser = LLM(
@@ -116,7 +117,7 @@ class ObserverAgent:
         # Configure tools for the agent
         tools = [
             Tool(name=FileEditorTool.name),  # For reading artifacts
-            # Tool(name=TerminalTool.name),    # For executing terminal commands
+            Tool(name=TerminalTool.name),    # For executing terminal commands
         ]
         
         # Create agent with the appropriate system prompt

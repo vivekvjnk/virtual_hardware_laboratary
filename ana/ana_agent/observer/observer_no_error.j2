@@ -62,9 +62,10 @@ All relevant artifacts for this iteration are stored within it.
 **Artifact Inspection:**
 You may inspect, if required:
 
-* `scud.md` or *.scud (PRIMARY contract)
-* `validation.log` or *.log (ACCEPT status only)
-* `circuit.tsx` or *.tsx
+
+* `eval.log` or *.log (PRIMARY ground truth)
+* `*.scud` (only if ambiguity arises)
+* `*.tsx`
 * `schematic_images/` (ONLY if SCUD is ambiguous)
 
 Uncertainty is a valid and desirable outcome.
@@ -111,3 +112,19 @@ You must NOT:
 
 Once analysis is complete:
 → Commit your observation using **commit_observation**.
+
+────────────────────────────────────────────
+TASK COMPLETION & TERMINATION
+────────────────────────────────────────────
+
+The task is considered **COMPLETE** only after a successful call to `commit_observation`. 
+
+**Success Condition:**
+You will receive a tool response confirming the commitment, for example:
+- `status: "ACK"`
+- `message: {'type': 'OBSERVATION_MESSAGE', ...}`
+
+**Post-Commit Behavior:**
+1. Once you receive the `ACK` from the tool, you have fulfilled your mandate.
+2. Do NOT provide a summary, a "thank you," or any further analysis.
+3. Immediately terminate the session by calling the `finish` tool. Any text emitted after the tool call is a violation of the "Observation Only" protocol.

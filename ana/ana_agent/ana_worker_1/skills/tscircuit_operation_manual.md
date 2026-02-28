@@ -44,34 +44,280 @@ Every circuit must be wrapped in a `<board />` element.
 
 `tscircuit` provides globally available primitives that **do not require imports**.
 
-Common examples:
+Common built-in primitives:
 
-* `<resistor />`
-* `<capacitor />`
-* `<inductor />`
-* `<diode />`
-* `<led />`
-* `<jumper />`
-* `<pinheader />`
+#### 1. `<resistor />`
 
-#### Required Props for Passives
+* Pin details 
 
-| Element         | Required Props                     |
-| --------------- | ---------------------------------- |
-| `<resistor />`  | `name`, `resistance`, `footprint`  |
-| `<capacitor />` | `name`, `capacitance`, `footprint` |
-| `<inductor />`  | `name`, `inductance`, `footprint`  |
-| `<led />`       | `name`, `color`, `footprint`       |
+| Pin # | Aliases | Description |
+| --- | --- | --- |
+| pin1 | left, pos | The left side pin in normal orientation |
+| pin2 | right, neg | The right side pin in normal orientation |
 
-Example:
+* Mandatory Properties
+
+- name
+- resistance
+- footprint
+
+* Example 
+
+```ts
+export default () => (
+<board width="10mm" height="10mm">  
+    <resistor    
+        name="R1"    
+        footprint="0402"    
+        resistance="1k"  
+    />
+</board>)
+```
+
+
+#### 2. `<capacitor />`
+
+* Pin details 
+
+| Pin # | Aliases (Polarized) | Description |
+| --- | --- | --- |
+| pin1 | pos, anode, left | The positive terminal (required for polarized capacitors) |
+| pin2 | neg, cathode, right | The negative terminal (must be connected properly for polarized caps) |
+
+* Mandatory Properties
+
+- name
+- resistance
+- footprint
+
+* Example 
+
+```ts
+export default () => ( 
+  <board width="10mm" height="10mm">  
+    <capacitor    
+        name="C2"    
+        footprint="axial_p5mm"    
+        capacitance="10μF"    
+        polarized/> 
+  </board>)
+```
+
+Polarized capacitors must be placed with correct orientation to avoid damage.
+
+#### 3. `<inductor />`
+
+* Pin details 
+
+| Pin # | Aliases (Polarized) | Description |
+| --- | --- | --- |
+| pin1 |  left | First terminal of inductor |
+| pin2 |  right | Second terminal of inductor |
+
+* Mandatory Properties
+- name
+- footprint
+- inductance
+
+* Example 
+```ts
+export default () => (
+  <board width="15mm" height="10mm">
+    <inductor 
+      name="L1" 
+      footprint="0402" 
+      inductance="3.3nH"
+      schX={0}
+    />
+  </board>
+)
+```
+
+#### 4. `<diode />`
+
+* Pin details
+
+| Pin # | Aliases | Description |
+| --- | --- | --- |
+| pin1 | pos, anode | The positive terminal  |
+| pin2 | neg, cathode | The negative terminal |
+
+* Mandatory Properties
+- name 
+- footprint
+
+* Example 
+
+```ts
+export default () => (
+ <board width="10mm" height="10mm">
+  <diode name="D1" footprint="0805" />
+ </board>
+)
+```
+
+#### 5. `<led />`
+
+* Pin details
+
+| Pin # | Aliases | Description |
+| --- | --- | --- |
+| pin1 | pos, anode | The positive terminal  |
+| pin2 | neg, cathode | The negative terminal |
+
+* Mandatory Properties
+- name 
+- footprint
+
+* Example 
+```ts
+export default () => (
+  <board width="10mm" height="10mm">
+    <led name="D1" footprint="0805" color="blue"/>
+  </board>
+)
+```
+#### 6. `<mosfet />`
+
+* Pin details
+
+| Pin # | Aliases | Description |
+| --- | --- | --- |
+| pin1 | drain | Drain terminal  |
+| pin2 | source | Source terminal |
+| pin3 | gate | Gate terminal |
+
+* Mandatory properties
+
+- name
+- footprint
+- channelType
+  - "n" | "p"
+- mosfetMode
+  - "depletion" | "enhancement"
+
+
+* Example
+
+```ts
+export default () => (
+  <mosfet
+    name="Q1"
+    channelType="n"
+    mosfetMode="depletion"
+    footprint="sot23"
+  />
+)
+```
+
+#### 7. `<transistor />`
+
+* Pin details
+
+| Pin # | Aliases | Description |
+| --- | --- | --- |
+| pin1 | collector | collector terminal  |
+| pin2 | emitter | emitter terminal |
+| pin3 | base | base terminal |
+
+* Mandatory properties
+
+- name
+- footprint
+- type
+  - "npn" | "pnp" | "bjt" | "jfet" | "mosfet" | "igbt"
+
+
+
+* Example
+
+```ts
+export default () => (
+  <transistor
+    name="Q1"
+    type="npn"
+    footprint="sot23"
+  />
+)
+```
+
+#### 8. `<jumper />`
+
+* Mandatory properties
+- name
+- footprint
+
+* Example
 
 ```tsx
-<resistor
-  name="R1"
-  resistance="10k"
-  footprint="0603"
-/>
+export default () => (
+  <board width="10mm" height="10mm">
+    <jumper name="J1" footprint="pinrow4" />
+  </board>
+)
 ```
+
+* Jumper-Specific Properties
+
+| Property                  | Type                                           | Description                                  |
+| ------------------------- | ---------------------------------------------- | -------------------------------------------- |
+| `pinCount`                | `2` | `3`                                      | Number of pins on the jumper                 |
+| `internallyConnectedPins` | `string[][]`                                   | Groups of pins that are internally connected |
+| `manufacturerPartNumber`  | `string`                                       | Manufacturer part number                     |
+| `pinLabels`               | `Record<number \| string, string \| string[]>` | Labels for individual pins or pin groups     |
+| `schPinStyle`             | `SchematicPinStyle`                            | Pin styling in the schematic                 |
+| `schPinSpacing`           | `number \| string`                             | Spacing between schematic pins               |
+| `schWidth`                | `number \| string`                             | Width of the schematic symbol                |
+| `schHeight`               | `number \| string`                             | Height of the schematic symbol               |
+| `schDirection`            | `"left"` | `"right"`                           | Direction the jumper faces in the schematic  |
+| `schPortArrangement`      | `SchematicPortArrangement`                     | Arrangement of schematic ports               |
+
+
+#### 9. `<pinheader />`
+The <pinheader /> element is used to create a male or female pin header with configurable spacing and number of pins.
+
+* Mandatory Properties
+- name
+- footprint
+- pinCount
+
+* Example 
+export default () => (
+ <board width="30mm" height="10mm">
+  <pinheader
+    name="J1"
+    pinCount={8}
+    gender="male"
+    pitch="2.54mm"
+    footprint="pinrow8_rows2"
+    doubleRow={true}
+    showSilkscreenPinLabels={true}
+    pinLabels={["VCC", "GND", "SDA", "SCL", "MISO", "MOSI", "SCK", "CS"]}
+    pcbX={0}
+    pcbY={0}
+  />
+ </board>
+)
+
+* Pinheader specific properties
+
+| Property                  | Type                                     | Default        | Description                                  |
+| ------------------------- | ---------------------------------------- | -------------- | -------------------------------------------- |
+| `pinCount`                | number                                   | *(required)*   | Number of pins in the header                 |
+| `pitch`                   | number | string                          | `"2.54mm"`     | Distance between pins                        |
+| `schFacingDirection`      | `"up"` | `"down"` | `"left"` | `"right"` | `"right"`      | Direction the header faces in schematic view |
+| `gender`                  | `"male"` | `"female"`                    | `"male"`       | Whether the header is male or female         |
+| `showSilkscreenPinLabels` | boolean                                  | `false`        | Whether to show pin labels in silkscreen     |
+| `doubleRow`               | boolean                                  | `false`        | Whether the header has two rows of pins      |
+| `holeDiameter`            | number | string                          | `"1mm"`        | Diameter of the through-hole for each pin    |
+| `platedDiameter`          | number | string                          | `"1.7mm"`      | Diameter of the plated area around each hole |
+| `pinLabels`               | string[]                                 | `undefined`    | Labels for each pin                          |
+| `facingDirection`         | `"left"` | `"right"`                     | `"right"`      | Direction the header is facing               |
+| `pcbX`                    | number                                   | `0`            | X position of the component                  |
+| `pcbY`                    | number                                   | `0`            | Y position of the component                  |
+| `rotation`                | number                                   | `0`            | Rotation of the component in degrees         |
+| `id`                      | string                                   | auto-generated | Unique identifier for the component          |
+
 
 ---
 
@@ -260,32 +506,32 @@ export default () => {
 
 | Element                           | Description               |
 | --------------------------------- | ------------------------- |
-| [`<battery />`](tsci_built_in_elements/battery.md) | A power source that provides electrical energy through electrochemical reactions. |
-| [`<breakout />`](tsci_built_in_elements/breakout.md) | A container used to guide the autorouter on where connections should exit a group. |
-| [`<breakoutpoint />`](tsci_built_in_elements/breakoutpoint.md) | Marks the XY coordinate that the autorouter should use when connecting a net or pin inside a breakout. |
-| [`<cadassembly />`](tsci_built_in_elements/cadassembly.md) | Used to put together the 3D models of a component when multiple models are used. |
-| [`<cadmodel />`](tsci_built_in_elements/cadmodel.md) | Used to display a 3D model of a component. |
-| [`<capacitor />`](tsci_built_in_elements/capacitor.md) | Stores electrical energy in an electric field, used for filtering, energy storage, and timing. |
-| [`<copperpour />`](tsci_built_in_elements/copperpour.md) | Creates a copper pour (groundplane) connected to a specific net to improve signal integrity. |
-| [`<crystal />`](tsci_built_in_elements/crystal.md) | Provides a stable clock signal essential for timing applications and microcontroller operations. |
-| [`<cutout />`](tsci_built_in_elements/cutout.md) | Removes material from a board outline to add interior slots, mounting reliefs, or custom shapes. |
-| [`<diode />`](tsci_built_in_elements/diode.md) | Semiconductor device that allows current to flow primarily in one direction. |
-| [`<footprint />`](tsci_built_in_elements/footprint.md) | Defines PCB elements like plated holes or SMT pads for a component. |
-| [`<fuse />`](tsci_built_in_elements/fuse.md) | A safety device that protects electrical circuits by interrupting current flow when it exceeds a threshold. |
-| [`<group />`](tsci_built_in_elements/group.md) | Basic container element used for structural organization and layout of other elements. |
-| [`<hole />`](tsci_built_in_elements/hole.md) | Used for mechanical mounting on the PCB; does not have conductive properties. |
-| [`<inductor />`](tsci_built_in_elements/inductor.md) | Stores electrical energy in a magnetic field, used in filters, oscillators, and power supplies. |
-| [`<jumper />`](tsci_built_in_elements/jumper.md) | Represents a small multi-pin connector, commonly a male or female header. Use `footprint` property to select the right number of pins(eg: `footprint="pinrow4"`) |
-| [`<led />`](tsci_built_in_elements/led.md) | Light-emitting diode that emits light when forward current flows through it. |
-| [`<mosfet />`](tsci_built_in_elements/mosfet.md) | A type of transistor used to control the flow of current in a circuit. |
-| [`<net />`](tsci_built_in_elements/net.md) | Represents a group of connected traces, typically used for power buses and ground. |
-| [`<resistor />`](tsci_built_in_elements/resistor.md) | A two-pin non-polar component that resists the flow of electricity. |
-| [`<solderjumper />`](tsci_built_in_elements/solderjumper.md) | A tiny jumper made from exposed pads on the PCB that can be bridged or cut. |
-| [`<switch />`](tsci_built_in_elements/switch.md) | A mechanical component used to connect or disconnect parts of a circuit. |
-| [`<testpoint />`](tsci_built_in_elements/testpoint.md) | A designated location on a PCB for testing, debugging, and measuring electrical signals. |
-| [`<trace />`](tsci_built_in_elements/trace.md) | Represents an electrical connection between two or more points in a circuit. |
-| [`<transistor />`](tsci_built_in_elements/transistor.md) | A three-terminal semiconductor device used to amplify or switch electronic signals. |
-| [`<via />`](tsci_built_in_elements/via.md) | A plated hole that electrically connects different layers of a PCB. |
+| `<battery />` | A power source that provides electrical energy through electrochemical reactions. |
+| `<breakout />` | A container used to guide the autorouter on where connections should exit a group. |
+| `<breakoutpoint />` | Marks the XY coordinate that the autorouter should use when connecting a net or pin inside a breakout. |
+| `<cadassembly />` | Used to put together the 3D models of a component when multiple models are used. |
+| `<cadmodel />` | Used to display a 3D model of a component. |
+| `<capacitor />` | Stores electrical energy in an electric field, used for filtering, energy storage, and timing. |
+| `<copperpour />` | Creates a copper pour (groundplane) connected to a specific net to improve signal integrity. |
+| `<crystal />` | Provides a stable clock signal essential for timing applications and microcontroller operations. |
+| `<cutout />` | Removes material from a board outline to add interior slots, mounting reliefs, or custom shapes. |
+| `<diode />` | Semiconductor device that allows current to flow primarily in one direction. |
+| `<footprint />` | Defines PCB elements like plated holes or SMT pads for a component. |
+| `<fuse />` | A safety device that protects electrical circuits by interrupting current flow when it exceeds a threshold. |
+| `<group />` | Basic container element used for structural organization and layout of other elements. |
+| `<hole />` | Used for mechanical mounting on the PCB; does not have conductive properties. |
+| `<inductor />` | Stores electrical energy in a magnetic field, used in filters, oscillators, and power supplies. |
+| `<jumper />` | Represents a small multi-pin connector, commonly a male or female header. Use `footprint` property to select the right number of pins(eg: `footprint="pinrow4"`) |
+| `<led />` | Light-emitting diode that emits light when forward current flows through it. |
+| `<mosfet />` | A type of transistor used to control the flow of current in a circuit. |
+| `<net />` | Represents a group of connected traces, typically used for power buses and ground. |
+| `<resistor />` | A two-pin non-polar component that resists the flow of electricity. |
+| `<solderjumper />` | A tiny jumper made from exposed pads on the PCB that can be bridged or cut. |
+| `<switch />` | A mechanical component used to connect or disconnect parts of a circuit. |
+| `<testpoint />` | A designated location on a PCB for testing, debugging, and measuring electrical signals. |
+| `<trace />` | Represents an electrical connection between two or more points in a circuit. |
+| `<transistor />` | A three-terminal semiconductor device used to amplify or switch electronic signals. |
+| `<via />` | A plated hole that electrically connects different layers of a PCB. |
 
 Please refer to the individual markdown files for more details on each component.
 
@@ -294,7 +540,7 @@ Please refer to the individual markdown files for more details on each component
 This section describes **how to import existing local component libraries** into a `tscircuit` circuit file.
 These components are **already defined** as `.tsx` modules and reside in the project’s local library directory.
 
-> ANA agents **must never redefine components**.
+> You **must never redefine components**.
 > If a component exists in the local library, it **must be imported and instantiated**, not recreated.
 
 ---
