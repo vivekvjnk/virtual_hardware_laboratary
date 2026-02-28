@@ -45,6 +45,8 @@ export type EventType =
     // System State
     | "GET_SYSTEM_STATE"
     | "SYSTEM_STATE"
+    | "PROJECT_STATE"
+    | "AGENT_STATE"
     // Sync Protocol
     | "HASH_REQUEST"
     | "HASH_RESPONSE"
@@ -80,4 +82,19 @@ export interface AgentHandler {
     onConnect?: (send: (msg: WebSocketMessage) => void) => void
     onMessage: (msg: WebSocketMessage, send: (msg: WebSocketMessage) => void) => Promise<void>
     onDisconnect?: () => void
+}
+
+export type ProjectStatus = "initialized" | "uninitialized" | "initializing"
+export type AgentStatus = "Running" | "Idle"
+
+export interface ProjectStatePayload {
+    backend_status: ProjectStatus
+    runtime_status: ProjectStatus
+}
+
+export interface AgentStatePayload {
+    archy: AgentStatus
+    librarian: AgentStatus
+    ana: AgentStatus
+    aosm: AgentStatus
 }

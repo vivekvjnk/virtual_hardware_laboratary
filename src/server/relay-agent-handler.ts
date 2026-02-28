@@ -51,7 +51,7 @@ export class RelayAgentHandler implements AgentHandler {
         } else if (this.role === "vhl_workspace") {
             // Workspace Client -> Agent (Backend)
             // Some events also go to UI (Runtime)
-            if (msg.type === "VHL_WORKSPACE_READY" || msg.type === "DEV_SERVER_READY" || msg.type === "SYSTEM_STATE") {
+            if (msg.type === "VHL_WORKSPACE_READY" || msg.type === "DEV_SERVER_READY" || msg.type === "SYSTEM_STATE" || msg.type === "PROJECT_STATE") {
                 RelayAgentHandler.uiClients.forEach(uiSend => uiSend(msg));
             }
 
@@ -71,7 +71,7 @@ export class RelayAgentHandler implements AgentHandler {
             } // To workspace client
             else if (msg.type === "WORKSPACE_DOWNLOAD" || msg.type === "WORKSPACE_UPLOAD" ||
                 msg.type === "VAP_INIT" || msg.type === "VAP_DECISION" || msg.type === "START_DEV_SERVER" ||
-                msg.type === "SYNC_TRIGGER" || msg.type === "UPLOAD_PROPOSAL" || msg.type === "HASH_REQUEST" || 
+                msg.type === "SYNC_TRIGGER" || msg.type === "UPLOAD_PROPOSAL" || msg.type === "HASH_REQUEST" ||
                 msg.type === "HASH_RESPONSE") {
                 if (RelayAgentHandler.workspaceClient) {
                     RelayAgentHandler.workspaceClient(msg)

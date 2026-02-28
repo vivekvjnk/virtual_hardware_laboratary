@@ -29,6 +29,13 @@ export class WorkspaceClient implements WorkspaceSender {
     private currentCircuitName: string | null = null;
     private syncManager: SyncManager;
     private isSynthesizable: boolean = false;
+    private projectState: {
+        backend_status: "initialized" | "uninitialized" | "initializing",
+        runtime_status: "initialized" | "uninitialized" | "initializing"
+    } = {
+            backend_status: "uninitialized",
+            runtime_status: "uninitialized"
+        };
 
     constructor(serverUrl: string, workspaceDir: string = WORKSPACE_DIR) {
         this.serverUrl = serverUrl;
@@ -116,6 +123,23 @@ export class WorkspaceClient implements WorkspaceSender {
         } as any);
     }
 
+    private broadcastProjectState() {
+        this.send({
+            id: randomUUID(),
+            type: "PROJECT_STATE",
+            artifact_id: null,
+            timestamp: new Date().toISOString(),
+            source: "vhl_workspace",
+            payload: this.projectState
+        } as any);
+    }
+
+    private updateProjectState(patch: Partial<typeof this.projectState>) {
+        this.projectState = { ...this.projectState, ...patch };
+        console.log("[WorkspaceClient] Project State Updated:", this.projectState);
+        this.broadcastProjectState();
+    }
+
     private async handleMessage(msg: WebSocketMessage) {
         console.log(`[WorkspaceClient] Received event: ${msg.type}`);
 
@@ -133,6 +157,10 @@ export class WorkspaceClient implements WorkspaceSender {
                 this.startVapStatusReporting(taskId, context);
                 break;
             }
+            case "CREATE_PROJECT":
+            case "LOAD_PROJECT":
+                this.updateProjectState({ backend_status: "initializing" });
+                break;
             case "PROJECT_CREATED":
             case "PROJECT_LOADED": {
                 const { project_id, workspace_info } = msg.payload;
@@ -141,6 +169,8 @@ export class WorkspaceClient implements WorkspaceSender {
                 this.currentProjectName = project_id;
                 this.isSynthesizable = !!workspace_info?.is_synthesizable;
                 this.currentCircuitName = workspace_info?.current_circuit_name || null;
+
+                this.updateProjectState({ backend_status: "initialized", runtime_status: "initializing" });
 
                 this.projectDir = path.join(this.workspaceDir, project_id);
                 setProjectDir(this.projectDir);
@@ -166,6 +196,8 @@ export class WorkspaceClient implements WorkspaceSender {
 
                 // Start dev server for the project
                 await this.startDevServer(this.projectDir, entryFile);
+
+                this.updateProjectState({ runtime_status: "initialized" });
 
                 this.send({
                     id: randomUUID(),
@@ -266,6 +298,7 @@ export class WorkspaceClient implements WorkspaceSender {
                         }
                     }
                 });
+                this.broadcastProjectState();
                 break;
             }
             case "VAP_DECISION": {
