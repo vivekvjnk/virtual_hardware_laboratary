@@ -7,7 +7,7 @@ from typing import Optional, Dict, Any
 from pathlib import Path
 from state_machine.states import AOSMState
 from vhl_protocol.client.client import VHLWebSocketClient
-from vhl_protocol.models import BaseEvent, EventType, EventSource, SyncPayload
+from vhl_protocol.models import BaseEvent, EventType, EventSource, SyncPayload, AgentStatus
 from vhl_protocol.sync.client import SyncClient
 
 import uuid
@@ -44,6 +44,12 @@ class AOSM:
         self._main_loop_task: Optional[asyncio.Task] = None
         self.project_id: Optional[str] = None
         self.sync_client = SyncClient(self.ws_client, self.workspace_manager)
+        self.agent_state = {
+            "archy": AgentStatus.IDLE,
+            "librarian": AgentStatus.IDLE,
+            "ana": AgentStatus.IDLE,
+            "aosm": AgentStatus.RUNNING
+        }
         
         # Minio configuration (should ideally be from env)
         self.s3_client = boto3.client(
@@ -61,6 +67,22 @@ class AOSM:
         self.ws_client.add_subscriber(self._handle_ws_event)
         await self.ws_client.start()
         self._main_loop_task = asyncio.create_task(self._main_loop())
+        await self.broadcast_agent_state()
+
+    async def broadcast_agent_state(self):
+        """Broadcasts the current state of all agents."""
+        await self.ws_client.emit_agent_state(
+            archy=self.agent_state["archy"],
+            librarian=self.agent_state["librarian"],
+            ana=self.agent_state["ana"],
+            aosm=self.agent_state["aosm"]
+        )
+
+    def update_agent_status(self, agent_name: str, status: AgentStatus):
+        """Updates internal agent status and triggers broadcast."""
+        if agent_name in self.agent_state:
+            self.agent_state[agent_name] = status
+            asyncio.create_task(self.broadcast_agent_state())
 
     async def stop(self):
         """Stops AOSM and the WebSocket client."""
@@ -388,6 +410,7 @@ class AOSM:
                 inbox_queue=self.ana_inbox
             )
             # Run the ANA-D state machine in a background task to keep AOSM responsive
+            self.update_agent_status("ana", AgentStatus.RUNNING)
             asyncio.create_task(self.active_ana_sm.run())
             await self.transition_to(AOSMState.WAIT_FOR_ANA, "ANA-D started")
         else:
@@ -416,6 +439,7 @@ class AOSM:
                     message=event.payload.get("message")
                 )
             elif ana_event == "EXIT":
+                self.update_agent_status("ana", AgentStatus.IDLE)
                 ana_decision = event.payload.get("decision")
                 # Transition with payload so that PRESENT_RESULT can carry out directory management and sync
                 await self.transition_to(AOSMState.PRESENT_RESULT, reason="ANA finished task", payload=event.payload)
@@ -502,19 +526,24 @@ class AOSM:
         logger.info(f"[AOSM._run_bootstrap] Triggering Archy orchestration for image: {image_id}")
         if os.environ.get("STUBS") == "true":
             logger.info("[AOSM._run_bootstrap] Running Archy in STUB mode")
+            self.update_agent_status("archy", AgentStatus.RUNNING)
             scud_path = _archy_build_scud_stub(workspace_path=project_root, image_id=image_id)
+            self.update_agent_status("archy", AgentStatus.IDLE)
         else:    
             try:
                 # orchestrate_archy is CPU intensive/blocking, run in thread
+                self.update_agent_status("archy", AgentStatus.RUNNING)
                 scud_path = await asyncio.to_thread(
                     orchestrate_archy, 
                     workspace_path=project_root, 
                     image_id=image_id
                 )
+                self.update_agent_status("archy", AgentStatus.IDLE)
                 logger.info(f"[AOSM._run_bootstrap] Archy completed successfully. SCUD generated at: {scud_path}")    
                 # Update current message with the SCUD path for ANA trigger
                 
             except Exception as e:
+                self.update_agent_status("archy", AgentStatus.IDLE)
                 logger.error(f"[AOSM._run_bootstrap] Archy orchestration failed: {e}")
                 await self.transition_to(AOSMState.ERROR_PRESENTED, f"Archy failed: {str(e)}")
                 return None
@@ -527,14 +556,19 @@ class AOSM:
         try:
             if os.environ.get("STUBS") == "true":
                 logger.info("[AOSM._run_librarian] Running Librarian in STUB mode")
+                self.update_agent_status("librarian", AgentStatus.RUNNING)
                 await asyncio.to_thread(process_scud_stub, str(scud_path))
+                self.update_agent_status("librarian", AgentStatus.IDLE)
             else:
                 # LibrarianAgent defaults to http://localhost:8080/mcp
                 librarian = LibrarianAgent()
                 # process_scud involves network/LLM, run in thread
+                self.update_agent_status("librarian", AgentStatus.RUNNING)
                 await asyncio.to_thread(librarian.process_scud, str(scud_path))
+                self.update_agent_status("librarian", AgentStatus.IDLE)
             logger.info(f"[AOSM._run_librarian] Librarian Agent completed successfully")
         except Exception as e:
+            self.update_agent_status("librarian", AgentStatus.IDLE)
             logger.error(f"[AOSM._run_librarian] Librarian Agent failed: {e}")
             # We proceed even if Librarian fails, but log the error
 

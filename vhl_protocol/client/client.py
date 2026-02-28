@@ -11,7 +11,9 @@ from ..models import (
     AuthorityRequiredPayload, ErrorPayload,
     IdentifyPayload, WorkspacePayload,
     VAPInitPayload, VAPStatusPayload,
-    SyncPayload, ProjectsListPayload
+    SyncPayload, ProjectsListPayload,
+    AgentStatePayload, ProjectStatePayload,
+    AgentStatus, ProjectStatus
 )
 
 logger = logging.getLogger(__name__)
@@ -255,3 +257,7 @@ class VHLWebSocketClient:
     async def emit_status_update(self, status: str, message: Optional[str] = None):
         payload = HILRequestPayload(reason=status, message=message)
         await self.emit(EventType.HIL_REQUEST, payload)
+
+    async def emit_agent_state(self, archy: AgentStatus, librarian: AgentStatus, ana: AgentStatus, aosm: AgentStatus):
+        payload = AgentStatePayload(archy=archy, librarian=librarian, ana=ana, aosm=aosm)
+        await self.emit(EventType.AGENT_STATE, payload)

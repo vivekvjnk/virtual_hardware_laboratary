@@ -61,6 +61,8 @@ class EventType(str, Enum):
     # System State
     GET_SYSTEM_STATE = "GET_SYSTEM_STATE"
     SYSTEM_STATE = "SYSTEM_STATE"
+    PROJECT_STATE = "PROJECT_STATE"
+    AGENT_STATE = "AGENT_STATE"
 
     # Sync Protocol
     HASH_REQUEST = "HASH_REQUEST"
@@ -166,3 +168,22 @@ class SyncPayload(BaseModel):
     blob_id: Optional[str] = None
     reason: Optional[str] = None # For SYNC_ERROR
     data: Optional[Dict[str, Any]] = Field(default_factory=dict)
+
+class ProjectStatus(str, Enum):
+    INITIALIZED = "initialized"
+    UNINITIALIZED = "uninitialized"
+    INITIALIZING = "initializing"
+
+class AgentStatus(str, Enum):
+    RUNNING = "Running"
+    IDLE = "Idle"
+
+class ProjectStatePayload(BaseModel):
+    backend_status: ProjectStatus
+    runtime_status: ProjectStatus
+
+class AgentStatePayload(BaseModel):
+    archy: AgentStatus
+    librarian: AgentStatus
+    ana: AgentStatus
+    aosm: AgentStatus
