@@ -430,6 +430,7 @@ class WorkspaceManager:
     def get_workspace_info(self) -> Dict[str, Any]:
         """Returns information about the current workspace status."""
         is_synthesizable = False
+        is_synthesis_completed = False
         if self.project_root:
             has_schematic_images = (self.project_root / "schematic_images").exists() and (self.project_root / "schematic_images").is_dir()
             has_user_artefacts = (self.project_root / "UserArtefacts").exists() and (self.project_root / "UserArtefacts").is_dir()
@@ -448,6 +449,11 @@ class WorkspaceManager:
                 if not self.circuit_name:
                     self.circuit_name = scud_files[0].stem
 
+            if self.circuit_name:
+                stable_path = self.project_root / "Stable" / f"{self.circuit_name}.tsx"
+                if stable_path.exists():
+                    is_synthesis_completed = True
+
         return {
             "project_id": self.project_id,
             "project_root_path": str(self.project_root) if self.project_root else None,
@@ -456,7 +462,8 @@ class WorkspaceManager:
             "previous_iteration_path": str(self.previous_iteration_path) if self.previous_iteration_path else None,
             "iteration_count": self._iteration_count if hasattr(self, "_iteration_count") else 0,
             "is_synthesizable": is_synthesizable,
-            "circuit_name": self.circuit_name
+            "circuit_name": self.circuit_name,
+            "is_synthesis_completed": is_synthesis_completed
         }
 
     def get_current_iteration_path(self):

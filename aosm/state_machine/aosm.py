@@ -406,6 +406,7 @@ class AOSM:
                 ws_client=self.ws_client,
                 sync_client=self.sync_client,
                 project_id=self.project_id,
+                max_auto_fixes=5,
                 parent_notify=self._parent_notify,
                 inbox_queue=self.ana_inbox
             )
