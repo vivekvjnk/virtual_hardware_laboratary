@@ -114,6 +114,10 @@ class AOSM:
         """
         logger.info(f"[AOSM.process_event] Processing event: {event.type} in state: {self.state}\n Event: {event}")
         
+        if event.type == EventType.CLOSE_PROJECT:
+            await self._handle_close_project(event)
+            return
+
         # Dispatch to handler based on current state and event
         handler_name = f"_handle_{self.state.name.lower()}"
         handler = getattr(self, handler_name, None)
@@ -572,6 +576,42 @@ class AOSM:
             self.update_agent_status("librarian", AgentStatus.IDLE)
             logger.error(f"[AOSM._run_librarian] Librarian Agent failed: {e}")
             # We proceed even if Librarian fails, but log the error
+            pass
+
+    async def _handle_close_project(self, event: BaseEvent):
+        """Global handler for closing the current project."""
+        logger.info(f"[AOSM._handle_close_project] Closing project {self.project_id}")
+        
+        # 1. Stop any active agent state machines
+        if self.active_ana_sm:
+            # We don't have a formal stop(), but we can clear the reference
+            self.active_ana_sm = None
+            self.ana_inbox = None
+            self.update_agent_status("ana", AgentStatus.IDLE)
+        
+        self.update_agent_status("archy", AgentStatus.IDLE)
+        self.update_agent_status("librarian", AgentStatus.IDLE)
+
+        # 2. Reset Workspace Manager
+        self.workspace_manager.close_project()
+        
+        # 3. Reset AOSM internal state
+        self.project_id = None
+        self.project_root_info = None
+        self.current_message = {
+            "state_id": AOSMState.STARTUP,
+            "observations": []
+        }
+        
+        # 4. Notify Runtime/UI
+        await self.ws_client.emit_event(BaseEvent(
+            type=EventType.PROJECT_CLOSED,
+            source=EventSource.BACKEND,
+            payload={}
+        ))
+        
+        # 5. Transition to STARTUP
+        await self.transition_to(AOSMState.STARTUP, "Project closed by user")
 
 def main():
     # Test stub

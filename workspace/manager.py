@@ -34,6 +34,14 @@ class WorkspaceManager:
         self._session_iteration_count = 0
         self.current_iteration_id = None
 
+    def close_project(self):
+        """Resets the workspace manager to its initial state, closing any open project."""
+        self.project_root = None
+        self.project_id = None
+        self.circuit_name = None
+        self.reset_iterations()
+        logger.info("[WorkspaceManager.close_project] Project closed and state reset.")
+
     def set_circuit_name(self, name: str):
         """Sets the circuit name for the current project."""
         if name:
