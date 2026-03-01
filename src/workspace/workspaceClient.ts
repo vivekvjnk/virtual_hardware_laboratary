@@ -29,6 +29,8 @@ export class WorkspaceClient implements WorkspaceSender {
     private currentCircuitName: string | null = null;
     private syncManager: SyncManager;
     private isSynthesizable: boolean = false;
+    private devServerLock: Promise<void> = Promise.resolve();
+    private currentEntryFile: string | null = null;
     private projectState: {
         backend_status: "initialized" | "uninitialized" | "initializing",
         runtime_status: "initialized" | "uninitialized" | "initializing"
@@ -253,8 +255,8 @@ export class WorkspaceClient implements WorkspaceSender {
                 const targetFile = relativePath === "" ? "" : path.join(relativePath, entryFile);
                 const reloadUrl = `http://localhost:3020/${targetFile ? `#file=${encodeURIComponent(targetFile)}` : ""}`;
 
-                // Only restart if the path is different
-                if (this.currentDevServerPath !== fullPath) {
+                // Only restart if the path is different OR entry file matches
+                if (this.currentDevServerPath !== fullPath || this.currentEntryFile !== entryFile) {
                     await this.startDevServer(fullPath, entryFile);
                 } else {
                     // Already running, just trigger reload
@@ -436,23 +438,54 @@ export class WorkspaceClient implements WorkspaceSender {
     }
 
     private async startDevServer(projectPath: string, entryFile: string = ".") {
-        if (this.devServerProcess) {
-            console.log("[WorkspaceClient] Stopping existing dev server...");
-            this.devServerProcess.kill();
-            this.devServerProcess = null;
-            this.currentDevServerPath = null;
-            await new Promise(resolve => setTimeout(resolve, 1000));
-        }
+        // Enforce sequential execution via promise-based lock
+        const previousLock = this.devServerLock;
+        let resolveLock: () => void;
+        this.devServerLock = new Promise((resolve) => { resolveLock = resolve; });
 
-        console.log(`[WorkspaceClient] Starting tsci dev in ${projectPath}`);
-        this.currentDevServerPath = projectPath;
-
-        const env = {
-            ...process.env,
-            RUNFRAME_STANDALONE_FILE_PATH: process.env.RUNFRAME_STANDALONE_FILE_PATH || "/app/runframe/standalone.min.js"
-        };
+        await previousLock;
 
         try {
+            // Deduplicate: If already running with same config, skip
+            if (this.devServerProcess && this.currentDevServerPath === projectPath && this.currentEntryFile === entryFile) {
+                console.log(`[WorkspaceClient] Dev server already running for ${projectPath} with ${entryFile}`);
+                return;
+            }
+
+            if (this.devServerProcess) {
+                console.log("[WorkspaceClient] Stopping existing dev server...");
+                const processToKill = this.devServerProcess;
+                this.devServerProcess = null;
+
+                // Create a promise to wait for exit
+                const exitPromise = new Promise<void>((resolve) => {
+                    const timer = setTimeout(() => {
+                        console.warn("[WorkspaceClient] Dev server kill timeout, forcing SIGKILL");
+                        processToKill.kill("SIGKILL");
+                        resolve();
+                    }, 5000);
+
+                    processToKill.once('exit', () => {
+                        clearTimeout(timer);
+                        resolve();
+                    });
+                });
+
+                processToKill.kill();
+                await exitPromise;
+                this.currentDevServerPath = null;
+                this.currentEntryFile = null;
+            }
+
+            console.log(`[WorkspaceClient] Starting tsci dev in ${projectPath} with entry ${entryFile}`);
+            this.currentDevServerPath = projectPath;
+            this.currentEntryFile = entryFile;
+
+            const env = {
+                ...process.env,
+                RUNFRAME_STANDALONE_FILE_PATH: process.env.RUNFRAME_STANDALONE_FILE_PATH || "/app/runframe/standalone.min.js"
+            };
+
             this.devServerProcess = spawn("tsci", ["dev", entryFile], {
                 cwd: projectPath,
                 env,
@@ -464,7 +497,7 @@ export class WorkspaceClient implements WorkspaceSender {
                 console.log(`[tsci dev] ${output}`);
 
                 // Detection logic: wait for "Local: http://localhost:..."
-                if (output.includes("http://localhost:")) {
+                if (output.includes("Local:   http://localhost:")) {
                     console.log("[WorkspaceClient] Dev server ready event detected: ", projectPath);
                     // Only send generic ready message if we are at the workspace root.
                     // Specific project ready messages (with hashes) are handled by the callers 
@@ -491,18 +524,24 @@ export class WorkspaceClient implements WorkspaceSender {
 
             this.devServerProcess.on('exit', (code) => {
                 console.log(`[tsci dev] Exited with code ${code}`);
-                this.devServerProcess = null;
+                if (this.currentDevServerPath === projectPath) {
+                    this.devServerProcess = null;
+                }
             });
 
             this.devServerProcess.on('error', (err) => {
                 console.error(`[tsci dev] Failed to start: ${err.message}`);
                 this.sendError("DEV_SERVER_FAILED", err.message);
-                this.devServerProcess = null;
+                if (this.currentDevServerPath === projectPath) {
+                    this.devServerProcess = null;
+                }
             });
 
         } catch (error: any) {
             console.error(`[WorkspaceClient] Error spawning tsci: ${error.message}`);
             this.sendError("DEV_SERVER_FAILED", error.message);
+        } finally {
+            resolveLock!();
         }
     }
 }
