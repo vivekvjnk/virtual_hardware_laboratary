@@ -76,6 +76,9 @@ class EventType(str, Enum):
     SYNC_COMPLETE = "SYNC_COMPLETE"
     SYNC_ERROR = "SYNC_ERROR"
 
+    # Dev Server
+    DEV_SERVER_READY = "DEV_SERVER_READY"
+
 class BaseEvent(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     
