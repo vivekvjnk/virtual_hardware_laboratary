@@ -1,8 +1,6 @@
 #!/bin/bash
 set -e
 
-
-
 # Start Agent WebSocket Server in background
 echo "Starting Agent WebSocket Server..."
 node dist/server/wsIndex.js &

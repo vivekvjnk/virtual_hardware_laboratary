@@ -317,9 +317,49 @@ export class WorkspaceClient implements WorkspaceSender {
             case "SYNC_TRIGGER":
                 await this.syncManager.handleMessage(msg as AgentMessage);
                 break;
+            case "CLOSE_PROJECT":
+                await this.closeProject();
+                break;
             default:
                 break;
         }
+    }
+
+    public async closeProject(): Promise<void> {
+        console.log("[WorkspaceClient] Closing current project and resetting state...");
+
+        // 1. Reset project-specific state
+        this.projectDir = null;
+        setProjectDir(null);
+        this.currentProjectId = null;
+        this.currentProjectName = null;
+        this.currentCircuitName = null;
+        this.isSynthesizable = false;
+        this.activeVapTaskId = null;
+        this.activeVapContext = null;
+
+        if (this.vapStatusInterval) {
+            clearInterval(this.vapStatusInterval);
+            this.vapStatusInterval = null;
+        }
+
+        this.updateProjectState({
+            backend_status: "uninitialized",
+            runtime_status: "uninitialized"
+        });
+
+        // 2. Restart dev server at workspace root
+        console.log(`[WorkspaceClient] Restarting dev server at workspace root: ${this.workspaceDir}`);
+        await this.startDevServer(this.workspaceDir);
+
+        this.send({
+            id: randomUUID(),
+            type: "PROJECT_CLOSED",
+            artifact_id: null,
+            timestamp: new Date().toISOString(),
+            source: "vhl_workspace",
+            payload: {}
+        } as any);
     }
 
     private startVapStatusReporting(taskId: string, context: VapContext) {

@@ -38,6 +38,8 @@ export type EventType =
     | "LIST_PROJECTS"
     | "PROJECTS_LIST"
     | "SYNTHESIZE_CIRCUIT"
+    | "CLOSE_PROJECT"
+    | "PROJECT_CLOSED"
     | "VHL_WORKSPACE_READY"
     // Dev Server Management
     | "START_DEV_SERVER"
