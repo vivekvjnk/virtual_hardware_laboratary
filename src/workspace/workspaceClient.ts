@@ -309,7 +309,14 @@ export class WorkspaceClient implements WorkspaceSender {
                     this.sendError("VAP_DECISION_INVALID", "Missing task_id or decision in VAP_DECISION");
                     break;
                 }
-                await handleVapDecision(task_id, decision, this.projectDir || this.workspaceDir, this);
+                await handleVapDecision(
+                    task_id,
+                    decision,
+                    this.projectDir || this.workspaceDir,
+                    this,
+                    this.currentProjectId,
+                    this.activeVapContext?.circuit_name
+                );
                 break;
             }
             case "HASH_RESPONSE":
@@ -406,6 +413,10 @@ export class WorkspaceClient implements WorkspaceSender {
                 }
             }
         }, 2000);
+    }
+
+    public async startSync(projectId: string, resourceType: any, iterationId?: string | null, intent?: any, data?: Record<string, any>): Promise<void> {
+        await this.syncManager.startSync(projectId, resourceType, iterationId, intent, data);
     }
 
     public async onStableCircuitUpdated(circuitName: string): Promise<void> {

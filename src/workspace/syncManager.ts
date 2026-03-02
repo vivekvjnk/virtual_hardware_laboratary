@@ -40,13 +40,14 @@ export class SyncManager {
                 return path.join(projectRoot, "eval_results");
             case "StableCircuit": {
                 const name = data?.circuit_name || "circuit";
-                // return path.join(projectRoot, "Stable", `${name}.tsx`);
                 return path.join(projectRoot, `${name}.tsx`);
             }
+            case "EvaluationOutput":
+                return path.join(projectRoot, "dist");
         }
     }
 
-    public async startSync(projectId: string, resourceType: ResourceType, iterationId?: string | null, intent?: SyncIntent) {
+    public async startSync(projectId: string, resourceType: ResourceType, iterationId?: string | null, intent?: SyncIntent, data?: Record<string, any>) {
         const syncId = randomUUID();
         console.log(`[Sync] Starting sync session ${syncId} for ${resourceType}`);
 
@@ -63,7 +64,8 @@ export class SyncManager {
                     project_id: projectId,
                     iteration_id: iterationId,
                     resource_type: resourceType,
-                    intent: intent
+                    intent: intent,
+                    data: data
                 }
             });
             this.activeSyncs.set(syncId, SyncState.REQUEST_HASH);
@@ -107,6 +109,8 @@ export class SyncManager {
             case "Circuit":
             case "StableCircuit":
                 return false;
+            case "EvaluationOutput":
+                return true;
             default:
                 return true;
         }
@@ -273,7 +277,7 @@ export class SyncManager {
             let computedHash: string;
             const targetPath = this.getResourcePath(project_id, resource_type, iteration_id, payload.data);
 
-            if (resource_type === "Library" || resource_type === "Evaluation") {
+            if (resource_type === "Library" || resource_type === "Evaluation" || resource_type === "EvaluationOutput") {
                 const extractDir = path.join(TEMP_DIR, `extract_${sync_id}`);
                 console.log(`[Sync] Decompressing ${resource_type} archive to ${extractDir}`);
                 await decompressZip(localFile, extractDir);

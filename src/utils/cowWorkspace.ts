@@ -79,7 +79,7 @@ export class COWWorkspaceManager {
     /**
      * Commits changes from the evaluation workspace back to the main workspace.
      */
-    static async commit(taskId: string, baseDir: string = WORKSPACE_DIR) {
+    static async commit(taskId: string, baseDir: string = WORKSPACE_DIR, circuitName?: string) {
         const paths = this.getTaskPaths(taskId);
 
         if (!existsSync(paths.taskRoot)) {
@@ -87,66 +87,49 @@ export class COWWorkspaceManager {
             return;
         }
 
-        console.log(`[COW] Committing changes from ${paths.taskRoot} to ${baseDir}`);
-
-        // Recursive function to commit files
-        const commitRecursive = async (currentEvalDir: string, currentWorkspaceDir: string) => {
-            const entries = await fs.readdir(currentEvalDir, { withFileTypes: true });
-
-            for (const entry of entries) {
-                const evalPath = path.join(currentEvalDir, entry.name);
-                const workspacePath = path.join(currentWorkspaceDir, entry.name);
-
-                if (entry.isDirectory()) {
-                    // Skip hidden directories like .vhl_eval if they happen to be inside (unlikely)
-                    if (entry.name === ".vhl_eval" || entry.name === ".tmp") continue;
-
-                    if (!existsSync(workspacePath)) {
-                        await fs.mkdir(workspacePath, { recursive: true });
-                    }
-                    await commitRecursive(evalPath, workspacePath);
-                } else if (entry.isFile()) {
-                    // In a hardlink-based COW, we can check if the file in eval workspace 
-                    // is different from the one in the main workspace.
-                    // If they have different inodes, it means the hardlink was broken (file modified).
-
-                    try {
-                        const evalStat = await fs.stat(evalPath);
-                        let shouldCommit = true;
-
-                        if (existsSync(workspacePath)) {
-                            const workspaceStat = await fs.stat(workspacePath);
-                            if (evalStat.ino === workspaceStat.ino) {
-                                // Same inode means they are still hardlinked, so no changes
-                                shouldCommit = false;
-                            }
-                        } else {
-                            console.log(`[COW] File is new: ${entry.name}`);
-                        }
-
-                        if (shouldCommit) {
-                            // Atomic rename strategy:
-                            // 1. Copy to a temp file in the target directory
-                            const tempPath = `${workspacePath}.tmp.${randomUUID()}`;
-                            await fs.copyFile(evalPath, tempPath);
-                            // 2. Rename to target path (atomic on most Unix filesystems)
-                            await fs.rename(tempPath, workspacePath);
-                            console.log(`[COW] Successfully committed: ${entry.name}`);
-                        }
-                    } catch (err) {
-                        console.error(`[COW] Failed to commit file ${evalPath}:`, err);
-                    }
-                }
-            }
-        };
-
-        try {
-            await commitRecursive(paths.taskRoot, baseDir);
-            console.log(`[COW] Commit completed for task ${taskId}`);
-        } catch (error) {
-            console.error(`Failed to commit COW workspace for task ${taskId}:`, error);
-            throw error;
+        if (!circuitName) {
+            console.warn(`[COW] No circuitName provided for commit, cannot identify stable circuit file.`);
+            return;
         }
+
+        console.log(`[COW] Committing changes from ${paths.taskRoot} to ${baseDir} (Circuit: ${circuitName})`);
+
+        // We only commit two things into the 'Stable' directory:
+        // 1. {circuitName}.tsx -> Stable/{circuitName}.tsx
+        // 2. dist/circuit.json -> Stable/dist/circuit.json
+
+        const stableDir = baseDir;
+        const filesToCommit = [
+            {
+                src: path.join(paths.taskRoot, `${circuitName}.tsx`),
+                dest: path.join(stableDir, `${circuitName}.tsx`)
+            },
+            {
+                src: path.join(paths.taskRoot, "dist", "circuit.json"),
+                dest: path.join(stableDir, "dist", "circuit.json")
+            }
+        ];
+
+        for (const { src, dest } of filesToCommit) {
+            try {
+                if (existsSync(src)) {
+                    await fs.mkdir(path.dirname(dest), { recursive: true });
+
+                    // Atomic replace
+                    const tempPath = `${dest}.tmp.${randomUUID()}`;
+                    await fs.copyFile(src, tempPath);
+                    await fs.rename(tempPath, dest);
+
+                    console.log(`[COW] Retained critical file: ${path.basename(src)} -> ${path.relative(baseDir, dest)}`);
+                } else {
+                    console.warn(`[COW] Critical file missing in evaluation workspace: ${src}`);
+                }
+            } catch (err) {
+                console.error(`[COW] Failed to commit critical file ${src}:`, err);
+            }
+        }
+
+        console.log(`[COW] Commit completed for task ${taskId}`);
     }
 
     /**
