@@ -334,24 +334,26 @@ class AOSM:
             # if decision is ACCEPT copy current iteration directory to Stable directory
             if "ACCEPT" == decision:
                 
-                # Sync StableCircuit (Agent to Runtime)
+                # Sync StableCircuit (Now triggered by Runtime upon VAP decision)
                 if self.project_id:
-                    logger.info(f"[AOSM._handle_present_result] Triggering StableCircuit sync for project {self.project_id}")
-                    sync_payload_stable = SyncPayload(
-                        sync_id=str(uuid.uuid4()),
-                        project_id=self.project_id,
-                        resource_type="StableCircuit",
-                        data={"circuit_name":self.workspace_manager.circuit_name}
-                    )
-                    await self.ws_client.emit(EventType.SYNC_TRIGGER, sync_payload_stable)
                     try:
-                        # Wait for sync to complete
+                        # Wait for sync to complete (Triggered by Runtime)
+                        logger.info(f"[AOSM._handle_present_result] Waiting for StableCircuit sync (triggered by Runtime) to complete...")
                         await self.ws_client.wait_for_event(
                             EventType.SYNC_COMPLETE, 
                             filter_func=lambda e: e.payload.get("resource_type") == "StableCircuit",
                             timeout=60.0 # Timeout for sync
                         )
                         logger.info(f"[AOSM._handle_present_result] StableCircuit sync completed successfully")
+                        
+                        # Wait for EvaluationOutput sync (triggered by Runtime)
+                        logger.info(f"[AOSM._handle_present_result] Waiting for EvaluationOutput sync (triggered by Runtime) to complete...")
+                        await self.ws_client.wait_for_event(
+                            EventType.SYNC_COMPLETE, 
+                            filter_func=lambda e: e.payload.get("resource_type") == "EvaluationOutput",
+                            timeout=60.0 # Timeout for sync
+                        )
+                        logger.info(f"[AOSM._handle_present_result] EvaluationOutput sync completed successfully")
                     except Exception as e:
                         logger.warning(f"[AOSM._handle_present_result] StableCircuit sync failed or timed out: {e}")
 

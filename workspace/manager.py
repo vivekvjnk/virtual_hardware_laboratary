@@ -501,6 +501,8 @@ class WorkspaceManager:
                 resolved_path= project_root / "eval_results"
         elif resource_type == "StableCircuit":
             resolved_path= project_root / "Stable" / f"{res_circuit_name}.tsx"
+        elif resource_type == "EvaluationOutput":
+            resolved_path = project_root / "Stable" / "dist"
         
         if resolved_path:
             logger.info(f"[WorkspaceManager.resolve_resource_path] resolved resource path: {resolved_path}")

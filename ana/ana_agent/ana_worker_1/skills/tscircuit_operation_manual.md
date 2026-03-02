@@ -349,7 +349,8 @@ Named nets are used for shared electrical nodes.
 
 * Nets should be declared near the top of the `<board />`
 * Nets may be referenced anywhere within the board
-
+* Net name should never start with a number ('<net name="12V"/> will result error)
+* Never use period(.) in net name (`<net name="V3.3"/> will result in error)
 ---
 
 ### Connecting to Nets

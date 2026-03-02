@@ -86,7 +86,7 @@ class SyncClient:
             tmp_file = scratch_dir / "downloaded_blob"
             await asyncio.to_thread(self.minio.download_file, payload.blob_id, str(tmp_file))
 
-            if payload.resource_type in ["Library", "Evaluation"]:
+            if payload.resource_type in ["Library", "Evaluation", "EvaluationOutput"]:
                 extract_dir = scratch_dir / "extracted"
                 extract_dir.mkdir(parents=True, exist_ok=True)
                 decompress_zip(str(tmp_file), str(extract_dir))
