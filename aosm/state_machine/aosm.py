@@ -291,6 +291,7 @@ class AOSM:
             scud_path,image_id = await self._run_bootstrap(event)
             self.current_message["circuit_id"] = image_id
             if scud_path:
+                self.current_message["scud_path"] = str(scud_path)
                 await self._run_librarian(scud_path)
                 
                 # Workflow 1.1: Sync lib/imports from VHL runtime to Agent backend
@@ -307,10 +308,10 @@ class AOSM:
                         EventType.SYNC_COMPLETE,
                         filter_func=lambda e: e.payload.get("resource_type") == "Library"
                     )
-                    logger.info(f"[AOSM._handle_bootstrap_pipeline] Library sync completed. Transitioning to TRIGGER_ANA")
+                    logger.info(f"[AOSM._handle_bootstrap_pipeline] Library sync completed. Transitioning to WAIT_FOR_LIBRARIAN_HIL")
 
-                    # Transition to TRIGGER_ANA to start the ANA-D state machine
-                    await self.transition_to(AOSMState.TRIGGER_ANA, "Bootstrap and Component resolution completed")
+                    # Transition to WAIT_FOR_LIBRARIAN_HIL to let human review librarian results
+                    await self.transition_to(AOSMState.WAIT_FOR_LIBRARIAN_HIL, "Bootstrap and Component resolution completed. Waiting for HIL review.", payload={"scud_path": str(scud_path)})
                 else:
                     raise ValueError(f"Project id is null : {self.project_id}")
             else:
@@ -486,6 +487,81 @@ class AOSM:
         if event.type == EventType.HUMAN_INPUT:
              await self.transition_to(AOSMState.INTENT_CLASSIFY, "Clarification received")
 
+    async def _handle_wait_for_librarian_hil(self, event: BaseEvent):
+        logger.info(f"[AOSM._handle_wait_for_librarian_hil] In WAIT_FOR_LIBRARIAN_HIL state... Event: {event}")
+        
+        if event.type == EventType.STATE_TRANSITION:
+            # On entering state, notify user for review
+            scud_path = event.payload.get("scud_path")
+            scud_content = ""
+            if scud_path and os.path.exists(scud_path):
+                with open(scud_path, "r") as f:
+                    scud_content = f.read()
+            
+            await self.ws_client.emit_event(BaseEvent(
+                type=EventType.HIL_REQUEST,
+                source=EventSource.BACKEND,
+                payload={
+                    "reason": "LIBRARIAN_REVIEW",
+                    "message": "Librarian has finished component resolution. Please review the updated SCUD.",
+                    "scud_content": scud_content
+                }
+            ))
+            
+        elif event.type == EventType.HUMAN_INPUT:
+            payload = event.payload or {}
+            action = payload.get("action")
+            
+            if action == "continue":
+                instructions = payload.get("instructions", "")
+                if instructions:
+                    self.current_message.setdefault("observations", []).append(f"User instructions from Librarian HIL review: {instructions}")
+                logger.info("[AOSM._handle_wait_for_librarian_hil] User chose CONTINUE. Transitioning to TRIGGER_ANA")
+                await self.transition_to(AOSMState.TRIGGER_ANA, "User accepted librarian results")
+                
+            elif action == "retry":
+                instructions = payload.get("instructions", "")
+                logger.info(f"[AOSM._handle_wait_for_librarian_hil] User chose RETRY with instructions: {instructions}")
+                
+                # Re-run librarian
+                scud_path = self.current_message.get("scud_path") # We should store this
+                if not scud_path:
+                    # Try to find it again? Or store it in transition
+                    # For now, let's assume we can get it from workspace manager
+                    project_root = self.workspace_manager.project_root
+                    image_id = self.current_message.get("circuit_id")
+                    scud_path = project_root / f"{image_id}.scud"
+
+                await self._run_librarian(scud_path, instructions=instructions)
+                
+                # Wait for sync again?
+                if self.project_id:
+                     await self.ws_client.emit(EventType.SYNC_TRIGGER, SyncPayload(
+                         sync_id=str(uuid.uuid4()),
+                         project_id=self.project_id,
+                         resource_type="Library"
+                     ))
+                     await self.ws_client.wait_for_event(
+                         EventType.SYNC_COMPLETE,
+                         filter_func=lambda e: e.payload.get("resource_type") == "Library"
+                     )
+                
+                # Re-emit HIL_REQUEST with updated content
+                scud_content = ""
+                if os.path.exists(scud_path):
+                    with open(scud_path, "r") as f:
+                        scud_content = f.read()
+                
+                await self.ws_client.emit_event(BaseEvent(
+                    type=EventType.HIL_REQUEST,
+                    source=EventSource.BACKEND,
+                    payload={
+                        "reason": "LIBRARIAN_REVIEW",
+                        "message": "Librarian has finished retrying component resolution. Please review the updated SCUD.",
+                        "scud_content": scud_content
+                    }
+                ))
+
     # --- High-level Orchestration Logic ---
 
     async def _run_bootstrap(self, event: BaseEvent):
@@ -555,21 +631,21 @@ class AOSM:
             
         return scud_path,image_id
 
-    async def _run_librarian(self, scud_path: Path):
+    async def _run_librarian(self, scud_path: Path, instructions: str = None):
         """Logic for triggering Librarian Agent to resolve components."""
-        logger.info(f"[AOSM._run_librarian] Triggering Librarian Agent for SCUD: {scud_path}")
+        logger.info(f"[AOSM._run_librarian] Triggering Librarian Agent for SCUD: {scud_path} (Instructions: {instructions})")
         try:
             if os.environ.get("STUBS") == "true":
                 logger.info("[AOSM._run_librarian] Running Librarian in STUB mode")
                 self.update_agent_status("librarian", AgentStatus.RUNNING)
-                await asyncio.to_thread(process_scud_stub, str(scud_path))
+                await asyncio.to_thread(process_scud_stub, str(scud_path), instructions=instructions)
                 self.update_agent_status("librarian", AgentStatus.IDLE)
             else:
                 # LibrarianAgent defaults to http://localhost:8080/mcp
                 librarian = LibrarianAgent()
                 # process_scud involves network/LLM, run in thread
                 self.update_agent_status("librarian", AgentStatus.RUNNING)
-                await asyncio.to_thread(librarian.process_scud, str(scud_path))
+                await asyncio.to_thread(librarian.process_scud, str(scud_path), instructions=instructions)
                 self.update_agent_status("librarian", AgentStatus.IDLE)
             logger.info(f"[AOSM._run_librarian] Librarian Agent completed successfully")
         except Exception as e:

@@ -105,7 +105,7 @@ def resolve_component_stub(part_number: str, mcp_url: str) -> Optional[Dict]:
             
     return None
 
-def process_scud_stub(scud_path: str, mcp_url: str = "http://localhost:8080/mcp"):
+def process_scud_stub(scud_path: str, mcp_url: str = "http://localhost:8080/mcp", instructions: str = None):
     """
     Stub for LibrarianAgent.process_scud.
     """

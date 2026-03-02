@@ -75,7 +75,7 @@ class LibrarianAgent:
         if isinstance(event, LLMConvertibleEvent):
             self.llm_messages.append(event.to_llm_message())
 
-    def process_scud(self, scud_path: str) -> None:
+    def process_scud(self, scud_path: str, instructions: str = None) -> None:
         """
         Process the SCUD file: read it, check components, and update it.
         """
@@ -100,6 +100,9 @@ class LibrarianAgent:
             "create missing components if necessary, and update the SCUD file "
             "with a 'Library Mapping' section."
         )
+
+        if instructions:
+            user_message += f"\n\nAdditional instructions from the user: {instructions}"
         
         conversation.send_message(user_message)
         conversation.run()

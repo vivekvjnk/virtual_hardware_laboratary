@@ -12,3 +12,4 @@ class AOSMState(Enum):
     CANCEL_PIPELINE = auto()
     ERROR_PRESENTED = auto()
     WAIT_FOR_USER = auto()
+    WAIT_FOR_LIBRARIAN_HIL = auto()
