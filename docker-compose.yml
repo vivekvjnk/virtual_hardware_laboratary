@@ -8,6 +8,7 @@ services:
       - "8080:8080"
       - "8081:8081"
       - "8082:8082"
+      - "8083:8083" # Port for UI Snapshot MCP Server
       - "1080:1080" # Port for Agent WebSocket Server
       - "3020:3020" # Port for tscircuit
       # - "9000:9000" # port for Minio 
@@ -19,7 +20,7 @@ services:
       - PORT=8080
       - VAP_PORT=8081
       - VHL_LIBRARY_DIR=/app/lib
-      # Add MinIO connection details here
+      - SNAPSHOT_PORT=8083
       - MINIO_ENDPOINT=minio
     restart: unless-stopped
 

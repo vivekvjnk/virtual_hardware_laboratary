@@ -9,7 +9,7 @@ import { runtime } from "../vap/runtime.js";
 import { WorkspaceSender, VapContext } from "./types.js";
 import { handleWorkspaceUpload, handleWorkspaceDownload } from "./syncHandlers.js";
 import { handleVapInit, reportVapResults, handleVapDecision } from "./vapHandlers.js";
-import { setProjectDir, getProjectDir } from "./projectContext.js";
+import { setProjectDir, getProjectDir, setProjectState } from "./projectContext.js";
 import { SyncManager } from "./syncManager.js";
 
 
@@ -215,6 +215,11 @@ export class WorkspaceClient implements WorkspaceSender {
                     }
                 });
 
+                setProjectState({
+                    projectDir: this.projectDir,
+                    currentCircuitName: this.currentCircuitName
+                });
+
                 break;
             }
             case "START_DEV_SERVER": {
@@ -317,6 +322,10 @@ export class WorkspaceClient implements WorkspaceSender {
                     this.currentProjectId,
                     this.activeVapContext?.circuit_name
                 );
+                setProjectState({
+                    projectDir: this.projectDir || this.workspaceDir,
+                    currentCircuitName: this.activeVapContext?.circuit_name || this.currentCircuitName
+                });
                 break;
             }
             case "HASH_RESPONSE":
@@ -445,6 +454,38 @@ export class WorkspaceClient implements WorkspaceSender {
                     current_circuit_name: this.currentCircuitName
                 }
             });
+
+            setProjectState({
+                projectDir: this.projectDir,
+                currentCircuitName: this.currentCircuitName
+            });
+
+            // Trigger snapshot capture
+            this.captureSnapshots(this.projectDir, entryFile);
+        }
+    }
+
+    private async captureSnapshots(projectPath: string, entryFile: string) {
+        console.log(`[WorkspaceClient] Capturing snapshots for ${entryFile} in ${projectPath}`);
+        try {
+            // Run tsci snapshot --update --schematic-only and --pcb-only to be sure
+            // Standard tsci snapshot --update <file> works too.
+            const cmd = `tsci snapshot --update ${entryFile}`;
+            // Use spawn to avoid blocking too long, but we can wait for it here as it's a separate task
+            const child = spawn("tsci", ["snapshot", "--update", entryFile], {
+                cwd: projectPath,
+                stdio: 'inherit'
+            });
+
+            child.on('exit', (code) => {
+                if (code === 0) {
+                    console.log(`[WorkspaceClient] Snapshots captured successfully for ${entryFile}`);
+                } else {
+                    console.error(`[WorkspaceClient] Snapshots capture failed with code ${code}`);
+                }
+            });
+        } catch (error: any) {
+            console.error(`[WorkspaceClient] Error launching snapshots capture: ${error.message}`);
         }
     }
 

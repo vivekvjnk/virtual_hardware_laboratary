@@ -25,8 +25,14 @@ export VHL_TERMINAL_MCP_PORT=8082
 /app/venv/bin/python3 src/mcp/python_servers/terminal_server.py > /app/terminal_server.log 2>&1 &
 TERMINAL_PID=$!
 
+# Start UI Snapshot MCP Server in background
+echo "Starting UI Snapshot MCP Server..."
+export SNAPSHOT_PORT=8083
+node dist/mcp/ui_snapshot/index.js &
+SNAPSHOT_PID=$!
+
 # Wait for any process to exit
-wait -n $LIBRARY_PID $WS_SERVER_PID $WS_CLIENT_PID $ANA_PID $TERMINAL_PID
+wait -n $LIBRARY_PID $WS_SERVER_PID $WS_CLIENT_PID $ANA_PID $TERMINAL_PID $SNAPSHOT_PID
 
 # Exit with status of process that exited first
 exit $?
