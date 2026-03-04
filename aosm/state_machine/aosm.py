@@ -296,6 +296,7 @@ class AOSM:
                 
                 # Workflow 1.1: Sync lib/imports from VHL runtime to Agent backend
                 if self.project_id:
+                    # TODO: Move inside sync client. All communication should go through sync client
                     sync_payload = SyncPayload(
                         sync_id=str(uuid.uuid4()),
                         project_id=self.project_id,
@@ -337,6 +338,9 @@ class AOSM:
                 # Sync StableCircuit (Now triggered by Runtime upon VAP decision)
                 if self.project_id:
                     try:
+                        # TODO trigger sync for stable circuit and evaluation output. 
+                        # TODO create dedicated function inside sync client for eval output sync
+                        
                         # Wait for sync to complete (Triggered by Runtime)
                         logger.info(f"[AOSM._handle_present_result] Waiting for StableCircuit sync (triggered by Runtime) to complete...")
                         await self.ws_client.wait_for_event(
@@ -346,14 +350,6 @@ class AOSM:
                         )
                         logger.info(f"[AOSM._handle_present_result] StableCircuit sync completed successfully")
                         
-                        # Wait for EvaluationOutput sync (triggered by Runtime)
-                        logger.info(f"[AOSM._handle_present_result] Waiting for EvaluationOutput sync (triggered by Runtime) to complete...")
-                        await self.ws_client.wait_for_event(
-                            EventType.SYNC_COMPLETE, 
-                            filter_func=lambda e: e.payload.get("resource_type") == "EvaluationOutput",
-                            timeout=60.0 # Timeout for sync
-                        )
-                        logger.info(f"[AOSM._handle_present_result] EvaluationOutput sync completed successfully")
                     except Exception as e:
                         logger.warning(f"[AOSM._handle_present_result] StableCircuit sync failed or timed out: {e}")
 
@@ -538,6 +534,7 @@ class AOSM:
                 
                 # Wait for sync again?
                 if self.project_id:
+                     # TODO: Move inside sync client. All communication should go through sync client
                      await self.ws_client.emit(EventType.SYNC_TRIGGER, SyncPayload(
                          sync_id=str(uuid.uuid4()),
                          project_id=self.project_id,

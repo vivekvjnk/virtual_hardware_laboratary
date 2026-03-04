@@ -35,36 +35,25 @@ class ANA_validation_agent:
         """
         Process the circuit file: upload to object store, invoke VAP, poll for status, and collect results.
         """
-        logger.info(f"[ANA_validation_agent.validate_circuit] Identified circuit for validation: {circuit_name}")
-
         # Find path of the specified circuit file
         circuit_path = os.path.join(workspace, f"{circuit_name}.tsx")
-        
-        logger.info(f"[ANA_validation_agent.validate_circuit] Using circuit file: {circuit_path}")
 
         # 1. Sync the circuit tsx file to Runtime
         logger.info(f"[ANA_validation_agent.validate_circuit] Step 1: Syncing {circuit_path} to VHL Runtime...")
         if self.sync_client and self.project_id:
             # Workflow 1.2: Agent -> Runtime upload proposal for Circuit
-            await self.sync_client.propose_upload(
+            # This step synchronises the circuit code
+            blob_id = await self.sync_client.propose_upload(
                 project_id=self.project_id,
                 resource_type="Circuit",
                 iteration_id=iteration_id,
                 intent="EVALUATION"
             )
-            # Find blob_id (SyncClient provides it in UPLOAD_PROPOSAL, but we need it for VAP_INIT)
-            # Actually, compute it here too or have SyncClient return it
-            import hashlib
-            with open(circuit_path, "rb") as f:
-                file_hash = hashlib.sha256(f.read()).hexdigest()
-            blob_id = f"{self.project_id}/Circuit/{file_hash}"
-            self.object_store.upload_file(circuit_path,object_key=blob_id)
         else:
-            logger.warning("[ANA_validation_agent.validate_circuit] SyncClient or ProjectID not available, falling back to manual upload")
-            blob_id = self.object_store.upload_file(circuit_path)
+            raise ValueError(f"[ANA_validation_agent.validate_circuit] SyncClient or ProjectID not available. SyncClient: {self.sync_client}, ProjectID: {self.project_id}")
         
-        logger.info(f"[ANA_validation_agent.validate_circuit] Uploaded as blob_id: {blob_id}")
-
+        logger.info(f"[ANA_validation_agent.validate_circuit] Uploaded as blob_id: {blob_id}") 
+        
         # 2. Invoke VAP with the circuit object id
         logger.info(f"[ANA_validation_agent.validate_circuit] Step 2: Invoking VAP for circuit: {circuit_name}")
         await self.ws_client.emit_vap_init(circuit_name, blob_id,iteration_id=iteration_id)
@@ -118,6 +107,7 @@ class ANA_validation_agent:
         logger.info("[ANA_validation_agent.validate_circuit] Step 4: Syncing evaluation results...")
         output_dir = os.path.join(workspace, "eval_results")
         
+        # TODO: move this code inside sync client. All sync communication should go through sync client.
         if self.sync_client and self.project_id:
              # Workflow 1.2: Runtime -> Agent download for Evaluation
              sync_payload = SyncPayload(
@@ -134,13 +124,7 @@ class ANA_validation_agent:
                  filter_func=lambda e: e.payload.get("resource_type") == "Evaluation"
              )
         else:
-            # Fallback (partial implementation of original Step 4)
-            results_blob_id = evaluation_metadata.get("results_blob_id")
-            if results_blob_id:
-                zip_path = os.path.join(workspace, "evaluation_results.zip")
-                self.object_store.download_file(results_blob_id, zip_path)
-                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                    zip_ref.extractall(output_dir)
+            raise ValueError(f"[ANA_validation_agent.validate_circuit] Project id or sync client is not set. Project id : {self.project_id}, Sync client : {self.sync_client}")
             
         logger.info("[ANA_validation_agent.validate_circuit] Step 4: Sync complete.")
 

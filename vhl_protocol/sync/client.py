@@ -138,18 +138,25 @@ class SyncClient:
 
         if path.is_dir():
             hash_val = compute_directory_hash(str(path))
+            logger.info(f"[SyncClient.propose_upload] Step 1.1: Computed hash value of the directory: {hash_val}")
             temp_zip = Path(tempfile.gettempdir()) / f"upload_{sync_id}.zip"
             compress_directory(str(path), str(temp_zip))
             blob_to_upload = str(temp_zip)
+            logger.info(f"[SyncClient.propose_upload] Step 1.2: Compressed the source directory")
         else:
             hash_val = compute_file_hash(str(path))
             blob_to_upload = str(path)
+            logger.info(f"[SyncClient.propose_upload] Step 1.1: Computed hash value of the file: {hash_val}")
 
         blob_id = f"{project_id}/{resource_type}/{path.name}"
 
         try:
+            logger.info(f"[SyncClient.propose_upload] Step 2: Uploading file to object store")
+
             await asyncio.to_thread(self.minio.upload_file, blob_to_upload, blob_id)
             
+            logger.info(f"[SyncClient.propose_upload] Step 2: Uploaded, Blob id : {blob_id}")
+
             data = {"circuit_name":self.workspace_manager.circuit_name}
             proposal_payload = SyncPayload(
                 sync_id=sync_id,
@@ -163,10 +170,17 @@ class SyncClient:
             )
             
             await self.ws_client.emit(EventType.UPLOAD_PROPOSAL, proposal_payload)
+            logger.info(f"[SyncClient.propose_upload] Emitted UPLOAD_PROPOSAL")
+
+        except Exception as e:
+            raise ValueError(f"Filed to upload the file. Error: {e}")
         finally:
             if temp_zip and os.path.exists(temp_zip):
                 os.remove(temp_zip)
 
+        # return the blob id back to the caller
+        return blob_id
+    
     async def send_sync_error(self, sync_id: str, project_id: str, reason: str):
         error_payload = SyncPayload(
             sync_id=sync_id,
@@ -176,3 +190,6 @@ class SyncClient:
         )
         await self.ws_client.emit(EventType.SYNC_ERROR, error_payload)
 
+    # TODO
+    # Need to implement handle_upload_request and propose_download functions as well.
+    # With these additions, SyncClient would be complete to handle any conditions.

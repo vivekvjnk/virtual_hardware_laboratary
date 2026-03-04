@@ -151,6 +151,7 @@ class ANADStateMachine:
         if self.project_id and self.ws_client:
             logger.info(f"[ANADStateMachine._handle_init] Synchronizing StableCircuit and Library for project {self.project_id}")
             
+            # TODO: Move inside sync client. All communication should go through sync client
             # 1. Sync StableCircuit
             sync_payload_stable = SyncPayload(
                 sync_id=str(uuid.uuid4()),
@@ -168,6 +169,7 @@ class ANADStateMachine:
             except Exception as e:
                 logger.warning(f"[ANADStateMachine._handle_init] StableCircuit sync failed or timed out: {e}")
 
+            # TODO: Move inside sync client. All communication should go through sync client
             # 2. Sync Library
             sync_payload_lib = SyncPayload(
                 sync_id=str(uuid.uuid4()),
