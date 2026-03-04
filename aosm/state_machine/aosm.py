@@ -28,7 +28,7 @@ class AOSM:
     def __init__(self, ws_url: str = "ws://localhost:1080"):
         logger.info(f"[AOSM.__init__] Initializing AOSM with ws_url: {ws_url}")
         self.state = AOSMState.STARTUP
-        self.ws_client = VHLWebSocketClient(
+        self.web_socket_client = VHLWebSocketClient(
             url=ws_url,
             role="agent"
         )
@@ -43,7 +43,7 @@ class AOSM:
         self.ana_inbox: Optional[asyncio.Queue] = None
         self._main_loop_task: Optional[asyncio.Task] = None
         self.project_id: Optional[str] = None
-        self.sync_client = SyncClient(self.ws_client, self.workspace_manager)
+        self.sync_client = SyncClient(self.web_socket_client, self.workspace_manager)
         self.agent_state = {
             "archy": AgentStatus.IDLE,
             "librarian": AgentStatus.IDLE,
@@ -64,14 +64,14 @@ class AOSM:
     async def start(self):
         """Starts AOSM and the WebSocket client."""
         logger.info("[AOSM.start] Starting AOSM...")
-        self.ws_client.add_subscriber(self._handle_ws_event)
-        await self.ws_client.start()
+        self.web_socket_client.add_subscriber(self._handle_ws_event)
+        await self.web_socket_client.start()
         self._main_loop_task = asyncio.create_task(self._main_loop())
         await self.broadcast_agent_state()
 
     async def broadcast_agent_state(self):
         """Broadcasts the current state of all agents."""
-        await self.ws_client.emit_agent_state(
+        await self.web_socket_client.emit_agent_state(
             archy=self.agent_state["archy"],
             librarian=self.agent_state["librarian"],
             ana=self.agent_state["ana"],
@@ -87,10 +87,10 @@ class AOSM:
     async def stop(self):
         """Stops AOSM and the WebSocket client."""
         logger.info("[AOSM.stop] Stopping AOSM...")
-        self.ws_client.remove_subscriber(self._handle_ws_event)
+        self.web_socket_client.remove_subscriber(self._handle_ws_event)
         if self._main_loop_task:
             self._main_loop_task.cancel()
-        await self.ws_client.stop()
+        await self.web_socket_client.stop()
 
     async def _handle_ws_event(self, event: BaseEvent):
         """Callback for received WebSocket events."""
@@ -112,9 +112,19 @@ class AOSM:
         """
         Processes a single event and triggers state transitions.
         """
-        logger.info(f"[AOSM.process_event] Processing event: {event.type} in state: {self.state}\n Event: {event}")
+        # Pretty log the event for visual validation
+        separator = "═" * 100
+        event_json = event.model_dump_json(indent=2)
+        logger.info(
+            f"\n{separator}\n"
+            f"📥 [AOSM] INCOMING EVENT: {event.type}\n"
+            f"{'─' * 100}\n"
+            f"{event_json}\n"
+            f"{separator}"
+        )
         
         if event.type == EventType.CLOSE_PROJECT:
+            logger.info(f"👉 [AOSM] Handling CLOSE_PROJECT")
             await self._handle_close_project(event)
             return
 
@@ -123,9 +133,10 @@ class AOSM:
         handler = getattr(self, handler_name, None)
         
         if handler:
+            # logger.info(f"👉 [AOSM] Dispatching to handler: {handler_name}")
             await handler(event)
         else:
-            logger.warning(f"[AOSM.process_event] No handler defined for state {self.state}")
+            logger.warning(f"⚠️ [AOSM] No handler defined for state {self.state} to process {event.type}")
 
     async def transition_to(self, next_state: AOSMState, reason: str = "", payload: Optional[Dict[str, Any]] = None):
         """Transitions to a new state and emits a state transition event.
@@ -193,7 +204,7 @@ class AOSM:
             self.project_root_info = self.workspace_manager.get_workspace_info()
             
             # Send back PROJECT_CREATED event to the runtime
-            await self.ws_client.emit_event(BaseEvent(
+            await self.web_socket_client.emit_event(BaseEvent(
                 type=EventType.PROJECT_CREATED,
                 source=EventSource.BACKEND,
                 payload={
@@ -223,7 +234,7 @@ class AOSM:
                 self.project_root_info = self.workspace_manager.get_workspace_info()
                 
                 # Send back PROJECT_LOADED event to the runtime
-                await self.ws_client.emit_event(BaseEvent(
+                await self.web_socket_client.emit_event(BaseEvent(
                     type=EventType.PROJECT_LOADED,
                     source=EventSource.BACKEND,
                     payload={
@@ -251,7 +262,7 @@ class AOSM:
                 await self.transition_to(AOSMState.IDLE, f"Project {project_id} loaded successfully")
             except Exception as e:
                 logger.error(f"[AOSM._handle_startup] Failed to load project {project_id}: {e}")
-                await self.ws_client.emit_event(BaseEvent(
+                await self.web_socket_client.emit_event(BaseEvent(
                     type=EventType.ERROR,
                     source=EventSource.BACKEND,
                     payload={
@@ -262,7 +273,7 @@ class AOSM:
         elif event.type == EventType.LIST_PROJECTS:
             logger.info("[AOSM._handle_startup] Listing projects...")
             projects = self.workspace_manager.list_projects()
-            await self.ws_client.emit_projects_list(projects)
+            await self.web_socket_client.emit_projects_list(projects)
 
     async def _handle_idle(self, event: BaseEvent):
         logger.info(f"[AOSM._handle_idle] In IDLE state... Event: {event}")
@@ -279,7 +290,7 @@ class AOSM:
                 await self.transition_to(AOSMState.TRIGGER_ANA, "User triggered synthesis")
             else:
                 logger.warning("[AOSM._handle_idle] SYNTHESIZE_CIRCUIT received but project not synthesizable")
-                await self.ws_client.emit_event(BaseEvent(
+                await self.web_socket_client.emit_event(BaseEvent(
                     type=EventType.ERROR,
                     source=EventSource.BACKEND,
                     payload={"message": "Project not ready for synthesis. Please upload schematic first."}
@@ -296,19 +307,8 @@ class AOSM:
                 
                 # Workflow 1.1: Sync lib/imports from VHL runtime to Agent backend
                 if self.project_id:
-                    # TODO: Move inside sync client. All communication should go through sync client
-                    sync_payload = SyncPayload(
-                        sync_id=str(uuid.uuid4()),
-                        project_id=self.project_id,
-                        resource_type="Library"
-                    )
-                    await self.ws_client.emit(EventType.SYNC_TRIGGER, sync_payload)
-                    # Wait for SYNC_COMPLETE
-                    logger.info(f"[AOSM._handle_bootstrap_pipeline] Waiting for Library sync to complete...")
-                    await self.ws_client.wait_for_event(
-                        EventType.SYNC_COMPLETE,
-                        filter_func=lambda e: e.payload.get("resource_type") == "Library"
-                    )
+                    # Sync Library using centralized client
+                    await self.sync_client.sync_library(self.project_id)
                     logger.info(f"[AOSM._handle_bootstrap_pipeline] Library sync completed. Transitioning to WAIT_FOR_LIBRARIAN_HIL")
 
                     # Transition to WAIT_FOR_LIBRARIAN_HIL to let human review librarian results
@@ -335,20 +335,19 @@ class AOSM:
             # if decision is ACCEPT copy current iteration directory to Stable directory
             if "ACCEPT" == decision:
                 
-                # Sync StableCircuit (Now triggered by Runtime upon VAP decision)
+                # Sync StableCircuit and EvaluationOutput
                 if self.project_id:
                     try:
-                        # TODO trigger sync for stable circuit and evaluation output. 
-                        # TODO create dedicated function inside sync client for eval output sync
+                        # 1. Trigger sync for stable circuit (Runtime to Agent)
+                        await self.sync_client.sync_stable_circuit(self.project_id)
                         
-                        # Wait for sync to complete (Triggered by Runtime)
-                        logger.info(f"[AOSM._handle_present_result] Waiting for StableCircuit sync (triggered by Runtime) to complete...")
-                        await self.ws_client.wait_for_event(
-                            EventType.SYNC_COMPLETE, 
-                            filter_func=lambda e: e.payload.get("resource_type") == "StableCircuit",
-                            timeout=60.0 # Timeout for sync
-                        )
-                        logger.info(f"[AOSM._handle_present_result] StableCircuit sync completed successfully")
+                        # 2. Trigger sync for evaluation output (Agent to Runtime)
+                        # We need the iteration_id that was accepted.
+                        # iteration_dir looks like .../iteration_<uuid>
+                        iteration_id = Path(iteration_dir).name.replace("iteration_", "")
+                        await self.sync_client.sync_evaluation_output(self.project_id, iteration_id)
+                        
+                        logger.info(f"[AOSM._handle_present_result] StableCircuit and EvaluationOutput sync completed successfully")
                         
                     except Exception as e:
                         logger.warning(f"[AOSM._handle_present_result] StableCircuit sync failed or timed out: {e}")
@@ -377,7 +376,7 @@ class AOSM:
         # Request workspace sync for StableCircuit and Library (Runtime to Agent)
         if self.project_id:
             logger.info("[AOSM._handle_intent_classify] Triggering sync for StableCircuit and Library")
-            await self.ws_client.emit(EventType.SYNC_TRIGGER, SyncPayload(
+            await self.web_socket_client.emit(EventType.SYNC_TRIGGER, SyncPayload(
                 sync_id=str(uuid.uuid4()),
                 project_id=self.project_id,
                 resource_type="StableCircuit",
@@ -406,7 +405,7 @@ class AOSM:
                 workspace_manager=self.workspace_manager,
                 circuit_name=circuit_id,
                 observations=observations,
-                ws_client=self.ws_client,
+                web_socket_client=self.web_socket_client,
                 sync_client=self.sync_client,
                 project_id=self.project_id,
                 max_auto_fixes=5,
@@ -433,12 +432,12 @@ class AOSM:
             
             if ana_event == "HIL_REQUIRED":
                 # Maybe notify UI that HIL is required
-                await self.ws_client.emit_status_update(
+                await self.web_socket_client.emit_status_update(
                     status="waiting_for_input",
                     message=event.payload.get("message")
                 )
             elif ana_event == "ERROR":
-                await self.ws_client.emit_status_update(
+                await self.web_socket_client.emit_status_update(
                     status="ana_error",
                     message=event.payload.get("message")
                 )
@@ -447,7 +446,7 @@ class AOSM:
                 ana_decision = event.payload.get("decision")
                 # Transition with payload so that PRESENT_RESULT can carry out directory management and sync
                 await self.transition_to(AOSMState.PRESENT_RESULT, reason="ANA finished task", payload=event.payload)
-                await self.ws_client.emit_evaluation_update(task_id=ana_task_id, decision=ana_decision)
+                await self.web_socket_client.emit_evaluation_update(task_id=ana_task_id, decision=ana_decision)
 
             else:
                 raise ValueError(f"Unknown ANA notification reason: {ana_event}")
@@ -496,7 +495,7 @@ class AOSM:
                 with open(scud_path, "r") as f:
                     scud_content = f.read()
             
-            await self.ws_client.emit_event(BaseEvent(
+            await self.web_socket_client.emit_event(BaseEvent(
                 type=EventType.HIL_REQUEST,
                 source=EventSource.BACKEND,
                 payload={
@@ -534,16 +533,8 @@ class AOSM:
                 
                 # Wait for sync again?
                 if self.project_id:
-                     # TODO: Move inside sync client. All communication should go through sync client
-                     await self.ws_client.emit(EventType.SYNC_TRIGGER, SyncPayload(
-                         sync_id=str(uuid.uuid4()),
-                         project_id=self.project_id,
-                         resource_type="Library"
-                     ))
-                     await self.ws_client.wait_for_event(
-                         EventType.SYNC_COMPLETE,
-                         filter_func=lambda e: e.payload.get("resource_type") == "Library"
-                     )
+                     # Sync Library using centralized client
+                     await self.sync_client.sync_library(self.project_id)
                 
                 # Re-emit HIL_REQUEST with updated content
                 scud_content = ""
@@ -551,7 +542,7 @@ class AOSM:
                     with open(scud_path, "r") as f:
                         scud_content = f.read()
                 
-                await self.ws_client.emit_event(BaseEvent(
+                await self.web_socket_client.emit_event(BaseEvent(
                     type=EventType.HIL_REQUEST,
                     source=EventSource.BACKEND,
                     payload={
@@ -679,7 +670,7 @@ class AOSM:
         }
         
         # 4. Notify Runtime/UI
-        await self.ws_client.emit_event(BaseEvent(
+        await self.web_socket_client.emit_event(BaseEvent(
             type=EventType.PROJECT_CLOSED,
             source=EventSource.BACKEND,
             payload={}

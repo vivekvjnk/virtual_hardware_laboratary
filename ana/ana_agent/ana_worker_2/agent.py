@@ -7,6 +7,7 @@ from typing import Dict, Any, Optional
 
 from openhands.sdk import get_logger
 from ana_agent.ana_worker_2.utils.object_store import MinioObjectStore
+from vhl_protocol.sync.client import SyncClient
 from vhl_protocol.client.client import VHLWebSocketClient
 
 from vhl_protocol.models import EventType, SyncPayload
@@ -24,8 +25,8 @@ class ANA_validation_agent:
     3. Poll for evaluation status.
     4. Collect and extract evaluation results.
     """
-    def __init__(self, ws_client: VHLWebSocketClient, sync_client: Optional[Any] = None, project_id: Optional[str] = None, minio_url: str = "http://127.0.0.1:9000"):
-        self.ws_client = ws_client
+    def __init__(self, web_socket_client: VHLWebSocketClient, sync_client: Optional[SyncClient] = None, project_id: Optional[str] = None, minio_url: str = "http://127.0.0.1:9000"):
+        self.web_socket_client = web_socket_client
         self.sync_client = sync_client
         self.project_id = project_id
         self.minio_url = minio_url
@@ -56,10 +57,10 @@ class ANA_validation_agent:
         
         # 2. Invoke VAP with the circuit object id
         logger.info(f"[ANA_validation_agent.validate_circuit] Step 2: Invoking VAP for circuit: {circuit_name}")
-        await self.ws_client.emit_vap_init(circuit_name, blob_id,iteration_id=iteration_id)
+        await self.web_socket_client.emit_vap_init(circuit_name, blob_id,iteration_id=iteration_id)
         
         # Wait for the initial VAP_STATUS to get task_id
-        init_response = await self.ws_client.wait_for_event(
+        init_response = await self.web_socket_client.wait_for_event(
             EventType.VAP_INIT_COMPLETE,
             filter_func=lambda e: e.payload.get("task_id") is not None
         )
@@ -74,7 +75,7 @@ class ANA_validation_agent:
         status = "unknown"
         
         while True:
-            status_event = await self.ws_client.wait_for_event(
+            status_event = await self.web_socket_client.wait_for_event(
                 EventType.VAP_STATUS_REPORT,
                 filter_func=lambda e: e.payload.get("task_id") == task_id
             )
@@ -107,22 +108,9 @@ class ANA_validation_agent:
         logger.info("[ANA_validation_agent.validate_circuit] Step 4: Syncing evaluation results...")
         output_dir = os.path.join(workspace, "eval_results")
         
-        # TODO: move this code inside sync client. All sync communication should go through sync client.
         if self.sync_client and self.project_id:
              # Workflow 1.2: Runtime -> Agent download for Evaluation
-             sync_payload = SyncPayload(
-                 sync_id=str(uuid.uuid4()),
-                 project_id=self.project_id,
-                 iteration_id=iteration_id,
-                 resource_type="Evaluation",
-                 intent="RESULT"
-             )
-             await self.ws_client.emit(EventType.SYNC_TRIGGER, sync_payload)
-             # Wait for SYNC_COMPLETE
-             await self.ws_client.wait_for_event(
-                 EventType.SYNC_COMPLETE,
-                 filter_func=lambda e: e.payload.get("resource_type") == "Evaluation"
-             )
+             await self.sync_client.sync_evaluation(self.project_id, iteration_id)
         else:
             raise ValueError(f"[ANA_validation_agent.validate_circuit] Project id or sync client is not set. Project id : {self.project_id}, Sync client : {self.sync_client}")
             
