@@ -308,7 +308,7 @@ export class WorkspaceClient implements WorkspaceSender {
                 this.broadcastProjectState();
                 break;
             }
-            case "VAP_DECISION": {
+            case "VAP_DECISION": { 
                 const { task_id, decision } = (msg as AgentMessage).payload;
                 if (!task_id || !decision) {
                     this.sendError("VAP_DECISION_INVALID", "Missing task_id or decision in VAP_DECISION");
@@ -326,6 +326,11 @@ export class WorkspaceClient implements WorkspaceSender {
                     projectDir: this.projectDir || this.workspaceDir,
                     currentCircuitName: this.activeVapContext?.circuit_name || this.currentCircuitName
                 });
+
+
+                // This is the end of VAP session. Cleanup should happen here.
+                this.activeVapTaskId = null;
+                this.activeVapContext = null;
                 break;
             }
             case "HASH_RESPONSE":
@@ -400,8 +405,7 @@ export class WorkspaceClient implements WorkspaceSender {
                     }
 
                     await reportVapResults(taskId, status, context, this);
-                    this.activeVapTaskId = null;
-                    this.activeVapContext = null;
+                    
                     return;
                 }
 

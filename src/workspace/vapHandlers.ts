@@ -134,6 +134,8 @@ export async function reportVapResults(
         sender.sendError("VAP_REPORT_FAILED", err.message);
     }
 }
+// TODO: Remove sync triggers from this function. Sole responsibility of this fn is to commit and clean VAP workspace
+// Do not initiate sync from here. Let agent backend trigger sync.
 
 export async function handleVapDecision(
     taskId: string,
@@ -150,14 +152,14 @@ export async function handleVapDecision(
             console.log(`[Workspace] Committing changes for task ${taskId} to ${projectDir}`);
             await COWWorkspaceManager.commit(taskId, projectDir, circuitName || undefined);
 
-            if (projectId) {
-                console.log(`[Workspace] Triggering post-commit sync for ${projectId}`);
-                // 1. Sync StableCircuit (Agent-authoritative, but we just committed it, so hashes should match)
-                await sender.startSync(projectId, "StableCircuit", null, null, { circuit_name: circuitName });
+            // if (projectId) {
+            //     console.log(`[Workspace] Triggering post-commit sync for ${projectId}`);
+            //     // 1. Sync StableCircuit (Agent-authoritative, but we just committed it, so hashes should match)
+            //     await sender.startSync(projectId, "StableCircuit", null, null, { circuit_name: circuitName });
 
-                // 2. Sync EvaluationOutput (Runtime-authoritative, Agent will pull dist/ folder)
-                await sender.startSync(projectId, "EvaluationOutput");
-            }
+            //     // 2. Sync EvaluationOutput (Runtime-authoritative, Agent will pull dist/ folder)
+            //     await sender.startSync(projectId, "EvaluationOutput");
+            // }
         } else {
             console.log(`[Workspace] Rejecting changes for task ${taskId}`);
         }

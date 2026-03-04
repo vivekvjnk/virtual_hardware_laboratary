@@ -215,21 +215,25 @@ export class SyncManager {
             // 1. Ensure bucket exists
             await ensureBucket();
 
+            const stats = await fs.stat(localPath).catch(() => null);
+            if (!stats) {
+                throw new Error(`File or directory not found at ${localPath}`);
+            }
+
             // 2. Prepare blob and upload to MinIO (so Agent can download it)
-            const blobId = `${project_id}/${resource_type}/${localHash}`;
+            const isDirectory = stats.isDirectory();
+            const blobId = isDirectory ? `${project_id}/${resource_type}/${localHash}.zip` : `${project_id}/${resource_type}/${localHash}`;
+
             console.log(`[Sync] Providing ${resource_type} to Agent via ${blobId}`);
 
             if (!(await objectExists(blobId))) {
-                const stats = await fs.stat(localPath).catch(() => null);
-                if (stats?.isDirectory()) {
+                if (isDirectory) {
                     const zipPath = path.join(TEMP_DIR, `upload_${randomUUID()}.zip`);
                     await compressDirectory(localPath, zipPath);
                     await pushObject(zipPath, blobId);
                     await fs.unlink(zipPath).catch(() => { });
-                } else if (stats) {
-                    await pushObject(localPath, blobId);
                 } else {
-                    throw new Error(`File or directory not found at ${localPath}`);
+                    await pushObject(localPath, blobId);
                 }
             }
 
@@ -257,6 +261,8 @@ export class SyncManager {
     }
 
     private async handleUploadProposal(payload: SyncPayload) {
+        // Caller of this API should've uploaded a valid payload to object store before invoking. 
+        // 
         const { sync_id, project_id, iteration_id, resource_type, blob_id, hash } = payload;
         console.log(`[Sync] Received UPLOAD_PROPOSAL for ${resource_type} (hash=${hash})`);
 
@@ -277,7 +283,7 @@ export class SyncManager {
             let computedHash: string;
             const targetPath = this.getResourcePath(project_id, resource_type, iteration_id, payload.data);
 
-            if (resource_type === "Library" || resource_type === "Evaluation" || resource_type === "EvaluationOutput") {
+            if (localFile.toLowerCase().endsWith(".zip")) {
                 const extractDir = path.join(TEMP_DIR, `extract_${sync_id}`);
                 console.log(`[Sync] Decompressing ${resource_type} archive to ${extractDir}`);
                 await decompressZip(localFile, extractDir);

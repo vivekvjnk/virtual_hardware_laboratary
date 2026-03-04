@@ -12,6 +12,7 @@
     "start:ws": "tsx src/server/wsIndex.ts",
     "start:workspace": "tsx src/workspace/index.ts",
     "start:ana": "tsx src/mcp/ana/index.ts",
+    "start:ui_snapshot": "tsx src/mcp/ui_snapshot/index.ts",
     "test": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand",
     "clean": "rm -rf dist"
   },
