@@ -105,7 +105,7 @@ export class COWWorkspaceManager {
                 dest: path.join(stableDir, `${circuitName}.tsx`)
             },
             {
-                src: path.join(paths.taskRoot, "dist", "circuit.json"),
+                src: path.join(paths.taskRoot, "dist", `${circuitName}`, "circuit.json"),
                 dest: path.join(stableDir, "dist", "circuit.json")
             }
         ];

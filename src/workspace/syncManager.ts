@@ -47,8 +47,8 @@ export class SyncManager {
         }
     }
 
-    public async startSync(projectId: string, resourceType: ResourceType, iterationId?: string | null, intent?: SyncIntent, data?: Record<string, any>) {
-        const syncId = randomUUID();
+    public async startSync(projectId: string, syncId: string, resourceType: ResourceType, iterationId?: string | null, intent?: SyncIntent, data?: Record<string, any>) {
+
         console.log(`[Sync] Starting sync session ${syncId} for ${resourceType}`);
 
         try {
@@ -82,12 +82,15 @@ export class SyncManager {
 
         switch (msg.type) {
             case "SYNC_TRIGGER":
-                await this.startSync(payload.project_id, payload.resource_type, payload.iteration_id, payload.intent ?? undefined);
+                console.log(`[Sync] Session ${syncId} starting sync.`);
+                await this.startSync(payload.project_id, syncId, payload.resource_type , payload.iteration_id, payload.intent ?? undefined);
                 break;
             case "HASH_RESPONSE":
+                console.log(`[Sync] Session ${syncId}: Handling hash response`);
                 await this.handleHashResponse(payload);
                 break;
             case "UPLOAD_PROPOSAL":
+                console.log(`[Sync] Session ${syncId}: Handling upload proposal`);
                 await this.handleUploadProposal(payload);
                 break;
             case "SYNC_COMPLETE":

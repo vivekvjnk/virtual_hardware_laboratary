@@ -428,8 +428,8 @@ export class WorkspaceClient implements WorkspaceSender {
         }, 2000);
     }
 
-    public async startSync(projectId: string, resourceType: any, iterationId?: string | null, intent?: any, data?: Record<string, any>): Promise<void> {
-        await this.syncManager.startSync(projectId, resourceType, iterationId, intent, data);
+    public async startSync(projectId: string, syncId:string, resourceType: any, iterationId?: string | null, intent?: any, data?: Record<string, any>): Promise<void> {
+        await this.syncManager.startSync(projectId, syncId, resourceType, iterationId, intent, data);
     }
 
     public async onStableCircuitUpdated(circuitName: string): Promise<void> {
