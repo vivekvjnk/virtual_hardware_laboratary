@@ -7,12 +7,11 @@ import { computeFileHash, computeDirectoryHash } from "../utils/hashing.js";
 import { compressDirectory, decompressZip } from "./fileOperations.js";
 import { AgentMessage } from "../server/types.js";
 import { WorkspaceSender } from "./types.js";
-import { SyncPayload, SyncState, ResourceType, SyncIntent } from "./syncTypes.js";
+import { SyncPayload, ResourceType, SyncIntent } from "./syncTypes.js";
 
 export class SyncManager {
     private workspaceDir: string;
     private sender: WorkspaceSender;
-    private activeSyncs: Map<string, SyncState> = new Map();
 
     constructor(workspaceDir: string, sender: WorkspaceSender) {
         this.workspaceDir = workspaceDir;
@@ -47,191 +46,86 @@ export class SyncManager {
         }
     }
 
-    public async startSync(projectId: string, syncId: string, resourceType: ResourceType, iterationId?: string | null, intent?: SyncIntent, data?: Record<string, any>) {
-
-        console.log(`[Sync] Starting sync session ${syncId} for ${resourceType}`);
-
-        try {
-            // 1. Request Remote Hash
-            await this.sender.send({
-                id: randomUUID(),
-                type: "HASH_REQUEST",
-                source: "vhl_workspace",
-                timestamp: new Date().toISOString(),
-                artifact_id: null,
-                payload: {
-                    sync_id: syncId,
-                    project_id: projectId,
-                    iteration_id: iterationId,
-                    resource_type: resourceType,
-                    intent: intent,
-                    data: data
-                }
-            });
-            this.activeSyncs.set(syncId, SyncState.REQUEST_HASH);
-        } catch (err: any) {
-            console.error(`[Sync] Failed to start sync:`, err);
-            this.handleError(syncId, projectId, resourceType, err.message);
-        }
-    }
-
     public async handleMessage(msg: AgentMessage) {
         const payload = msg.payload as SyncPayload;
         const syncId = payload.sync_id;
         if (!syncId) return;
 
         switch (msg.type) {
-            case "SYNC_TRIGGER":
-                console.log(`[Sync] Session ${syncId} starting sync.`);
-                await this.startSync(payload.project_id, syncId, payload.resource_type , payload.iteration_id, payload.intent ?? undefined);
+            case "UPLOAD_REQUEST":
+                console.log(`[Sync] Session ${syncId}: Handling UPLOAD_REQUEST for ${payload.resource_type}`);
+                await this.handleUploadRequest(payload);
                 break;
-            case "HASH_RESPONSE":
-                console.log(`[Sync] Session ${syncId}: Handling hash response`);
-                await this.handleHashResponse(payload);
-                break;
-            case "UPLOAD_PROPOSAL":
-                console.log(`[Sync] Session ${syncId}: Handling upload proposal`);
-                await this.handleUploadProposal(payload);
+            case "DOWNLOAD_REQUEST":
+                console.log(`[Sync] Session ${syncId}: Handling DOWNLOAD_REQUEST for ${payload.resource_type}`);
+                await this.handleDownloadRequest(payload);
                 break;
             case "SYNC_COMPLETE":
                 console.log(`[Sync] Session ${syncId} completed successfully.`);
-                this.activeSyncs.delete(syncId);
                 break;
             case "SYNC_ERROR":
                 console.error(`[Sync] Session ${syncId} failed: ${payload.reason}`);
-                this.activeSyncs.delete(syncId);
                 break;
         }
     }
 
-    private isLocalAuthoritative(resourceType: ResourceType): boolean {
-        switch (resourceType) {
-            case "Library":
-            case "Evaluation":
-                return true;
-            case "Circuit":
-            case "StableCircuit":
-                return false;
-            case "EvaluationOutput":
-                return true;
-            default:
-                return true;
-        }
-    }
-
-    private async handleHashResponse(payload: SyncPayload) {
-        const { sync_id, project_id, iteration_id, resource_type, hash: remoteHash, intent } = payload;
-        const localPath = this.getResourcePath(project_id, resource_type, iteration_id, payload.data);
-
-        let localHash: string | null = null;
-        if (await fs.stat(localPath).catch(() => null)) {
-            const stats = await fs.stat(localPath);
-            localHash = stats.isDirectory()
-                ? await computeDirectoryHash(localPath)
-                : await computeFileHash(localPath);
-        }
-        console.log(`[Sync - handleHashResponse] Local path = ${localPath}`)
-        console.log(`[Sync - handleHashResponse] Comparing hashes for ${resource_type}: Local=${localHash}, Remote=${remoteHash}`);
-
-        // 1. If hashes match and both are not null, we are in sync
-        if (localHash === remoteHash && localHash !== null) {
-            console.log(`[Sync] Hashes match for ${resource_type}. Sync complete.`);
-            return this.sendSyncComplete(sync_id, project_id, resource_type);
-        }
-
-        const localIsAuthority = this.isLocalAuthoritative(resource_type);
-        console.log(`[Sync] Authority for ${resource_type}: ${localIsAuthority ? 'Local (Runtime)' : 'Remote (Agent)'}`);
-
-        if (localIsAuthority) {
-            if (localHash !== null) {
-                // Rule 2: Authority has it, transfer to slave
-                console.log(`[Sync] Authority (Local) has ${resource_type}. Transferring to Slave (Remote).`);
-                await this.requestDownload(payload, localHash);
-            } else if (remoteHash !== null) {
-                // Rule 3: Authority missing, Slave has it, transfer to Authority
-                console.log(`[Sync] Authority (Local) missing ${resource_type}, but Slave (Remote) has it. Transferring to Authority.`);
-                await this.requestUpload(payload);
-            } else {
-                // Rule 4: Both missing
-                console.log(`[Sync] Both sides missing ${resource_type}. Skipping.`);
-                return this.sendSyncComplete(sync_id, project_id, resource_type);
-            }
-        } else {
-            // Remote is Authority
-            if (remoteHash !== null) {
-                // Rule 2: Authority has it, transfer to slave
-                console.log(`[Sync] Authority (Remote) has ${resource_type}. Transferring to Slave (Local).`);
-                await this.requestUpload(payload);
-            } else if (localHash !== null) {
-                // Rule 3: Authority missing, Slave has it, transfer to Authority
-                console.log(`[Sync] Authority (Remote) missing ${resource_type}, but Slave (Local) has it. Transferring to Authority.`);
-                await this.requestDownload(payload, localHash);
-            } else {
-                // Rule 4: Both missing
-                console.log(`[Sync] Both sides missing ${resource_type}. Skipping.`);
-                return this.sendSyncComplete(sync_id, project_id, resource_type);
-            }
-        }
-    }
-
-    private sendSyncComplete(syncId: string, projectId: string, resourceType: ResourceType) {
-        this.sender.send({
-            id: randomUUID(),
-            type: "SYNC_COMPLETE",
-            source: "vhl_workspace",
-            timestamp: new Date().toISOString(),
-            artifact_id: null,
-            payload: { sync_id: syncId, project_id: projectId, resource_type: resourceType }
-        });
-        this.activeSyncs.delete(syncId);
-    }
-
-    private async requestUpload(payload: SyncPayload) {
-        console.log(`[Sync] Requesting upload from Agent for ${payload.resource_type}`);
-        await this.sender.send({
-            id: randomUUID(),
-            type: "UPLOAD_REQUEST",
-            source: "vhl_workspace",
-            timestamp: new Date().toISOString(),
-            artifact_id: null,
-            payload: {
-                sync_id: payload.sync_id,
-                project_id: payload.project_id,
-                iteration_id: payload.iteration_id,
-                resource_type: payload.resource_type,
-                intent: payload.intent,
-                data: payload.data
-            }
-        });
-    }
-
-    private async requestDownload(payload: SyncPayload, localHash: string | null) {
-        if (!localHash) {
-            console.warn(`[Sync] Cannot provide ${payload.resource_type} for download if local is null.`);
-            return;
-        }
-
-        const { project_id, resource_type, iteration_id, sync_id, data } = payload;
+    // ─── Fundamental Sync Handlers ────────────────────────────────────────────────
+    /**
+     * Handle an UPLOAD_REQUEST: the sender wants us to upload our local artefact
+     * to the object store, then notify them with a DOWNLOAD_REQUEST so they can fetch it.
+     *
+     * Flow: local hash → compress (if dir) → upload to MinIO → DOWNLOAD_REQUEST
+     *
+     * The outgoing DOWNLOAD_REQUEST carries our local hash so the receiver can
+     * verify integrity after downloading.
+     *
+     * Can be called both in response to an incoming UPLOAD_REQUEST event, or
+     * directly (e.g. from syncStableCircuit) to initiate a proactive push.
+     */
+    public async handleUploadRequest(payload: SyncPayload): Promise<void> {
+        const { sync_id, project_id, iteration_id, resource_type, intent, data } = payload;
         const localPath = this.getResourcePath(project_id, resource_type, iteration_id, data);
 
         try {
-            // 1. Ensure bucket exists
-            await ensureBucket();
-
             const stats = await fs.stat(localPath).catch(() => null);
             if (!stats) {
-                throw new Error(`File or directory not found at ${localPath}`);
+                throw new Error(`Resource not found at ${localPath}`);
             }
 
-            // 2. Prepare blob and upload to MinIO (so Agent can download it)
-            const isDirectory = stats.isDirectory();
-            const blobId = isDirectory ? `${project_id}/${resource_type}/${localHash}.zip` : `${project_id}/${resource_type}/${localHash}`;
+            await ensureBucket();
 
-            console.log(`[Sync] Providing ${resource_type} to Agent via ${blobId}`);
+            const isDirectory = stats.isDirectory();
+            const localHash = isDirectory
+                ? await computeDirectoryHash(localPath)
+                : await computeFileHash(localPath);
+
+            // ── Hash check: skip upload if remote already has the same content ──
+            if (payload.hash !== undefined && payload.hash !== null && localHash === payload.hash) {
+                console.log(
+                    `[Sync] Hashes match for ${resource_type} (hash=${localHash.slice(0, 8)}…). ` +
+                    `Already in sync — emitting SYNC_COMPLETE.`
+                );
+                this.sender.send({
+                    id: randomUUID(),
+                    type: "SYNC_COMPLETE",
+                    source: "vhl_workspace",
+                    timestamp: new Date().toISOString(),
+                    artifact_id: null,
+                    payload: { sync_id, project_id, iteration_id, resource_type }
+                });
+                return;
+            }
+            // ────────────────────────────────────────────────────────────────────
+
+            const blobId = isDirectory
+                ? `${project_id}/${resource_type}/${localHash}.zip`
+                : `${project_id}/${resource_type}/${localHash}`;
+
+            console.log(`[Sync] Uploading ${resource_type} to MinIO (blob_id=${blobId})`);
 
             if (!(await objectExists(blobId))) {
                 if (isDirectory) {
-                    const zipPath = path.join(TEMP_DIR, `upload_${randomUUID()}.zip`);
+                    const zipPath = path.join(TEMP_DIR, `upload_${sync_id}.zip`);
                     await compressDirectory(localPath, zipPath);
                     await pushObject(zipPath, blobId);
                     await fs.unlink(zipPath).catch(() => { });
@@ -240,7 +134,7 @@ export class SyncManager {
                 }
             }
 
-            // 3. Instruct Agent to download from our provided blob
+            // Notify receiver: they can now download. Include our local hash for integrity check.
             await this.sender.send({
                 id: randomUUID(),
                 type: "DOWNLOAD_REQUEST",
@@ -248,103 +142,99 @@ export class SyncManager {
                 timestamp: new Date().toISOString(),
                 artifact_id: null,
                 payload: {
-                    sync_id,
-                    project_id,
-                    iteration_id,
-                    resource_type,
+                    sync_id, project_id, iteration_id, resource_type, intent,
                     blob_id: blobId,
-                    hash: localHash,
+                    hash: localHash,  // Our local hash — receiver uses this for integrity check
                     data
                 }
             });
+            console.log(`[Sync] Emitted DOWNLOAD_REQUEST (sync_id=${sync_id})`);
+
         } catch (err: any) {
-            console.error(`[Sync] Failed to provide resource for download:`, err);
-            this.handleError(sync_id, project_id, resource_type, err.message);
+            console.error(`[Sync] Failed to upload ${resource_type}:`, err);
+            this.sendSyncError(sync_id, project_id, resource_type, err.message);
         }
     }
 
-    private async handleUploadProposal(payload: SyncPayload) {
-        // Caller of this API should've uploaded a valid payload to object store before invoking. 
-        // 
+
+    /**
+     * Handle a DOWNLOAD_REQUEST: the sender wants us to download a previously uploaded
+     * artefact from the object store and apply it locally, then confirm with SYNC_COMPLETE.
+     *
+     * The payload carries the sender's local hash (set during upload) which we use
+     * to verify integrity after downloading.
+     *
+     * Flow: MinIO download → hash verify → decompress (if needed) → atomic apply → SYNC_COMPLETE
+     */
+    public async handleDownloadRequest(payload: SyncPayload): Promise<void> {
         const { sync_id, project_id, iteration_id, resource_type, blob_id, hash } = payload;
-        console.log(`[Sync] Received UPLOAD_PROPOSAL for ${resource_type} (hash=${hash})`);
 
         try {
-            // 1. Verify object exists in MinIO
-            console.log(`[Sync] Verifying blob ${blob_id} exists in object store`);
             if (!(await objectExists(blob_id!))) {
                 throw new Error(`Blob ${blob_id} not found in object store`);
             }
 
-            // 2. Download and apply atomically
             await fs.mkdir(TEMP_DIR, { recursive: true });
-
-            console.log(`[Sync] Pulling blob ${blob_id} to local storage`);
             const localFile = await pullObject(blob_id!, TEMP_DIR);
-
-            // Recompute and verify hash
-            let computedHash: string;
             const targetPath = this.getResourcePath(project_id, resource_type, iteration_id, payload.data);
+
+            let computedHash: string;
 
             if (localFile.toLowerCase().endsWith(".zip")) {
                 const extractDir = path.join(TEMP_DIR, `extract_${sync_id}`);
-                console.log(`[Sync] Decompressing ${resource_type} archive to ${extractDir}`);
                 await decompressZip(localFile, extractDir);
                 computedHash = await computeDirectoryHash(extractDir);
 
                 if (computedHash !== hash) {
                     throw new Error(`Hash mismatch! Expected ${hash}, got ${computedHash}`);
                 }
-
-                // Atomic replace
-                console.log(`[Sync] Performing atomic directory replacement for ${targetPath}`);
                 await this.atomicReplaceDirectory(extractDir, targetPath);
             } else {
                 computedHash = await computeFileHash(localFile);
                 if (computedHash !== hash) {
                     throw new Error(`Hash mismatch! Expected ${hash}, got ${computedHash}`);
                 }
-                // Atomic replace
-                console.log(`[Sync] Performing atomic file replacement for ${targetPath}`);
                 await this.atomicReplaceFile(localFile, targetPath);
 
                 if (resource_type === "StableCircuit") {
                     const projectRoot = path.join(this.workspaceDir, project_id);
                     const indexPath = path.join(projectRoot, "index.circuit.tsx");
-
-                    try {
-                        if (indexPath !== targetPath && await fs.stat(indexPath).catch(() => null)) {
-                            console.log(`[Sync] Removing default entry point: ${indexPath}`);
-                            await fs.unlink(indexPath);
-                        }
-                    } catch (err) {
-                        console.warn(`[Sync] Failed to remove ${indexPath}:`, err);
-                    }
+                    await fs.unlink(indexPath).catch(() => { });
 
                     const circuitName = payload.data?.circuit_name || "circuit";
                     await this.sender.onStableCircuitUpdated(circuitName);
                 }
             }
 
-            // Cleanup
-            console.log(`[Sync] Cleaning up temporary file ${localFile}`);
             await fs.unlink(localFile).catch(() => { });
 
-            // 3. Complete
-            console.log(`[Sync] Sync session ${sync_id} completed for ${resource_type}`);
+            console.log(`[Sync] Successfully applied ${resource_type} (sync_id=${sync_id})`);
             this.sender.send({
                 id: randomUUID(),
                 type: "SYNC_COMPLETE",
                 source: "vhl_workspace",
                 timestamp: new Date().toISOString(),
                 artifact_id: null,
-                payload: { sync_id, project_id, resource_type }
+                payload: { sync_id, project_id, iteration_id, resource_type }
             });
-            this.activeSyncs.delete(sync_id);
 
         } catch (err: any) {
-            this.handleError(sync_id, project_id, resource_type, err.message);
+            console.error(`[Sync] Error applying ${resource_type} (sync_id=${sync_id}):`, err);
+            this.sendSyncError(sync_id, project_id, resource_type, err.message);
         }
+    }
+    // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+    private sendSyncError(syncId: string, projectId: string, resourceType: string, reason: string) {
+        console.error(`[Sync] Error in session ${syncId}: ${reason}`);
+        this.sender.send({
+            id: randomUUID(),
+            type: "SYNC_ERROR",
+            source: "vhl_workspace",
+            timestamp: new Date().toISOString(),
+            artifact_id: null,
+            payload: { sync_id: syncId, project_id: projectId, resource_type: resourceType, reason }
+        });
     }
 
     private async atomicReplaceDirectory(src: string, dest: string) {
@@ -362,23 +252,5 @@ export class SyncManager {
     private async atomicReplaceFile(src: string, dest: string) {
         await fs.mkdir(path.dirname(dest), { recursive: true });
         await fs.rename(src, dest);
-    }
-
-    private handleError(syncId: string, projectId: string, resourceType: string, reason: string) {
-        console.error(`[Sync] Error in session ${syncId}: ${reason}`);
-        this.sender.send({
-            id: randomUUID(),
-            type: "SYNC_ERROR",
-            source: "vhl_workspace",
-            timestamp: new Date().toISOString(),
-            artifact_id: null,
-            payload: {
-                sync_id: syncId,
-                project_id: projectId,
-                resource_type: resourceType,
-                reason
-            }
-        });
-        this.activeSyncs.delete(syncId);
     }
 }

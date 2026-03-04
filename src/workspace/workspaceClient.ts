@@ -308,7 +308,7 @@ export class WorkspaceClient implements WorkspaceSender {
                 this.broadcastProjectState();
                 break;
             }
-            case "VAP_DECISION": { 
+            case "VAP_DECISION": {
                 const { task_id, decision } = (msg as AgentMessage).payload;
                 if (!task_id || !decision) {
                     this.sendError("VAP_DECISION_INVALID", "Missing task_id or decision in VAP_DECISION");
@@ -333,11 +333,10 @@ export class WorkspaceClient implements WorkspaceSender {
                 this.activeVapContext = null;
                 break;
             }
-            case "HASH_RESPONSE":
-            case "UPLOAD_PROPOSAL":
+            case "DOWNLOAD_REQUEST":
+            case "UPLOAD_REQUEST":
             case "SYNC_COMPLETE":
             case "SYNC_ERROR":
-            case "SYNC_TRIGGER":
                 await this.syncManager.handleMessage(msg as AgentMessage);
                 break;
             case "CLOSE_PROJECT":
@@ -405,7 +404,7 @@ export class WorkspaceClient implements WorkspaceSender {
                     }
 
                     await reportVapResults(taskId, status, context, this);
-                    
+
                     return;
                 }
 
@@ -428,9 +427,7 @@ export class WorkspaceClient implements WorkspaceSender {
         }, 2000);
     }
 
-    public async startSync(projectId: string, syncId:string, resourceType: any, iterationId?: string | null, intent?: any, data?: Record<string, any>): Promise<void> {
-        await this.syncManager.startSync(projectId, syncId, resourceType, iterationId, intent, data);
-    }
+
 
     public async onStableCircuitUpdated(circuitName: string): Promise<void> {
         console.log(`[WorkspaceClient] Stable circuit updated: ${circuitName}`);

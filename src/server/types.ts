@@ -50,12 +50,8 @@ export type EventType =
     | "PROJECT_STATE"
     | "AGENT_STATE"
     // Sync Protocol
-    | "HASH_REQUEST"
-    | "HASH_RESPONSE"
     | "UPLOAD_REQUEST"
-    | "UPLOAD_PROPOSAL"
     | "DOWNLOAD_REQUEST"
-    | "SYNC_TRIGGER"
     | "SYNC_COMPLETE"
     | "SYNC_ERROR"
 
