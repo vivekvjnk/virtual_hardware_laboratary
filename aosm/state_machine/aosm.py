@@ -246,15 +246,24 @@ class AOSM:
                 
                 # Trigger sync for StableCircuit and Library (Agent to Runtime)
                 try:
-                    # Check if StableCircuit exists before proposing
+                    # Push StableCircuit from Agent to Runtime if it exists
                     stable_path = self.sync_client.get_resource_path(project_id, "StableCircuit")
                     if os.path.exists(stable_path):
-                         await self.sync_client.propose_upload(project_id, "StableCircuit")
-                    
-                    # Check if Library exists before proposing
+                        await self.sync_client.handle_upload_request(SyncPayload(
+                            sync_id=str(uuid.uuid4()),
+                            project_id=project_id,
+                            resource_type="StableCircuit",
+                            data={"circuit_name": self.workspace_manager.circuit_name}
+                        ))
+
+                    # Push Library from Agent to Runtime if it exists
                     lib_path = self.sync_client.get_resource_path(project_id, "Library")
                     if os.path.exists(lib_path):
-                        await self.sync_client.propose_upload(project_id, "Library")
+                        await self.sync_client.handle_upload_request(SyncPayload(
+                            sync_id=str(uuid.uuid4()),
+                            project_id=project_id,
+                            resource_type="Library"
+                        ))
                 except Exception as e:
                     logger.warning(f"[AOSM._handle_startup] Auto-sync failed on project load (this is expected if project is empty): {e}")
 
@@ -373,15 +382,10 @@ class AOSM:
         # Transition to TRIGGER_ANA
         await self.transition_to(AOSMState.TRIGGER_ANA, "Intent classified as modification", payload=event.payload)
         
-        # Request workspace sync for StableCircuit and Library (Runtime to Agent)
-        if self.project_id:
-            logger.info("[AOSM._handle_intent_classify] Triggering sync for StableCircuit and Library")
-            await self.web_socket_client.emit(EventType.SYNC_TRIGGER, SyncPayload(
-                sync_id=str(uuid.uuid4()),
-                project_id=self.project_id,
-                resource_type="StableCircuit",
-                data = {"circuit_name":self.workspace_manager.circuit_name}
-            ))
+        # Pull StableCircuit from Runtime to Agent, then Library
+        # if self.project_id:
+        #     logger.info("[AOSM._handle_intent_classify] Triggering sync for StableCircuit and Library")
+        #     await self.sync_client.sync_stable_circuit(self.project_id)
             # Library sync will be handled in TRIGGER_ANA or sequence
 
     async def _handle_trigger_ana(self, event: BaseEvent):

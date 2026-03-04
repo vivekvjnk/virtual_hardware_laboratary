@@ -44,12 +44,13 @@ class ANA_validation_agent:
         if self.sync_client and self.project_id:
             # Workflow 1.2: Agent -> Runtime upload proposal for Circuit
             # This step synchronises the circuit code
-            blob_id = await self.sync_client.propose_upload(
+            blob_id = await self.sync_client.handle_upload_request(SyncPayload(
+                sync_id=str(uuid.uuid4()),
                 project_id=self.project_id,
                 resource_type="Circuit",
                 iteration_id=iteration_id,
                 intent="EVALUATION"
-            )
+            ))
         else:
             raise ValueError(f"[ANA_validation_agent.validate_circuit] SyncClient or ProjectID not available. SyncClient: {self.sync_client}, ProjectID: {self.project_id}")
         

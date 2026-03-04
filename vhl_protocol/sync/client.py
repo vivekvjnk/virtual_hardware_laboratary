@@ -27,56 +27,138 @@ class SyncClient:
         return str(self.workspace_manager.resolve_resource_path(project_id, resource_type, iteration_id))
 
     async def handle_runtime_message(self, event: BaseEvent):
-        if event.type not in [EventType.HASH_REQUEST, EventType.DOWNLOAD_REQUEST, EventType.UPLOAD_REQUEST]:
+        if event.type not in [EventType.UPLOAD_REQUEST, EventType.DOWNLOAD_REQUEST]:
             return
 
         try:
             payload = SyncPayload.model_validate(event.payload)
-            if event.type == EventType.HASH_REQUEST:
-                await self.handle_hash_request(payload)
+            if event.type == EventType.UPLOAD_REQUEST:
+                await self.handle_upload_request(payload)
             elif event.type == EventType.DOWNLOAD_REQUEST:
                 await self.handle_download_request(payload)
-            elif event.type == EventType.UPLOAD_REQUEST:
-                await self.propose_upload(
-                    payload.project_id, 
-                    payload.resource_type, 
-                    payload.iteration_id, 
-                    payload.intent
-                )
         except Exception as e:
             logger.error(f"[SyncClient.handle_runtime_message] Error handling sync message {event.type}: {e}", exc_info=True)
-            # We should probably send a SYNC_ERROR here if we have a sync_id
             if hasattr(event.payload, "sync_id"):
-                 await self.send_sync_error(event.payload["sync_id"], event.payload["project_id"], str(e))
+                await self.send_sync_error(event.payload["sync_id"], event.payload["project_id"], str(e))
 
-    async def handle_hash_request(self, payload: SyncPayload):
-        logger.info(f"[SyncClient.handle_hash_request] Handling HASH_REQUEST for {payload.resource_type} (sync_id={payload.sync_id}); Payload:{payload}")
-        path = self.get_resource_path(payload.project_id, payload.resource_type, payload.iteration_id)
-        
-        hash_val = None
-        if os.path.exists(path):
-            if os.path.isdir(path):
-                hash_val = compute_directory_hash(path)
-            else:
-                hash_val = compute_file_hash(path)
-        else:
-            logger.info(f"[SyncClient.handle_hash_request] Path doesn't exist: {path}")
-
-        response_payload = SyncPayload(
-            sync_id=payload.sync_id,
-            project_id=payload.project_id,
-            iteration_id=payload.iteration_id,
-            resource_type=payload.resource_type,
-            hash=hash_val,
-            data={"circuit_name":self.workspace_manager.circuit_name}
+    async def send_sync_error(self, sync_id: str, project_id: str, reason: str):
+        error_payload = SyncPayload(
+            sync_id=sync_id,
+            project_id=project_id,
+            resource_type="Unknown",
+            reason=reason
         )
-        
-        await self.web_socket_client.emit(EventType.HASH_RESPONSE, response_payload)
+        await self.web_socket_client.emit(EventType.SYNC_ERROR, error_payload)
+
+    # ─── Fundamental Sync Handlers ───────────────────────────────────────────────
+
+    async def handle_upload_request(self, payload: SyncPayload):
+        """
+        Handle an UPLOAD_REQUEST: the sender wants us to upload our local artefact
+        to the object store, then notify them with a DOWNLOAD_REQUEST so they can fetch it.
+
+        Flow: local hash → [hash check] → compress (if dir) → [MinIO existence check] → upload → DOWNLOAD_REQUEST
+
+        If payload.hash (the sender's local hash) is provided and matches our local hash,
+        both sides already have the same content — emit SYNC_COMPLETE and skip the upload.
+
+        The outgoing DOWNLOAD_REQUEST carries our local hash so the receiver can
+        verify integrity after downloading.
+
+        Can be called both in response to an incoming UPLOAD_REQUEST event, or
+        directly (e.g. from sync_evaluation_output) to initiate a proactive push.
+        """
+        sync_id = payload.sync_id
+        logger.info(f"[SyncClient.handle_upload_request] Handling UPLOAD_REQUEST for {payload.resource_type} (sync_id={sync_id})")
+
+        path = Path(self.get_resource_path(payload.project_id, payload.resource_type, payload.iteration_id))
+        if not path.exists():
+            logger.warning(f"[SyncClient.handle_upload_request] Resource path does not exist: {path}")
+
+        # Compute local hash
+        hash_val = None
+        if path.is_dir():
+            hash_val = compute_directory_hash(str(path))
+        else:
+            hash_val = compute_file_hash(str(path))
+
+        # Use hash-based blob ID (same as syncManager.ts)
+        # format: {project_id}/{resource_type}/{hash}(.zip)
+        if path.is_dir():
+            blob_id = f"{payload.project_id}/{payload.resource_type}/{hash_val}.zip"
+        else:
+            blob_id = f"{payload.project_id}/{payload.resource_type}/{hash_val}"
+
+        # ── Fast path: skip upload if remote already has the same content ──────
+        if payload.hash is not None and hash_val == payload.hash:
+            logger.info(
+                f"[SyncClient.handle_upload_request] Hashes match for {payload.resource_type} "
+                f"(hash={hash_val[:8]}…). Already in sync — emitting SYNC_COMPLETE."
+            )
+            await self.web_socket_client.emit(EventType.SYNC_COMPLETE, SyncPayload(
+                sync_id=sync_id,
+                project_id=payload.project_id,
+                iteration_id=payload.iteration_id,
+                resource_type=payload.resource_type
+            ))
+            return blob_id
+        # ────────────────────────────────────────────────────────────────────────
+
+        blob_to_upload = None
+        temp_zip = None
+
+        try:
+            # Skip upload if blob already exists in MinIO
+            if not await asyncio.to_thread(self.minio.object_exists, blob_id):
+                if path.is_dir():
+                    temp_zip = Path(tempfile.gettempdir()) / f"upload_{sync_id}.zip"
+                    compress_directory(str(path), str(temp_zip))
+                    blob_to_upload = str(temp_zip)
+                else:
+                    blob_to_upload = str(path)
+
+                logger.info(f"[SyncClient.handle_upload_request] Uploading {payload.resource_type} to MinIO (blob_id={blob_id})...")
+                await asyncio.to_thread(self.minio.upload_file, blob_to_upload, blob_id)
+            else:
+                logger.debug(f"[SyncClient.handle_upload_request] Blob {blob_id} already exists in MinIO. Skipping upload.")
+
+            download_payload = SyncPayload(
+                sync_id=sync_id,
+                project_id=payload.project_id,
+                iteration_id=payload.iteration_id,
+                resource_type=payload.resource_type,
+                intent=payload.intent,
+                hash=hash_val,   # Our local hash — receiver uses this for integrity check
+                blob_id=blob_id,
+                data={"circuit_name": self.workspace_manager.circuit_name}
+            )
+            await self.web_socket_client.emit(EventType.DOWNLOAD_REQUEST, download_payload)
+            logger.info(f"[SyncClient.handle_upload_request] Emitted DOWNLOAD_REQUEST (sync_id={sync_id})")
+
+        except Exception as e:
+            logger.error(f"[SyncClient.handle_upload_request] Failed to upload {payload.resource_type}: {e}")
+            await self.send_sync_error(sync_id, payload.project_id, str(e))
+            raise
+        finally:
+            if temp_zip and os.path.exists(temp_zip):
+                os.remove(temp_zip)
+
+        return blob_id
 
     async def handle_download_request(self, payload: SyncPayload):
-        logger.info(f"[SyncClient.handle_download_request] Handling DOWNLOAD_REQUEST for {payload.resource_type} (sync_id={payload.sync_id})")
+        """
+        Handle a DOWNLOAD_REQUEST: the sender wants us to download a previously uploaded
+        artefact from the object store and apply it locally, then confirm with SYNC_COMPLETE.
+
+        The payload carries the sender's local hash (set during upload) which we use
+        to verify integrity after downloading.
+
+        Flow: MinIO download → hash verify → decompress (if needed) → atomic apply → SYNC_COMPLETE
+        """
+        sync_id = payload.sync_id
+        logger.info(f"[SyncClient.handle_download_request] Handling DOWNLOAD_REQUEST for {payload.resource_type} (sync_id={sync_id})")
+
         target_path = self.get_resource_path(payload.project_id, payload.resource_type, payload.iteration_id)
-        #make sure target path exists
         os.makedirs(os.path.dirname(target_path), exist_ok=True)
 
         scratch_dir = Path(self.base_dir) / ".sync_scratch" / str(uuid.uuid4())
@@ -91,172 +173,155 @@ class SyncClient:
                 extract_dir.mkdir(parents=True, exist_ok=True)
                 decompress_zip(str(tmp_file), str(extract_dir))
                 computed_hash = compute_directory_hash(str(extract_dir))
-                logger.info(f"[SyncClient.handle_download_request] Computed hash: {computed_hash}, Declared hash: {payload.hash}")
                 if computed_hash != payload.hash:
                     raise ValueError(f"Hash mismatch! Expected {payload.hash}, got {computed_hash}")
-                
                 atomic_replace_directory(str(extract_dir), str(target_path))
             else:
                 computed_hash = compute_file_hash(str(tmp_file))
-                logger.info(f"[SyncClient.handle_download_request] Computed hash: {computed_hash}, Declared hash: {payload.hash}")
                 if computed_hash != payload.hash:
                     raise ValueError(f"Hash mismatch! Expected {payload.hash}, got {computed_hash}")
-                logger.info(f"[SyncClient.handle_download_request] Hash verified for {payload.resource_type}")
                 atomic_replace_file(str(tmp_file), str(target_path))
 
-            # Notify completion
-            logger.info(f"[SyncClient.handle_download_request] Completed download for {payload.resource_type}")
+            logger.info(f"[SyncClient.handle_download_request] Successfully applied {payload.resource_type}")
             complete_payload = SyncPayload(
-                sync_id=payload.sync_id,
+                sync_id=sync_id,
                 project_id=payload.project_id,
                 iteration_id=payload.iteration_id,
                 resource_type=payload.resource_type
             )
             await self.web_socket_client.emit(EventType.SYNC_COMPLETE, complete_payload)
-        
+
         except Exception as e:
-            logger.error(f"[SyncClient.handle_download_request] Error handling download request for {payload.resource_type}: {e}", exc_info=True)
-            # We should probably send a SYNC_ERROR here if we have a sync_id
-            if hasattr(payload, "sync_id"):
-                await self.send_sync_error(payload.sync_id, payload.project_id, str(e))
+            logger.error(f"[SyncClient.handle_download_request] Error applying resource {payload.resource_type}: {e}", exc_info=True)
+            await self.send_sync_error(sync_id, payload.project_id, str(e))
         finally:
-            # Clean up scratch directory
             if scratch_dir.exists():
                 shutil.rmtree(str(scratch_dir))
 
-    async def propose_upload(self, project_id: str, resource_type: str, iteration_id: Optional[str] = None, intent: Optional[str] = None):
-        """Trigger an upload proposal from the agent side."""
-        sync_id = str(uuid.uuid4())
-        path = Path(self.get_resource_path(project_id, resource_type, iteration_id))
-
-        if not path.exists():
-            logger.warning(f"[SyncClient.propose_upload] Resource path does not exist: {path}")
-
-        hash_val = None
-        blob_to_upload = None
-        temp_zip = None
-
-        if path.is_dir():
-            hash_val = compute_directory_hash(str(path))
-            logger.info(f"[SyncClient.propose_upload] Step 1.1: Computed hash value of the directory: {hash_val}")
-            temp_zip = Path(tempfile.gettempdir()) / f"upload_{sync_id}.zip"
-            compress_directory(str(path), str(temp_zip))
-            blob_to_upload = str(temp_zip)
-            logger.info(f"[SyncClient.propose_upload] Step 1.2: Compressed the source directory")
-            blob_id = f"{project_id}/{resource_type}/{path.name}.zip"
-
-        else:
-            hash_val = compute_file_hash(str(path))
-            blob_to_upload = str(path)
-            logger.info(f"[SyncClient.propose_upload] Step 1.1: Computed hash value of the file: {hash_val}")
-            blob_id = f"{project_id}/{resource_type}/{path.name}"
-
-
-        try:
-            logger.info(f"[SyncClient.propose_upload] Step 2: Uploading file to object store")
-
-            await asyncio.to_thread(self.minio.upload_file, blob_to_upload, blob_id)
-            
-            logger.info(f"[SyncClient.propose_upload] Step 2: Uploaded, Blob id : {blob_id}")
-
-            data = {"circuit_name":self.workspace_manager.circuit_name}
-            proposal_payload = SyncPayload(
-                sync_id=sync_id,
-                project_id=project_id,
-                iteration_id=iteration_id,
-                resource_type=resource_type,
-                intent=intent,
-                hash=hash_val,
-                blob_id=blob_id,
-                data=data
-            )
-            
-            await self.web_socket_client.emit(EventType.UPLOAD_PROPOSAL, proposal_payload)
-            logger.info(f"[SyncClient.propose_upload] Emitted UPLOAD_PROPOSAL")
-
-        except Exception as e:
-            raise ValueError(f"Filed to upload the file. Error: {e}")
-        finally:
-            if temp_zip and os.path.exists(temp_zip):
-                os.remove(temp_zip)
-
-        # return the blob id back to the caller
-        return blob_id
-    
-    async def send_sync_error(self, sync_id: str, project_id: str, reason: str):
-        error_payload = SyncPayload(
-            sync_id=sync_id,
-            project_id=project_id,
-            resource_type="Unknown", # Or pull from context
-            reason=reason
-        )
-        await self.web_socket_client.emit(EventType.SYNC_ERROR, error_payload)
-
-    async def trigger_sync(self, project_id: str, resource_type: str, iteration_id: Optional[str] = None, intent: Optional[str] = None, data: Optional[Dict[str, Any]] = None, timeout: float = 60.0):
-        """
-        Centrally trigger synchronization for a specific resource and wait for completion.
-        All sync communication should go through this method.
-        """
-        sync_id = str(uuid.uuid4())
-        logger.info(f"[SyncClient.trigger_sync] Triggering sync for {resource_type} (project_id={project_id}, sync_id={sync_id})")
-        
-        sync_payload = SyncPayload(
-            sync_id=sync_id,
-            project_id=project_id,
-            iteration_id=iteration_id,
-            resource_type=resource_type,
-            intent=intent,
-            data=data or {}
-        )
-        
-        await self.web_socket_client.emit(EventType.SYNC_TRIGGER, sync_payload)
-        
-        try:
-            logger.info(f"[SyncClient.trigger_sync] Waiting for SYNC_COMPLETE for {resource_type}...")
-            await self.web_socket_client.wait_for_event(
-                EventType.SYNC_COMPLETE,
-                filter_func=lambda e: e.payload.get("resource_type") == resource_type and e.payload.get("sync_id") == sync_id,
-                timeout=timeout
-            )
-            logger.info(f"[SyncClient.trigger_sync] {resource_type} sync completed successfully.")
-        except asyncio.TimeoutError:
-            logger.error(f"[SyncClient.trigger_sync] Timeout waiting for {resource_type} sync (sync_id={sync_id})")
-            raise
-        except Exception as e:
-            logger.error(f"[SyncClient.trigger_sync] Error during {resource_type} sync: {e}")
-            raise
+    # ─── Convenience Methods ──────────────────────────────────────────────────────
 
     async def sync_evaluation_output(self, project_id: str, iteration_id: str):
         """
-        Dedicated function for evaluation output sync.
-        Triggers an upload of EvaluationOutput resource from Agent to Runtime.
+        Push local EvaluationOutput to the runtime.
+
+        Uses the fundamental sync pattern: directly calls handle_upload_request,
+        which uploads the artefact and emits DOWNLOAD_REQUEST to the receiver.
+        No acknowledgement is awaited on our side — the receiver applies the artefact
+        and emits SYNC_COMPLETE independently.
         """
-        logger.info(f"[SyncClient.sync_evaluation_output] Syncing evaluation output for project {project_id}, iteration {iteration_id}")
-        await self.propose_upload(
+        sync_id = str(uuid.uuid4())
+        logger.info(f"[SyncClient.sync_evaluation_output] Syncing evaluation output for project {project_id}, iteration {iteration_id} (sync_id={sync_id})")
+
+        local_path = self.get_resource_path(project_id, "EvaluationOutput", iteration_id)
+        local_hash = compute_directory_hash(local_path) if os.path.exists(local_path) else None
+
+        payload = SyncPayload(
+            sync_id=sync_id,
             project_id=project_id,
-            resource_type="EvaluationOutput",
             iteration_id=iteration_id,
-            intent="RESULT"
+            resource_type="EvaluationOutput",
+            intent="RESULT",
+            hash=local_hash
         )
+        await self.handle_upload_request(payload)
 
     async def sync_evaluation(self, project_id: str, iteration_id: str):
-        """Convenience method for Evaluation results download sync."""
-        await self.trigger_sync(
-            project_id=project_id, 
-            resource_type="Evaluation", 
-            iteration_id=iteration_id,
-            intent="RESULT"
+        """
+        Pull Evaluation results from the runtime.
+
+        Sends an UPLOAD_REQUEST to the runtime (asking it to upload its copy),
+        then waits for our local DOWNLOAD_REQUEST handling + SYNC_COMPLETE.
+        """
+        sync_id = str(uuid.uuid4())
+        logger.info(f"[SyncClient.sync_evaluation] Requesting evaluation sync for project {project_id}, iteration {iteration_id} (sync_id={sync_id})")
+
+        local_path = self.get_resource_path(project_id, "Evaluation", iteration_id)
+        local_hash = compute_directory_hash(local_path) if os.path.isdir(local_path) else (
+            compute_file_hash(local_path) if os.path.exists(local_path) else None
         )
 
+        payload = SyncPayload(
+            sync_id=sync_id,
+            project_id=project_id,
+            iteration_id=iteration_id,
+            resource_type="Evaluation",
+            intent="RESULT",
+            hash=local_hash  # Let runtime skip upload if hashes already match
+        )
+        await self.web_socket_client.emit(EventType.UPLOAD_REQUEST, payload)
+
+        try:
+            await self.web_socket_client.wait_for_event(
+                EventType.SYNC_COMPLETE,
+                filter_func=lambda e: e.payload.get("resource_type") == "Evaluation" and e.payload.get("sync_id") == sync_id,
+                timeout=60.0
+            )
+            logger.info(f"[SyncClient.sync_evaluation] Evaluation sync completed (sync_id={sync_id})")
+        except asyncio.TimeoutError:
+            logger.error(f"[SyncClient.sync_evaluation] Timeout waiting for evaluation sync (sync_id={sync_id})")
+            raise
+
     async def sync_library(self, project_id: str):
-        """Convenience method for Library sync."""
-        await self.trigger_sync(project_id, "Library")
+        """
+        Pull Library from the runtime.
+
+        Sends an UPLOAD_REQUEST to the runtime, then waits for SYNC_COMPLETE.
+        """
+        sync_id = str(uuid.uuid4())
+        logger.info(f"[SyncClient.sync_library] Requesting library sync for project {project_id} (sync_id={sync_id})")
+
+        local_path = self.get_resource_path(project_id, "Library")
+        local_hash = compute_directory_hash(local_path) if os.path.isdir(local_path) else (
+            compute_file_hash(local_path) if os.path.exists(local_path) else None
+        )
+
+        payload = SyncPayload(
+            sync_id=sync_id,
+            project_id=project_id,
+            resource_type="Library",
+            hash=local_hash  # Let runtime skip upload if hashes already match
+        )
+        await self.web_socket_client.emit(EventType.UPLOAD_REQUEST, payload)
+
+        try:
+            await self.web_socket_client.wait_for_event(
+                EventType.SYNC_COMPLETE,
+                filter_func=lambda e: e.payload.get("resource_type") == "Library" and e.payload.get("sync_id") == sync_id,
+                timeout=60.0
+            )
+            logger.info(f"[SyncClient.sync_library] Library sync completed (sync_id={sync_id})")
+        except asyncio.TimeoutError:
+            logger.error(f"[SyncClient.sync_library] Timeout waiting for library sync (sync_id={sync_id})")
+            raise
 
     async def sync_stable_circuit(self, project_id: str):
-        """Convenience method for StableCircuit sync."""
-        data = {"circuit_name": self.workspace_manager.circuit_name}
-        await self.trigger_sync(project_id, "StableCircuit", data=data)
+        """
+        Pull StableCircuit from the runtime.
 
-    # TODO
-    # Need to implement handle_upload_request and propose_download functions as well.
-    # With these additions, SyncClient would be complete to handle any conditions.
+        Sends an UPLOAD_REQUEST to the runtime, then waits for SYNC_COMPLETE.
+        """
+        sync_id = str(uuid.uuid4())
+        logger.info(f"[SyncClient.sync_stable_circuit] Requesting stable circuit sync for project {project_id} (sync_id={sync_id})")
+
+        local_path = self.get_resource_path(project_id, "StableCircuit")
+        local_hash = compute_file_hash(local_path) if os.path.exists(local_path) else None
+
+        payload = SyncPayload(
+            sync_id=sync_id,
+            project_id=project_id,
+            resource_type="StableCircuit",
+            hash=local_hash,  # Let runtime skip upload if hashes already match
+            data={"circuit_name": self.workspace_manager.circuit_name}
+        )
+        await self.web_socket_client.emit(EventType.UPLOAD_REQUEST, payload)
+
+        try:
+            await self.web_socket_client.wait_for_event(
+                EventType.SYNC_COMPLETE,
+                filter_func=lambda e: e.payload.get("resource_type") == "StableCircuit" and e.payload.get("sync_id") == sync_id,
+                timeout=60.0
+            )
+            logger.info(f"[SyncClient.sync_stable_circuit] StableCircuit sync completed (sync_id={sync_id})")
+        except asyncio.TimeoutError:
+            logger.error(f"[SyncClient.sync_stable_circuit] Timeout waiting for stable circuit sync (sync_id={sync_id})")
+            raise
