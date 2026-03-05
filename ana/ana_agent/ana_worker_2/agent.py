@@ -57,54 +57,34 @@ class ANA_validation_agent:
         
         logger.info(f"[ANA_validation_agent.validate_circuit] Uploaded as blob_id: {blob_id}") 
         
-        # 2. Invoke VAP with the circuit object id
-        logger.info(f"[ANA_validation_agent.validate_circuit] Step 2: Invoking VAP for circuit: {circuit_name}")
-        await self.web_socket_client.emit_vap_init(circuit_name, blob_id,iteration_id=iteration_id)
+        # 2. Invoke VAP and wait for completion
+        logger.info(f"[ANA_validation_agent.validate_circuit] Step 2: Executing VAP for circuit: {circuit_name}")
+        await self.web_socket_client.emit_vap_execute(circuit_name, blob_id, iteration_id=iteration_id)
         
-        # Wait for the initial VAP_STATUS to get task_id
-        init_response = await self.web_socket_client.wait_for_event(
-            EventType.VAP_INIT_COMPLETE,
+        # Wait for the VAP_COMPLETE event
+        response = await self.web_socket_client.wait_for_event(
+            EventType.VAP_COMPLETE,
             filter_func=lambda e: e.payload.get("task_id") is not None
         )
         
-        task_id = init_response.payload.get("task_id")
-        logger.info(f"[ANA_validation_agent.validate_circuit] VAP initialized with task_id: {task_id}")
+        status_data = response.payload
+        task_id = status_data.get("task_id")
+        logger.info(f"[ANA_validation_agent.validate_circuit] VAP completed for task_id: {task_id}")
 
-        # 3. Poll for status of the evaluation
-        logger.info(f"[ANA_validation_agent.validate_circuit] Step 3: Polling for status of task: {task_id}")
-        results = None
-        evaluation_metadata = {}
-        status = "unknown"
+        decision = status_data.get("decision", "unknown")
+        results = status_data.get("results")
+        evaluation_metadata = status_data.get("metadata", {})
         
-        while True:
-            status_event = await self.web_socket_client.wait_for_event(
-                EventType.VAP_STATUS_REPORT,
-                filter_func=lambda e: e.payload.get("task_id") == task_id
-            )
-            status_data = status_event.payload
-            
-            logger.info(f"[ANA_validation_agent.validate_circuit] Received status event: {status_data}")
-            status = status_data.get("eval_status", "unknown")
-            decision = status_data.get("decision", "N/A")
-            
-            logger.info(f"[ANA_validation_agent.validate_circuit] VAP decision for {task_id}: {decision}")
-            logger.info(f"[ANA_validation_agent.validate_circuit] VAP status for {task_id}: {status}")
-            
-            evaluation_metadata = status_data.get("metadata", {})
-            
-            if decision == "ACCEPT":
-                logger.info("[ANA_validation_agent.validate_circuit] VAP evaluation completed successfully.")
-                results = status_data.get("results")
-                break
-            elif decision == "REJECT":
-                error_msg = status_data.get("error", "Unknown error")
-                logger.warning(f"[ANA_validation_agent.validate_circuit] VAP evaluation failed: {error_msg}")
-                break
-            elif decision == "UNDECIDED":
-                logger.info("[ANA_validation_agent.validate_circuit] VAP evaluation still in progress. Waiting for next update...")
-            else:
-                logger.error(f"[ANA_validation_agent.validate_circuit] Unknown decision '{decision}' received.")
-                raise RuntimeError(f"Unknown decision '{decision}' received from VAP.")
+        logger.info(f"[ANA_validation_agent.validate_circuit] VAP decision for {task_id}: {decision}")
+        
+        if decision == "ACCEPT":
+            logger.info("[ANA_validation_agent.validate_circuit] VAP evaluation completed successfully.")
+        elif decision == "REJECT":
+            error_msg = status_data.get("error", "Unknown error")
+            logger.warning(f"[ANA_validation_agent.validate_circuit] VAP evaluation failed: {error_msg}")
+        else:
+            logger.error(f"[ANA_validation_agent.validate_circuit] Unexpected decision '{decision}' received.")
+            raise RuntimeError(f"Unexpected decision '{decision}' received from VAP.")
 
         # 4. Once evaluation is complete, sync evaluation results
         logger.info("[ANA_validation_agent.validate_circuit] Step 4: Syncing evaluation results...")

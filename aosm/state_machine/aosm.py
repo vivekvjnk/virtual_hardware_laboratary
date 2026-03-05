@@ -115,7 +115,7 @@ class AOSM:
         # Pretty log the event for visual validation
         separator = "═" * 100
         event_json = event.model_dump_json(indent=2)
-        logger.info(
+        logger.debug(
             f"\n{separator}\n"
             f"📥 [AOSM] INCOMING EVENT: {event.type}\n"
             f"{'─' * 100}\n"

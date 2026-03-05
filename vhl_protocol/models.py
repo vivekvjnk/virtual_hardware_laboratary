@@ -52,9 +52,8 @@ class EventType(str, Enum):
     WORKSPACE_DISCONNECTED = "WORKSPACE_DISCONNECTED"
 
     # VAP Orchestration
-    VAP_INIT = "VAP_INIT"
-    VAP_INIT_COMPLETE = "VAP_INIT_COMPLETE"
-    VAP_STATUS_REPORT = "VAP_STATUS_REPORT"
+    VAP_EXECUTE = "VAP_EXECUTE"
+    VAP_COMPLETE = "VAP_COMPLETE"
     VAP_DECISION = "VAP_DECISION"
     
     # ANA Communication
@@ -139,12 +138,12 @@ class AgentPresencePayload(BaseModel):
     agent_id: Optional[str] = None
     status: str # connected | disconnected
 
-class VAPInitPayload(BaseModel):
+class VAPExecutePayload(BaseModel):
     circuit_name: str
     blob_id: str
     iteration_id: str
 
-class VAPStatusPayload(BaseModel):
+class VAPCompletePayload(BaseModel):
     task_id: str
     eval_status: Optional[str] = None
     decision: Optional[str] = None

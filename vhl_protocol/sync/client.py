@@ -222,7 +222,7 @@ class SyncClient:
         try:
             await self.web_socket_client.wait_for_event(
                 EventType.SYNC_COMPLETE,
-                filter_func=lambda e: e.payload.get("resource_type") == "Evaluation" and e.payload.get("sync_id") == sync_id,
+                filter_func=lambda e: e.payload.get("resource_type") == "EvaluationOutput" and e.payload.get("sync_id") == sync_id,
                 timeout=60.0
             )
             logger.info(f"[SyncClient.sync_evaluation] Evaluation sync completed (sync_id={sync_id})")

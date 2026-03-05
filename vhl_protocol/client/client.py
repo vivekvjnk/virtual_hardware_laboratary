@@ -9,7 +9,7 @@ from ..models import (
     HumanInputPayload, StateTransitionPayload,
     EvaluationUpdatePayload, ArtifactUpdatedPayload,
     AuthorityRequiredPayload, ErrorPayload, WorkspacePayload,
-    VAPInitPayload,  ProjectsListPayload,
+    VAPExecutePayload,  ProjectsListPayload,
     AgentStatePayload, 
     AgentStatus
 )
@@ -247,9 +247,9 @@ class VHLWebSocketClient:
 
     # --- VAP Helpers ---
 
-    async def emit_vap_init(self, circuit_name: str, blob_id: str,iteration_id:str):
-        payload = VAPInitPayload(circuit_name=circuit_name, blob_id=blob_id,iteration_id=iteration_id)
-        return await self.emit(EventType.VAP_INIT, payload)
+    async def emit_vap_execute(self, circuit_name: str, blob_id: str, iteration_id: str):
+        payload = VAPExecutePayload(circuit_name=circuit_name, blob_id=blob_id, iteration_id=iteration_id)
+        return await self.emit(EventType.VAP_EXECUTE, payload)
 
     # Helper for HIL
     async def emit_status_update(self, status: str, message: Optional[str] = None):
