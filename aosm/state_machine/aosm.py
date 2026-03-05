@@ -344,7 +344,6 @@ class AOSM:
 
             # if decision is ACCEPT copy current iteration directory to Stable directory
             if "ACCEPT" == decision:
-                
                 # Sync StableCircuit and EvaluationOutput
                 if self.project_id:
                     try:
@@ -380,7 +379,6 @@ class AOSM:
         # Transition to TRIGGER_ANA
         await self.transition_to(AOSMState.TRIGGER_ANA, "Intent classified as modification", payload=event.payload)
         
-
     async def _handle_trigger_ana(self, event: BaseEvent):
 
         if event.type == EventType.STATE_TRANSITION:
@@ -416,8 +414,6 @@ class AOSM:
         else:
             logger.info(f"[AOSM._handle_trigger_ana] Received event: {event.type}")
         
-        
-
     async def _handle_wait_for_ana(self, event: BaseEvent):
 
         if event.type == EventType.ANA_NOTIFY:
@@ -439,14 +435,14 @@ class AOSM:
                     message=event.payload.get("message")
                 )
             elif ana_event == "EXIT":
-                self.update_agent_status("ana", AgentStatus.IDLE)
+                # Start the wait in the background so the main loop can continue 
+                # to process incoming events (like DEV_SERVER_READY)
                 ana_decision = event.payload.get("decision")
-                # Transition with payload so that PRESENT_RESULT can carry out directory management and sync
-                await self.transition_to(AOSMState.PRESENT_RESULT, reason="ANA finished task", payload=event.payload)
-                await self.web_socket_client.emit_evaluation_update(task_id=ana_task_id, decision=ana_decision)
+                asyncio.create_task(self._wait_and_transition(event, ana_task_id, ana_decision))
 
             else:
                 raise ValueError(f"Unknown ANA notification reason: {ana_event}")
+
             
         elif event.type == EventType.HUMAN_INPUT:
             # Relaying human input to ANA's inbox
@@ -461,11 +457,23 @@ class AOSM:
                     await self.ana_inbox.put({"event": "human_response", "data": content})
             else:
                 logger.warning("[AOSM._handle_wait_for_ana] Received human input but ANA inbox is not initialized")
-
+    
     async def _handle_cancel_pipeline(self, event: BaseEvent):
         logger.info("[AOSM._handle_cancel_pipeline] Cleaning up cancelled pipeline...")
         await self.transition_to(AOSMState.IDLE, "Cleanup complete")
-
+    
+    async def _wait_and_transition(self, event, task_id, decision):
+                # This runs independently of the main loop
+                await self.web_socket_client.emit_evaluation_update(task_id=task_id, decision=decision)
+                try:
+                    await self.web_socket_client.wait_for_event(
+                        EventType.DEV_SERVER_READY,
+                        timeout=60.0
+                    )
+                    await self.transition_to(AOSMState.PRESENT_RESULT, payload=event.payload)
+                except Exception as e:
+                    logger.error(f"Background wait failed: {e}")
+            
     async def _handle_error_presented(self, event: BaseEvent):
         logger.info(f"[AOSM._handle_error_presented] In ERROR_PRESENTED state...")
         if event.type == EventType.HUMAN_INPUT:

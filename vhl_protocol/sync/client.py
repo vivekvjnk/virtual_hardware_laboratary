@@ -216,7 +216,19 @@ class SyncClient:
             hash=local_hash,
             source="backend",
         )
-        await self.handle_upload_request(payload)
+
+        await self.web_socket_client.emit(EventType.UPLOAD_REQUEST, payload)
+
+        try:
+            await self.web_socket_client.wait_for_event(
+                EventType.SYNC_COMPLETE,
+                filter_func=lambda e: e.payload.get("resource_type") == "Evaluation" and e.payload.get("sync_id") == sync_id,
+                timeout=60.0
+            )
+            logger.info(f"[SyncClient.sync_evaluation] Evaluation sync completed (sync_id={sync_id})")
+        except asyncio.TimeoutError:
+            logger.error(f"[SyncClient.sync_evaluation] Timeout waiting for evaluation sync (sync_id={sync_id})")
+            raise
 
     async def sync_evaluation(self, project_id: str, iteration_id: str):
         """
