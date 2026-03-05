@@ -29,9 +29,13 @@ class SyncClient:
     async def handle_runtime_message(self, event: BaseEvent):
         if event.type not in [EventType.UPLOAD_REQUEST, EventType.DOWNLOAD_REQUEST]:
             return
-
+        
         try:
             payload = SyncPayload.model_validate(event.payload)
+
+            # Ignore events from self
+            if payload.source == "backend":
+                return    
             if event.type == EventType.UPLOAD_REQUEST:
                 await self.handle_upload_request(payload)
             elif event.type == EventType.DOWNLOAD_REQUEST:
@@ -46,7 +50,8 @@ class SyncClient:
             sync_id=sync_id,
             project_id=project_id,
             resource_type="Unknown",
-            reason=reason
+            reason=reason,
+            source="backend"
         )
         await self.web_socket_client.emit(EventType.SYNC_ERROR, error_payload)
 
@@ -89,21 +94,6 @@ class SyncClient:
         else:
             blob_id = f"{payload.project_id}/{payload.resource_type}/{hash_val}"
 
-        # ── Fast path: skip upload if remote already has the same content ──────
-        if payload.hash is not None and hash_val == payload.hash:
-            logger.info(
-                f"[SyncClient.handle_upload_request] Hashes match for {payload.resource_type} "
-                f"(hash={hash_val[:8]}…). Already in sync — emitting SYNC_COMPLETE."
-            )
-            await self.web_socket_client.emit(EventType.SYNC_COMPLETE, SyncPayload(
-                sync_id=sync_id,
-                project_id=payload.project_id,
-                iteration_id=payload.iteration_id,
-                resource_type=payload.resource_type
-            ))
-            return blob_id
-        # ────────────────────────────────────────────────────────────────────────
-
         blob_to_upload = None
         temp_zip = None
 
@@ -130,7 +120,8 @@ class SyncClient:
                 intent=payload.intent,
                 hash=hash_val,   # Our local hash — receiver uses this for integrity check
                 blob_id=blob_id,
-                data={"circuit_name": self.workspace_manager.circuit_name}
+                data={"circuit_name": self.workspace_manager.circuit_name},
+                source="backend",
             )
             await self.web_socket_client.emit(EventType.DOWNLOAD_REQUEST, download_payload)
             logger.info(f"[SyncClient.handle_upload_request] Emitted DOWNLOAD_REQUEST (sync_id={sync_id})")
@@ -187,7 +178,8 @@ class SyncClient:
                 sync_id=sync_id,
                 project_id=payload.project_id,
                 iteration_id=payload.iteration_id,
-                resource_type=payload.resource_type
+                resource_type=payload.resource_type,
+                source="backend"
             )
             await self.web_socket_client.emit(EventType.SYNC_COMPLETE, complete_payload)
 
@@ -200,7 +192,7 @@ class SyncClient:
 
     # ─── Convenience Methods ──────────────────────────────────────────────────────
 
-    async def sync_evaluation_output(self, project_id: str, iteration_id: str):
+    async def sync_circuit_json(self, project_id: str, iteration_id: str):
         """
         Push local EvaluationOutput to the runtime.
 
@@ -221,7 +213,8 @@ class SyncClient:
             iteration_id=iteration_id,
             resource_type="EvaluationOutput",
             intent="RESULT",
-            hash=local_hash
+            hash=local_hash,
+            source="backend",
         )
         await self.handle_upload_request(payload)
 
@@ -246,7 +239,8 @@ class SyncClient:
             iteration_id=iteration_id,
             resource_type="Evaluation",
             intent="RESULT",
-            hash=local_hash  # Let runtime skip upload if hashes already match
+            hash=local_hash,  # Let runtime skip upload if hashes already match
+            source="backend",
         )
         await self.web_socket_client.emit(EventType.UPLOAD_REQUEST, payload)
 
@@ -279,7 +273,8 @@ class SyncClient:
             sync_id=sync_id,
             project_id=project_id,
             resource_type="Library",
-            hash=local_hash  # Let runtime skip upload if hashes already match
+            hash=local_hash,  # Let runtime skip upload if hashes already match
+            source="backend",
         )
         await self.web_socket_client.emit(EventType.UPLOAD_REQUEST, payload)
 
@@ -311,7 +306,8 @@ class SyncClient:
             project_id=project_id,
             resource_type="StableCircuit",
             hash=local_hash,  # Let runtime skip upload if hashes already match
-            data={"circuit_name": self.workspace_manager.circuit_name}
+            data={"circuit_name": self.workspace_manager.circuit_name},
+            source="backend",
         )
         await self.web_socket_client.emit(EventType.UPLOAD_REQUEST, payload)
 

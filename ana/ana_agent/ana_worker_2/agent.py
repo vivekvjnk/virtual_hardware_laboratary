@@ -49,7 +49,8 @@ class ANA_validation_agent:
                 project_id=self.project_id,
                 resource_type="Circuit",
                 iteration_id=iteration_id,
-                intent="EVALUATION"
+                intent="EVALUATION",
+                source = "backend"
             ))
         else:
             raise ValueError(f"[ANA_validation_agent.validate_circuit] SyncClient or ProjectID not available. SyncClient: {self.sync_client}, ProjectID: {self.project_id}")

@@ -189,7 +189,7 @@ class AOSM:
     # --- State Handlers ---
 
     async def _handle_startup(self, event: BaseEvent):
-        logger.info(f"[AOSM._handle_startup] In STARTUP state... Event: {event}")
+        logger.info(f"[AOSM._handle_startup] In STARTUP state...")
         if event.type == EventType.CREATE_PROJECT:
             payload = event.payload or {}
             project_name = payload.get("project_name", "untitled")
@@ -285,7 +285,7 @@ class AOSM:
             await self.web_socket_client.emit_projects_list(projects)
 
     async def _handle_idle(self, event: BaseEvent):
-        logger.info(f"[AOSM._handle_idle] In IDLE state... Event: {event}")
+        logger.info(f"[AOSM._handle_idle] In IDLE state...")
         if event.type == EventType.REFERENCE_UPLOADED:
             await self.transition_to(AOSMState.BOOTSTRAP_PIPELINE, "New schematic uploaded", payload=event.payload)
         elif event.type == EventType.HUMAN_INPUT:
@@ -306,6 +306,7 @@ class AOSM:
                 ))
         
     async def _handle_bootstrap_pipeline(self, event: BaseEvent):
+        logger.info(f"[AOSM._handle_idle] In BOOTSTRAP_PIPELINE state...")
         # We trigger the bootstrap logic upon entering this state.
         if event.type == EventType.STATE_TRANSITION:
             scud_path,image_id = await self._run_bootstrap(event)
@@ -328,7 +329,7 @@ class AOSM:
                 raise ValueError(f"scud_path is null. {scud_path}")
     
     async def _handle_present_result(self, event: BaseEvent):
-        logger.info(f"[AOSM._handle_present_result] Presenting results to user... Event: {event}")
+        logger.info(f"[AOSM._handle_present_result] Presenting results to user...")
         
         # Handle state transition which carries the ANA results from WAIT_FOR_ANA
         if event.type == EventType.STATE_TRANSITION:
@@ -347,14 +348,11 @@ class AOSM:
                 # Sync StableCircuit and EvaluationOutput
                 if self.project_id:
                     try:
-                        # 1. Trigger sync for stable circuit (Runtime to Agent)
-                        await self.sync_client.sync_stable_circuit(self.project_id)
-                        
                         # 2. Trigger sync for evaluation output (Agent to Runtime)
                         # We need the iteration_id that was accepted.
                         # iteration_dir looks like .../iteration_<uuid>
                         iteration_id = Path(iteration_dir).name.replace("iteration_", "")
-                        await self.sync_client.sync_evaluation_output(self.project_id, iteration_id)
+                        await self.sync_client.sync_circuit_json(self.project_id, iteration_id)
                         
                         logger.info(f"[AOSM._handle_present_result] StableCircuit and EvaluationOutput sync completed successfully")
                         
@@ -374,7 +372,7 @@ class AOSM:
     async def _handle_intent_classify(self, event: BaseEvent):
         # In a real scenario, an agent would classify the intent here.
         # For the wireframe, we assume valid modification request.
-        logger.info(f"[AOSM._handle_intent_classify] Classifying intent...\n event: {event}")
+        logger.info(f"[AOSM._handle_intent_classify] Classifying intent...")
         # Add user message to the current message observations
         self.current_message["observations"].append(event.payload.get("content", "No message provided"))
         logger.info(f"[AOSM._handle_intent_classify] Current message: {self.current_message}")
@@ -382,11 +380,6 @@ class AOSM:
         # Transition to TRIGGER_ANA
         await self.transition_to(AOSMState.TRIGGER_ANA, "Intent classified as modification", payload=event.payload)
         
-        # Pull StableCircuit from Runtime to Agent, then Library
-        # if self.project_id:
-        #     logger.info("[AOSM._handle_intent_classify] Triggering sync for StableCircuit and Library")
-        #     await self.sync_client.sync_stable_circuit(self.project_id)
-            # Library sync will be handled in TRIGGER_ANA or sequence
 
     async def _handle_trigger_ana(self, event: BaseEvent):
 
@@ -474,7 +467,7 @@ class AOSM:
         await self.transition_to(AOSMState.IDLE, "Cleanup complete")
 
     async def _handle_error_presented(self, event: BaseEvent):
-        logger.info(f"[AOSM._handle_error_presented] In ERROR_PRESENTED state... Event: {event}")
+        logger.info(f"[AOSM._handle_error_presented] In ERROR_PRESENTED state...")
         if event.type == EventType.HUMAN_INPUT:
             content = event.payload.get("content", "").lower()
             if "retry" in content:
@@ -484,12 +477,12 @@ class AOSM:
                 await self.transition_to(AOSMState.IDLE, "User aborted after error")
 
     async def _handle_wait_for_user(self, event: BaseEvent):
-        logger.info(f"[AOSM._handle_wait_for_user] In WAIT_FOR_USER state... Event: {event}")
+        logger.info(f"[AOSM._handle_wait_for_user] In WAIT_FOR_USER state... ")
         if event.type == EventType.HUMAN_INPUT:
              await self.transition_to(AOSMState.INTENT_CLASSIFY, "Clarification received")
 
     async def _handle_wait_for_librarian_hil(self, event: BaseEvent):
-        logger.info(f"[AOSM._handle_wait_for_librarian_hil] In WAIT_FOR_LIBRARIAN_HIL state... Event: {event}")
+        logger.info(f"[AOSM._handle_wait_for_librarian_hil] In WAIT_FOR_LIBRARIAN_HIL state...")
         
         if event.type == EventType.STATE_TRANSITION:
             # On entering state, notify user for review

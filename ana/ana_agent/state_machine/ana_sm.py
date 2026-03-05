@@ -17,7 +17,7 @@ from ana_agent.state_machine.states import State
 from ana_agent.state_machine.mcp_manager import MCPManager
 from vhl_protocol.sync.client import SyncClient
 from vhl_protocol.client.client import VHLWebSocketClient
-from vhl_protocol.models import EventType, SyncPayload
+
 
 logger = logging.getLogger(__name__)
 
@@ -149,21 +149,10 @@ class ANADStateMachine:
         logger.debug(f"[ANADStateMachine._handle_init] Message: {message}")
         
         # Workflow 2/3: Synchronize Stable and Library
-        if self.project_id and self.sync_client:
-            logger.info(f"[ANADStateMachine._handle_init] Synchronizing StableCircuit and Library for project {self.project_id}")
-            
-            try:
-                # 1. Sync StableCircuit
-                await self.sync_client.sync_stable_circuit(self.project_id)
-            except Exception as e:
-                logger.warning(f"[ANADStateMachine._handle_init] StableCircuit sync failed: {e}")
-
-            try:
-                # 2. Sync Library
-                await self.sync_client.sync_library(self.project_id)
-            except Exception as e:
-                logger.warning(f"[ANADStateMachine._handle_init] Library sync failed: {e}")
-
+        # Removed workflow 2
+        # No updates are allowed in Library in ANAD-SM. So no need to sync Library here
+        # Stable circuit is AOSM concern. Not ANAD-SM responsibility
+        
         result_msg = message.copy()
         
 

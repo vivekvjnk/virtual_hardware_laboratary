@@ -1,19 +1,17 @@
 import asyncio
 import json
 import logging
-from typing import Optional, Callable, Dict, Any, Awaitable, List
+from typing import Optional, Callable, Awaitable, List
 from pydantic import BaseModel
 import websockets
 from ..models import (
     BaseEvent, EventType, EventSource, HILRequestPayload,
     HumanInputPayload, StateTransitionPayload,
     EvaluationUpdatePayload, ArtifactUpdatedPayload,
-    AuthorityRequiredPayload, ErrorPayload,
-    IdentifyPayload, WorkspacePayload,
-    VAPInitPayload, VAPStatusPayload,
-    SyncPayload, ProjectsListPayload,
-    AgentStatePayload, ProjectStatePayload,
-    AgentStatus, ProjectStatus
+    AuthorityRequiredPayload, ErrorPayload, WorkspacePayload,
+    VAPInitPayload,  ProjectsListPayload,
+    AgentStatePayload, 
+    AgentStatus
 )
 
 logger = logging.getLogger(__name__)

@@ -169,7 +169,8 @@ class SyncPayload(BaseModel):
     blob_id: Optional[str] = None
     reason: Optional[str] = None # For SYNC_ERROR
     data: Optional[Dict[str, Any]] = Field(default_factory=dict)
-
+    source: str = None
+    
 class ProjectStatus(str, Enum):
     INITIALIZED = "initialized"
     UNINITIALIZED = "uninitialized"
