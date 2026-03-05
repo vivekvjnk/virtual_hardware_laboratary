@@ -337,6 +337,10 @@ export class WorkspaceClient implements WorkspaceSender {
             case "UPLOAD_REQUEST":
             case "SYNC_COMPLETE":
             case "SYNC_ERROR":
+                // Ignore events from self
+                if ((msg as AgentMessage).payload.source === "vhl_workspace") {
+                    break;
+                }
                 await this.syncManager.handleMessage(msg as AgentMessage);
                 break;
             case "CLOSE_PROJECT":
