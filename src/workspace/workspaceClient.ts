@@ -314,13 +314,16 @@ export class WorkspaceClient implements WorkspaceSender {
                     this.sendError("VAP_DECISION_INVALID", "Missing task_id or decision in VAP_DECISION");
                     break;
                 }
+                if (!this.activeVapContext){
+                    this.sendError("VAP_DECISION_INVALID", "Missing activeVapContext");
+                    break;
+                }
                 await handleVapDecision(
                     task_id,
                     decision,
                     this.projectDir || this.workspaceDir,
                     this,
-                    this.currentProjectId,
-                    this.activeVapContext?.circuit_name
+                    this.activeVapContext.circuit_name
                 );
                 setProjectState({
                     projectDir: this.projectDir || this.workspaceDir,

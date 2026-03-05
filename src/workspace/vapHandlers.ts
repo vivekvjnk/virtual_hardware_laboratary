@@ -142,8 +142,8 @@ export async function handleVapDecision(
     decision: "ACCEPT" | "REJECT",
     projectDir: string,
     sender: WorkspaceSender,
+    circuitName: string, 
     projectId?: string | null,
-    circuitName?: string | null
 ) {
     console.log(`[Workspace] Handling agent decision for task ${taskId}: ${decision}`);
 
@@ -151,6 +151,8 @@ export async function handleVapDecision(
         if (decision === "ACCEPT") {
             console.log(`[Workspace] Committing changes for task ${taskId} to ${projectDir}`);
             await COWWorkspaceManager.commit(taskId, projectDir, circuitName || undefined);
+            // Stable circuit and circuitjson are updated 
+            sender.onStableCircuitUpdated(circuitName);
 
         } else {
             console.log(`[Workspace] Rejecting changes for task ${taskId}`);
@@ -164,4 +166,5 @@ export async function handleVapDecision(
             console.warn(`[Workspace] Cleanup failed for task ${taskId}:`, e);
         });
     }
+
 }
