@@ -8,7 +8,7 @@ import type { WebSocketMessage, AgentMessage } from "../server/types.js";
 import { runtime } from "../vap/runtime.js";
 import { WorkspaceSender, VapContext } from "./types.js";
 import { handleWorkspaceUpload, handleWorkspaceDownload } from "./syncHandlers.js";
-import { handleVapInit, reportVapResults, handleVapDecision } from "./vapHandlers.js";
+import { handleVapExecute, handleVapDecision } from "./vapHandlers.js";
 import { setProjectDir, getProjectDir, setProjectState } from "./projectContext.js";
 import { SyncManager } from "./syncManager.js";
 
@@ -19,8 +19,6 @@ export class WorkspaceClient implements WorkspaceSender {
     private workspaceDir: string;
     private projectDir: string | null = null;
     private reconnectTimer: NodeJS.Timeout | null = null;
-    private vapStatusInterval: NodeJS.Timeout | null = null;
-    private activeVapTaskId: string | null = null;
     private activeVapContext: VapContext | null = null;
     private devServerProcess: ChildProcess | null = null;
     private currentDevServerPath: string | null = null;
@@ -58,9 +56,6 @@ export class WorkspaceClient implements WorkspaceSender {
                     clearTimeout(this.reconnectTimer);
                     this.reconnectTimer = null;
                 }
-                if (this.activeVapTaskId && this.activeVapContext) {
-                    this.startVapStatusReporting(this.activeVapTaskId, this.activeVapContext);
-                }
                 // Start dev server in workspace root by default to avoid lockout
                 this.startDevServer(this.workspaceDir);
                 resolve();
@@ -77,10 +72,6 @@ export class WorkspaceClient implements WorkspaceSender {
 
             this.ws.on("close", () => {
                 console.log("[WorkspaceClient] Connection closed. Retrying in 5s...");
-                if (this.vapStatusInterval) {
-                    clearInterval(this.vapStatusInterval);
-                    this.vapStatusInterval = null;
-                }
                 this.scheduleReconnect();
             });
 
@@ -152,11 +143,9 @@ export class WorkspaceClient implements WorkspaceSender {
             case "WORKSPACE_UPLOAD":
                 await handleWorkspaceUpload(msg as AgentMessage, this.projectDir || this.workspaceDir, this);
                 break;
-            case "VAP_INIT": {
-                const { taskId, context } = await handleVapInit(msg as AgentMessage, this.projectDir || this.workspaceDir, this);
-                this.activeVapTaskId = taskId;
+            case "VAP_EXECUTE": {
+                const { context } = await handleVapExecute(msg as AgentMessage, this.projectDir || this.workspaceDir, this);
                 this.activeVapContext = context;
-                this.startVapStatusReporting(taskId, context);
                 break;
             }
             case "CREATE_PROJECT":
@@ -314,7 +303,7 @@ export class WorkspaceClient implements WorkspaceSender {
                     this.sendError("VAP_DECISION_INVALID", "Missing task_id or decision in VAP_DECISION");
                     break;
                 }
-                if (!this.activeVapContext){
+                if (!this.activeVapContext) {
                     this.sendError("VAP_DECISION_INVALID", "Missing activeVapContext");
                     break;
                 }
@@ -332,7 +321,6 @@ export class WorkspaceClient implements WorkspaceSender {
 
 
                 // This is the end of VAP session. Cleanup should happen here.
-                this.activeVapTaskId = null;
                 this.activeVapContext = null;
                 break;
             }
@@ -364,13 +352,7 @@ export class WorkspaceClient implements WorkspaceSender {
         this.currentProjectName = null;
         this.currentCircuitName = null;
         this.isSynthesizable = false;
-        this.activeVapTaskId = null;
         this.activeVapContext = null;
-
-        if (this.vapStatusInterval) {
-            clearInterval(this.vapStatusInterval);
-            this.vapStatusInterval = null;
-        }
 
         this.updateProjectState({
             backend_status: "uninitialized",
@@ -391,48 +373,7 @@ export class WorkspaceClient implements WorkspaceSender {
         } as any);
     }
 
-    private startVapStatusReporting(taskId: string, context: VapContext) {
-        if (this.vapStatusInterval) {
-            clearInterval(this.vapStatusInterval);
-        }
 
-        console.log(`[WorkspaceClient] Starting status reporting for task: ${taskId}`);
-
-        this.vapStatusInterval = setInterval(async () => {
-            try {
-                const status = runtime.getStatus(taskId);
-
-                if (status.state === "Default" && status.task_id === taskId) {
-                    console.log(`[WorkspaceClient] Evaluation complete for task: ${taskId}. Reporting results...`);
-
-                    if (this.vapStatusInterval) {
-                        clearInterval(this.vapStatusInterval);
-                        this.vapStatusInterval = null;
-                    }
-
-                    await reportVapResults(taskId, status, context, this);
-
-                    return;
-                }
-
-                this.send({
-                    id: randomUUID(),
-                    type: "VAP_STATUS_REPORT",
-                    artifact_id: null,
-                    timestamp: new Date().toISOString(),
-                    source: "vhl_workspace",
-                    payload: status
-                });
-
-            } catch (err: any) {
-                console.error("[WorkspaceClient] Error in VAP status reporting:", err);
-                if (this.vapStatusInterval) {
-                    clearInterval(this.vapStatusInterval);
-                    this.vapStatusInterval = null;
-                }
-            }
-        }, 2000);
-    }
 
 
 

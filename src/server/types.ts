@@ -23,10 +23,8 @@ export type EventType =
     | "WORKSPACE_CONNECTED"
     | "WORKSPACE_DISCONNECTED"
     // VAP (VHL ANA Process)
-    | "VAP_INIT"
-    | "VAP_INIT_COMPLETE"
-    | "VAP_STATUS"
-    | "VAP_STATUS_REPORT"
+    | "VAP_EXECUTE"
+    | "VAP_COMPLETE"
     | "VAP_DECISION"
     // Human In Loop Mangement
     | "HIL_REQUEST"

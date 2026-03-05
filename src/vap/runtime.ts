@@ -178,6 +178,23 @@ export class VAPRuntime {
     }
 
     /**
+     * Wait for a task to complete
+     */
+    public async waitForTask(taskId: string): Promise<VAPStatus> {
+        return new Promise((resolve) => {
+            const check = () => {
+                const status = this.getStatus(taskId);
+                if (status.state === "Default" && status.task_id === taskId && status.decision !== "UNDECIDED") {
+                    resolve(status);
+                } else {
+                    setTimeout(check, 500);
+                }
+            };
+            check();
+        });
+    }
+
+    /**
      * Reset the runtime state (for testing)
      */
     public reset() {

@@ -11,7 +11,7 @@ import { WorkspaceSender, VapContext } from "./types.js";
 import { COWWorkspaceManager } from "../utils/cowWorkspace.js";
 import { TEMP_DIR } from "../config/paths.js";
 
-export async function handleVapInit(
+export async function handleVapExecute(
     msg: AgentMessage,
     projectDir: string,
     sender: WorkspaceSender
@@ -19,10 +19,10 @@ export async function handleVapInit(
     let taskId = randomUUID();
     let paths: any = null;
     try {
-        console.log("[Workspace] Processing VAP_INIT");
+        console.log("[Workspace] Processing VAP_EXECUTE");
         const { circuit_name, blob_id, iteration_id } = msg.payload;
         if (!circuit_name || !blob_id) {
-            throw new Error("Missing circuit_name or blob_id in VAP_INIT payload");
+            throw new Error("Missing circuit_name or blob_id in VAP_EXECUTE payload");
         }
 
         const datetime = new Date().toISOString().replace(/[:.]/g, "-");
@@ -52,7 +52,8 @@ export async function handleVapInit(
         // Cleanup temp pull dir
         await fs.rm(tempPullDir, { recursive: true, force: true }).catch(() => { });
 
-        const result = await runtime.startEvaluation(
+        // 4. Start Evaluation
+        const initResult = await runtime.startEvaluation(
             circuit_name,
             relativeTsxPath,
             resultsDir,
@@ -61,22 +62,46 @@ export async function handleVapInit(
             taskId
         );
 
-        sender.send({
-            id: randomUUID(),
-            type: "VAP_INIT_COMPLETE",
-            artifact_id: null,
-            timestamp: new Date().toISOString(),
-            source: "vhl_workspace",
-            payload: {
-                ...result,
-                results_dir: resultsDir,
-                datetime
+        console.log(`[Workspace] Evaluation started for task ${taskId}. Waiting for completion...`);
+
+        // 5. Wait for completion
+        const status = await runtime.waitForTask(taskId);
+        console.log(`[Workspace] Evaluation complete for task ${taskId}. Result: ${status.eval_status}`);
+
+        // 6. Report results
+        try {
+            const zipPath = `${resultsDir}.zip`;
+            const objectName = `${circuit_name}_${datetime}_eval_results.zip`;
+
+            console.log(`[Workspace] Compressing results: ${resultsDir} -> ${zipPath}`);
+            await compressDirectory(resultsDir, zipPath);
+
+            console.log(`[Workspace] Uploading results to MinIO: ${objectName}`);
+            await pushObject(zipPath, objectName);
+
+            if (status.metadata) {
+                status.metadata.results_blob_id = objectName;
             }
-        });
-        console.log(`[Workspace] VAP_INIT complete. Task ID: ${result.task_id}`);
+
+            sender.send({
+                id: randomUUID(),
+                type: "VAP_COMPLETE",
+                artifact_id: null,
+                timestamp: new Date().toISOString(),
+                source: "vhl_workspace",
+                payload: status
+            });
+            console.log(`[Workspace] Task ${taskId} results reported and uploaded.`);
+
+            await fs.unlink(zipPath).catch(() => { });
+
+        } catch (err: any) {
+            console.error(`[Workspace] Failed to report results for task ${taskId}:`, err);
+            sender.sendError("VAP_REPORT_FAILED", err.message);
+        }
 
         return {
-            taskId: result.task_id,
+            taskId: taskId,
             context: {
                 circuit_name,
                 results_dir: resultsDir,
@@ -85,53 +110,12 @@ export async function handleVapInit(
         };
 
     } catch (err: any) {
-        console.error("[Workspace] VAP_INIT failed:", err);
+        console.error("[Workspace] VAP_EXECUTE failed:", err);
         if (taskId) {
             await COWWorkspaceManager.cleanup(taskId).catch(() => { });
         }
-        sender.sendError("VAP_INIT_FAILED", err.message);
+        sender.sendError("VAP_EXECUTE_FAILED", err.message);
         throw err;
-    }
-}
-
-export async function reportVapResults(
-    taskId: string,
-    status: VAPStatus,
-    context: VapContext,
-    sender: WorkspaceSender
-) {
-    const { results_dir, datetime, circuit_name } = context;
-    console.log(`[Workspace] Reporting results for task ${taskId}. Evaluation status: ${status.eval_status}`);
-
-    try {
-        const zipPath = `${results_dir}.zip`;
-        const objectName = `${circuit_name}_${datetime}_eval_results.zip`;
-
-        console.log(`[Workspace] Compressing results: ${results_dir} -> ${zipPath}`);
-        await compressDirectory(results_dir, zipPath);
-
-        console.log(`[Workspace] Uploading results to MinIO: ${objectName}`);
-        await pushObject(zipPath, objectName);
-
-        if (status.metadata) {
-            status.metadata.results_blob_id = objectName;
-        }
-
-        sender.send({
-            id: randomUUID(),
-            type: "VAP_STATUS_REPORT",
-            artifact_id: null,
-            timestamp: new Date().toISOString(),
-            source: "vhl_workspace",
-            payload: status
-        });
-        console.log(`[Workspace] Task ${taskId} results reported and uploaded. Waiting for agent decision.`);
-
-        await fs.unlink(zipPath).catch(() => { });
-
-    } catch (err: any) {
-        console.error(`[Workspace] Failed to report VAP results for task ${taskId}:`, err);
-        sender.sendError("VAP_REPORT_FAILED", err.message);
     }
 }
 // TODO: Remove sync triggers from this function. Sole responsibility of this fn is to commit and clean VAP workspace
@@ -142,7 +126,7 @@ export async function handleVapDecision(
     decision: "ACCEPT" | "REJECT",
     projectDir: string,
     sender: WorkspaceSender,
-    circuitName: string, 
+    circuitName: string,
     projectId?: string | null,
 ) {
     console.log(`[Workspace] Handling agent decision for task ${taskId}: ${decision}`);
