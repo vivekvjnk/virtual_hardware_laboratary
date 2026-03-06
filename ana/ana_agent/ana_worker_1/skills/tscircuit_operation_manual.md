@@ -361,7 +361,7 @@ Pins may be connected directly to nets.
 <trace from=".U1 > .VDD" to="net.VCC" />
 <trace from=".U1 > .GND" to="net.GND" />
 ```
-
+NOTE: Pins of a component are addressed in the specific pattern ".<component_name> .<pin_name>". Make sure you follow this syntax
 ---
 
 ## 4. Connectivity

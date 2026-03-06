@@ -14,7 +14,8 @@ from openhands.sdk import (
 from openhands.sdk.context import (Skill)
 from openhands.sdk.security.llm_analyzer import LLMSecurityAnalyzer
 from openhands.sdk.tool import Tool
-from openhands.tools.file_editor import FileEditorTool
+# from openhands.tools.file_editor import FileEditorTool
+from openhands.tools.gemini import GEMINI_FILE_TOOLS
 from openhands.tools.terminal import TerminalTool
 
 from pathlib import Path
@@ -54,11 +55,11 @@ logger.info(f"[ANA-W1] ANA-W1: Submodule root directory: {submodule_root}")
 # Configure Tools
 tools = [
     Tool(name=TerminalTool.name),
-    Tool(name=FileEditorTool.name),
+    *GEMINI_FILE_TOOLS,
 ]
 
 
-condenser = LLMSummarizingCondenser(llm=llm_condenser, max_size=80, keep_first=8)
+condenser = LLMSummarizingCondenser(llm=llm_condenser, max_size=70, keep_first=8)
 
 
 # Conversation Callback
@@ -122,15 +123,16 @@ def run_ana_w1_agent(workspace:str,scud_path: str, schematic_images_path: str = 
         if circuit_files:
             circuit_file_path = circuit_files[0] # TODO : If required, add support for multiple tsx files later
             logger.info(f"[run_ana_w1_agent] Found previous circuit tsx file: {circuit_file_path}. It will be made available to the agent.")
+            
             user_message += f"There are few issues with the previous circuit. The previous circuit file is copied to your current workspace under '{circuit_file_path}'. Please edit this file to correct the issues."
         
         else:
             raise FileNotFoundError(f"No .tsx file found in previous iteration directory: {workspace}")
         
-        prev_eval_log_files = Path(previous_iteration_dir, "evaluation_results")
+        prev_eval_log_files = Path(previous_iteration_dir, "eval_results")
         prev_eval_log_files_exist = prev_eval_log_files.exists() and list(prev_eval_log_files.glob("*"))
         if prev_eval_log_files_exist:
-            user_message += f"You may refer to previous evaluation results located at '{prev_eval_log_files}' for understanding previous errors."
+            user_message += f"Refer the previous evaluation result located at '{prev_eval_log_files}' for understanding previous errors."
         else: 
             logger.warning(f"[run_ana_w1_agent] No previous evaluation results found in {prev_eval_log_files}")
     
@@ -159,7 +161,7 @@ def run_ana_w1_agent(workspace:str,scud_path: str, schematic_images_path: str = 
         user_message += "\n\nYou should generate and store tsx circuit file in the current workspace directory. The circuit file will be evaluated by the backend in a a remote execution environment. All the imports in the circuit will be resolved in this execution environment. Libraries are available under ./lib/imports/ directory in the execution environment."
 
         
-        user_message += f"Ensure the circuit file is named '{circuit_name}.tsx'."
+        user_message += f"**NOTE**: Make sure the circuit file is named '{circuit_name}.tsx'. Anything else would be rejected by the system."
 
     logger.info(f"[run_ana_w1_agent] Final user message {'*'*100}\n{user_message}")
 

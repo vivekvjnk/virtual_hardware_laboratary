@@ -162,8 +162,10 @@ class ANADStateMachine:
             logger.warning(f"[ANADStateMachine._handle_init] Iteration_{self.workspace_manager.get_session_iteration_count()}: Resetting first iteration flag. Current session iteration count: {num_iterations}")
             self.workspace_manager.reset_first_iteration()
 
+        # TODO Check if Stable directory contain any circuit tsx files. If not, this is synthesis iteration with observations. We need special handling.
+        is_stable_ckt_present = self.workspace_manager.get_circuit_path_from_stable().is_file()
         # Check how many iterations are present in session
-        if (self.workspace_manager.is_first_iteration()) and (len(observations)>0):
+        if (self.workspace_manager.is_first_iteration()) and (len(observations)>0) and is_stable_ckt_present:
             last_iteration_id_suffix = str(uuid.uuid4()).split("-")[0][:8] # First 8 characters of UUID
             logger.info(f"[ANADStateMachine._handle_init] First iteration Error Correction Mode. Preparing iteration directory with provided circuit code. Suffix: {last_iteration_id_suffix}")
 
@@ -424,7 +426,8 @@ class ANADStateMachine:
         agent = ANA_validation_agent(
             web_socket_client=self.web_socket_client,
             sync_client=self.sync_client,
-            project_id=self.project_id
+            project_id=self.project_id,
+            # mcp_manager=self.mcp_manager
         )
         logger.info("[ANADStateMachine._handle_trigger_w2] Initialized ANA-W2")
         try:

@@ -12,7 +12,8 @@ from openhands.sdk import (
     get_logger,
 )
 from openhands.sdk.tool import Tool
-from openhands.tools.file_editor import FileEditorTool
+# from openhands.tools.file_editor import FileEditorTool
+from openhands.tools.gemini import GEMINI_FILE_TOOLS
 from openhands.tools.terminal import TerminalTool
 
 from pathlib import Path
@@ -44,6 +45,7 @@ class LibrarianAgent:
     def _setup_agent(self) -> Agent:
         tools = [
             Tool(name=FileEditorTool.name),
+            *GEMINI_FILE_TOOLS
             # Terminal tool might be useful for debugging or file ops, but FileEditor is primary
             # Tool(name=TerminalTool.name), 
         ]

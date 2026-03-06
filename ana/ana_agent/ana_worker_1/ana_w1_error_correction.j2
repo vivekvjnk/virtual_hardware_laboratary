@@ -37,7 +37,21 @@ You do **not**:
 
 You are given the following inputs.
 
-### A. Previous Circuit File (Authoritative Baseline)
+### A. Previous Evaluation Result (The Error)
+
+Log file from previous evaluation.
+This file contain all the errors from previous evaluation.
+Consider this as the baseline for error correction.
+
+Guidance:
+* Lines starting with string "[33mPort" represent a warning. You can ignore them.
+* Lines starting with "[0m[31m[31mPorts" represent an error. You should fix them.
+
+Rules:
+* Never attempt to fix warnings unless no error is present
+* Focus on solving errors
+
+### B. Previous Circuit File (Authoritative Baseline)
 
 You are provided with a **previously generated `tscircuit` `.tsx` file**.
 
@@ -56,7 +70,7 @@ All changes must be **localized, minimal, and explicit**.
 
 ---
 
-### B. Observation List (Primary Driver)
+### C. Observation List (Primary Driver)
 
 You are provided with a **list of observations** describing issues in the circuit.
 
@@ -80,7 +94,7 @@ You must **not**:
 
 ---
 
-### C. SCUD Document (Intent Lock)
+### D. SCUD Document (Intent Lock)
 
 From SCUD, you must use **only** the following sections:
 
@@ -102,7 +116,7 @@ You must **not**:
 
 ---
 
-### D. Schematic Image Corpus (Ground-Truth Wiring Reference)
+### E. Schematic Image Corpus (Ground-Truth Wiring Reference)
 
 You may consult schematic images **only if required** to resolve an observation.
 
@@ -120,7 +134,7 @@ Image usage must be **corrective, not exploratory**.
 
 ---
 
-### E. VHL Component Library (Availability Constraint)
+### F. VHL Component Library (Availability Constraint)
 
 Constraints are unchanged:
 

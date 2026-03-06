@@ -90,10 +90,9 @@ Use ONLY if the failure is:
 
 ### **NON_LOCAL**
 Use for ALL other cases, including:
-- hub-centric failures
-- ripple or structural errors
 - ambiguity from SCUD or schematics
 - low-confidence classification
+
 
 ────────────────────────────────────────────
 FEW-SHOT CLASSIFICATION EXAMPLES
@@ -137,6 +136,16 @@ Could not find port for selector ".U1 > .GND". Component "BAT" found, but does n
 ```
 → issue_kind: LOCAL
 → note: Review the component library for root cause analysis. This error implies circuit code refers to a pin name which doesn't exist in the library component.
+
+Example 5:
+```
+
+MultiOffsetIrlsSolver ran out of iterations
+
+```
+
+→ issue_kind: LOCAL
+→ note: An internal error message with tscircuit. Special case. Not relevant to evaluation.
 
 ────────────────────────────────────────────
 COMMIT DISCIPLINE

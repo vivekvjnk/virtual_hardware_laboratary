@@ -3,7 +3,8 @@ import json
 import uuid
 import zipfile
 import logging
-from typing import Dict, Any, Optional
+import asyncio
+from typing import Dict, Any, Optional, Union
 
 from openhands.sdk import get_logger
 from ana_agent.ana_worker_2.utils.object_store import MinioObjectStore
@@ -25,12 +26,13 @@ class ANA_validation_agent:
     3. Poll for evaluation status.
     4. Collect and extract evaluation results.
     """
-    def __init__(self, web_socket_client: VHLWebSocketClient, sync_client: Optional[SyncClient] = None, project_id: Optional[str] = None, minio_url: str = "http://127.0.0.1:9000"):
+    def __init__(self, web_socket_client: VHLWebSocketClient, sync_client: Optional[SyncClient] = None, project_id: Optional[str] = None, minio_url: str = "http://127.0.0.1:9000", mcp_manager: Any = None):
         self.web_socket_client = web_socket_client
         self.sync_client = sync_client
         self.project_id = project_id
         self.minio_url = minio_url
         self.object_store = MinioObjectStore(endpoint_url=minio_url)
+        self.mcp_manager = mcp_manager
 
     async def validate_circuit(self, circuit_name: str, workspace: str, iteration_id: str) -> Dict[str, Any]:
         """
@@ -59,15 +61,28 @@ class ANA_validation_agent:
         
         # 2. Invoke VAP and wait for completion
         logger.info(f"[ANA_validation_agent.validate_circuit] Step 2: Executing VAP for circuit: {circuit_name}")
-        await self.web_socket_client.emit_vap_execute(circuit_name, blob_id, iteration_id=iteration_id)
+        if self.mcp_manager:
+            logger.info("[ANA_validation_agent.validate_circuit] Using MCP for VAP execution")
+            status_data = await asyncio.to_thread(
+                self.mcp_manager.call_tool,
+                "evaluate_circuit",
+                {
+                    "circuit_name": circuit_name,
+                    "blob_id": blob_id,
+                    "iteration_id": iteration_id
+                }
+            )
+        else:
+            logger.info("[ANA_validation_agent.validate_circuit] Using WebSockets for VAP execution")
+            await self.web_socket_client.emit_vap_execute(circuit_name, blob_id, iteration_id=iteration_id)
+            
+            # Wait for the VAP_COMPLETE event
+            response = await self.web_socket_client.wait_for_event(
+                EventType.VAP_COMPLETE,
+                filter_func=lambda e: e.payload.get("task_id") is not None
+            )
         
-        # Wait for the VAP_COMPLETE event
-        response = await self.web_socket_client.wait_for_event(
-            EventType.VAP_COMPLETE,
-            filter_func=lambda e: e.payload.get("task_id") is not None
-        )
-        
-        status_data = response.payload
+            status_data = response.payload
         task_id = status_data.get("task_id")
         logger.info(f"[ANA_validation_agent.validate_circuit] VAP completed for task_id: {task_id}")
 
