@@ -26,3 +26,39 @@ export const ObservationCommitSchema = {
     },
     required: ["issue_kind", "confidence", "observations"]
 };
+
+export const VapEvaluationSchema = {
+    type: "object",
+    properties: {
+        circuit_name: {
+            type: "string",
+            description: "Name of the circuit to evaluate (without extension)."
+        },
+        blob_id: {
+            type: "string",
+            description: "The MinIO blob ID of the circuit code artifact."
+        },
+        iteration_id: {
+            type: "string",
+            description: "Optional iteration ID for context."
+        }
+    },
+    required: ["circuit_name", "blob_id"]
+};
+
+export const VapDecisionSchema = {
+    type: "object",
+    properties: {
+        task_id: {
+            type: "string",
+            description: "The unique task ID for the evaluation session."
+        },
+        decision: {
+            type: "string",
+            enum: ["ACCEPT", "REJECT"],
+            description: "The final decision on whether to commit the circuit changes."
+        }
+    },
+    required: ["task_id", "decision"]
+};
+

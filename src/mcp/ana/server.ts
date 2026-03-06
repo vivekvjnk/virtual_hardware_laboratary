@@ -5,10 +5,34 @@ import {
     CallToolRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { ObservationCommitSchema } from "./tools/schemas.js";
+import { ObservationCommitSchema, VapEvaluationSchema, VapDecisionSchema } from "./tools/schemas.js";
 import { commitObservation } from "./tools/commitObservation.js";
+import { evaluateCircuit, applyVapDecision } from "./tools/vapTools.js";
 import { commitManager } from "./commitManager.js";
 import express from "express";
+
+const OBSERVE_TOOLS = [
+    {
+        name: "commit_observation",
+        description: "Commit an observation found during analysis. An observation can be about an issue or a confirmation of correctness.",
+        inputSchema: ObservationCommitSchema,
+    }
+];
+
+const VAP_TOOLS = [
+    {
+        name: "evaluate_circuit",
+        description: "Trigger VAP evaluation for a circuit code artifact. Waits for completion and returns evaluation results.",
+        inputSchema: VapEvaluationSchema,
+    },
+    {
+        name: "apply_vap_decision",
+        description: "Apply a decision (ACCEPT/REJECT) on a previously evaluated circuit task. ACCEPT commits the changes to the main workspace.",
+        inputSchema: VapDecisionSchema,
+    }
+];
+
+const ALL_TOOLS = [...OBSERVE_TOOLS, ...VAP_TOOLS];
 
 /**
  * Helper: always return structured JSON for OpenHands
@@ -51,16 +75,8 @@ export function createAnaServer(): Server {
      * Tool inventory
      */
     server.setRequestHandler(ListToolsRequestSchema, async () => {
-        const tools = [
-            {
-                name: "commit_observation",
-                description: "Commit an observation found during analysis. An observation can be about an issue or a confirmation of correctness.",
-                inputSchema: ObservationCommitSchema,
-            },
-        ];
-
         return {
-            tools: tools,
+            tools: ALL_TOOLS,
         };
     });
 
@@ -73,6 +89,16 @@ export function createAnaServer(): Server {
         switch (name) {
             case "commit_observation": {
                 const result = await commitObservation(args as any);
+                return jsonResult(result);
+            }
+
+            case "evaluate_circuit": {
+                const result = await evaluateCircuit(args as any);
+                return jsonResult(result);
+            }
+
+            case "apply_vap_decision": {
+                const result = await applyVapDecision(args as any);
                 return jsonResult(result);
             }
 
@@ -107,14 +133,11 @@ export async function runAnaServer() {
 
         // Legacy tool listing via REST
         app.get("/mcp/:scope_endpoint/tools", (req, res) => {
-            const scope = `/mcp/${req.params.scope_endpoint}`;
-            if (scope === "/mcp/observe") {
-                res.json([{
-                    name: "commit_observation",
-                    schema: ObservationCommitSchema,
-                    target_channel: "OBSERVATION_MESSAGE",
-                    visibility_scope: "/mcp/observe"
-                }]);
+            const scope = req.params.scope_endpoint;
+            if (scope === "observe") {
+                res.json(OBSERVE_TOOLS.map(t => ({ ...t, schema: t.inputSchema, target_channel: "OBSERVATION_MESSAGE", visibility_scope: "/mcp/observe" })));
+            } else if (scope === "vap") {
+                res.json(VAP_TOOLS.map(t => ({ ...t, schema: t.inputSchema, visibility_scope: "/mcp/vap" })));
             } else {
                 res.json([]);
             }
@@ -155,7 +178,43 @@ export async function runAnaServer() {
         // Hybrid endpoint support (path-based scoping if needed)
         app.post("/mcp/:scope_endpoint", (req, res) => {
             const message = req.body;
+            const scope = req.params.scope_endpoint;
+
             if (message.jsonrpc === "2.0") {
+                // Scoping logic for standard MCP
+                if (message.method === "tools/list") {
+                    let tools = ALL_TOOLS;
+                    if (scope === "observe") {
+                        tools = OBSERVE_TOOLS;
+                    } else if (scope === "vap") {
+                        tools = VAP_TOOLS;
+                    }
+                    console.log(`[ANA MCP] Scoped tools/list for ${scope}: returning ${tools.length} tools`);
+                    return res.json({
+                        jsonrpc: "2.0",
+                        id: message.id,
+                        result: { tools }
+                    });
+                }
+
+                if (message.method === "tools/call") {
+                    const toolName = message.params.name;
+                    if (scope === "observe" && toolName !== "commit_observation") {
+                        return res.status(400).json({
+                            jsonrpc: "2.0",
+                            id: message.id,
+                            error: { code: -32601, message: `Tool '${toolName}' is not visible in endpoint '/mcp/observe'.` }
+                        });
+                    }
+                    if (scope === "vap" && (toolName !== "evaluate_circuit" && toolName !== "apply_vap_decision")) {
+                        return res.status(400).json({
+                            jsonrpc: "2.0",
+                            id: message.id,
+                            error: { code: -32601, message: `Tool '${toolName}' is not visible in endpoint '/mcp/vap'.` }
+                        });
+                    }
+                }
+
                 if (message.id !== undefined && message.id !== null) {
                     pendingRequests.set(message.id, res);
                 } else {
@@ -166,10 +225,10 @@ export async function runAnaServer() {
                 }
             } else if (message.tool_name) {
                 // Legacy CommitRequest support
-                const scope = `/mcp/${req.params.scope_endpoint}`;
+                const fullScope = `/mcp/${scope}`;
                 if (message.tool_name === "commit_observation") {
-                    if (scope !== "/mcp/observe") {
-                        res.status(400).send({ error: `Tool '${message.tool_name}' is not visible in endpoint '${scope}'.` });
+                    if (fullScope !== "/mcp/observe") {
+                        res.status(400).send({ error: `Tool '${message.tool_name}' is not visible in endpoint '${fullScope}'.` });
                         return;
                     }
                     const payload = message.payload || { ...message };
