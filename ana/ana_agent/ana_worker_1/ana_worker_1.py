@@ -14,7 +14,7 @@ from openhands.sdk import (
 from openhands.sdk.context import (Skill)
 from openhands.sdk.security.llm_analyzer import LLMSecurityAnalyzer
 from openhands.sdk.tool import Tool
-# from openhands.tools.file_editor import FileEditorTool
+from openhands.tools.file_editor import FileEditorTool
 from openhands.tools.gemini import GEMINI_FILE_TOOLS
 from openhands.tools.terminal import TerminalTool
 
@@ -55,7 +55,8 @@ logger.info(f"[ANA-W1] ANA-W1: Submodule root directory: {submodule_root}")
 # Configure Tools
 tools = [
     Tool(name=TerminalTool.name),
-    *GEMINI_FILE_TOOLS,
+    Tool(name=FileEditorTool.name),
+    # *GEMINI_FILE_TOOLS,
 ]
 
 

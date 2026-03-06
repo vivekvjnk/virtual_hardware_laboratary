@@ -11,7 +11,7 @@ from openhands.sdk import (
     LLMSummarizingCondenser,
 )
 from openhands.sdk.tool import Tool
-# from openhands.tools.file_editor import FileEditorTool
+from openhands.tools.file_editor import FileEditorTool
 from openhands.tools.gemini import GEMINI_FILE_TOOLS
 from openhands.tools.terminal import TerminalTool
 
@@ -117,8 +117,9 @@ class ObserverAgent:
         
         # Configure tools for the agent
         tools = [
-            *GEMINI_FILE_TOOLS,  # For reading artifacts
+            # *GEMINI_FILE_TOOLS,  # For reading artifacts
             Tool(name=TerminalTool.name),    # For executing terminal commands
+            Tool(name=FileEditorTool.name),
         ]
         
         # Create agent with the appropriate system prompt

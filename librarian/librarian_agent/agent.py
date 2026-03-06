@@ -44,7 +44,7 @@ class LibrarianAgent:
 
     def _setup_agent(self) -> Agent:
         tools = [
-            Tool(name=FileEditorTool.name),
+            # Tool(name=FileEditorTool.name),
             *GEMINI_FILE_TOOLS
             # Terminal tool might be useful for debugging or file ops, but FileEditor is primary
             # Tool(name=TerminalTool.name), 
