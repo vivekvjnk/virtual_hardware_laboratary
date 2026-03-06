@@ -12,6 +12,7 @@ from vhl_protocol.sync.client import SyncClient
 
 import uuid
 import base64
+from ana_agent.state_machine.mcp_manager import MCPManager
 from ana_agent.state_machine import ANADStateMachine
 from workspace.manager import WorkspaceManager
 from archy_agent.main import orchestrate_archy, _archy_build_scud_stub
@@ -44,6 +45,7 @@ class AOSM:
         self._main_loop_task: Optional[asyncio.Task] = None
         self.project_id: Optional[str] = None
         self.sync_client = SyncClient(self.web_socket_client, self.workspace_manager)
+        self.mcp_manager = MCPManager(endpoint="http://localhost:8081")
         self.agent_state = {
             "archy": AgentStatus.IDLE,
             "librarian": AgentStatus.IDLE,
@@ -66,6 +68,9 @@ class AOSM:
         logger.info("[AOSM.start] Starting AOSM...")
         self.web_socket_client.add_subscriber(self._handle_ws_event)
         await self.web_socket_client.start()
+        # Verify MCP server is running (it's managed by VHL Runtime)
+        if self.mcp_manager:
+            await asyncio.to_thread(self.mcp_manager.ensure_server_running)
         self._main_loop_task = asyncio.create_task(self._main_loop())
         await self.broadcast_agent_state()
 
@@ -464,7 +469,20 @@ class AOSM:
     
     async def _wait_and_transition(self, event, task_id, decision):
                 # This runs independently of the main loop
-                await self.web_socket_client.emit_evaluation_update(task_id=task_id, decision=decision)
+                if self.mcp_manager:
+                    logger.info(f"[AOSM._wait_and_transition] Applying VAP decision via MCP: {decision} for task {task_id}")
+                    try:
+                        await asyncio.to_thread(
+                            self.mcp_manager.call_tool,
+                            "apply_vap_decision",
+                            {"task_id": task_id, "decision": decision}
+                        )
+                    except Exception as e:
+                        logger.error(f"[AOSM._wait_and_transition] Failed to apply VAP decision via MCP: {e}")
+                        # Fallback to websocket if MCP fails
+                        await self.web_socket_client.emit_evaluation_update(task_id=task_id, decision=decision)
+                else:
+                    await self.web_socket_client.emit_evaluation_update(task_id=task_id, decision=decision)
                 try:
                     await self.web_socket_client.wait_for_event(
                         EventType.DEV_SERVER_READY,

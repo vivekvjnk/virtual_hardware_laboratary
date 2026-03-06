@@ -268,8 +268,7 @@ class WorkspaceManager:
             raise RuntimeError("Project root not set")
         if not self.circuit_name:
             raise RuntimeError("Circuit name not set")
-        return self.project_root / "Stable" / f"{self.circuit_name}.tsx"
-
+        return self.project_root / "Stable" / f"{self.circuit_name}.tsx"    
     def get_scud_path(self) -> Path:
         """Finds and returns the .scud file path in the current iteration."""
         if not self.current_iteration_path:

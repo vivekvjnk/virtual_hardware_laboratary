@@ -85,11 +85,43 @@ class MCPManager:
                             if latest_commit["commit_id"] > self.last_commit_id:
                                 self.last_commit_id = latest_commit["commit_id"]
                                 return latest_commit
-                
                 time.sleep(2)
             except Exception as e:
                 logger.debug(f"[MCPManager.poll_for_observation] Polling error: {e}")
                 time.sleep(2)
+        
+    def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """Calls an MCP tool on the server via HTTP."""
+        url = f"{self.mcp_endpoint}/mcp"
+        logger.info(f"[MCPManager.call_tool] Calling tool '{tool_name}' at {url}...")
+        
+        # Use JSON-RPC 2.0 format as supported by the Node.js MCP server
+        payload = {
+            "jsonrpc": "2.0",
+            "method": "tools/call",
+            "params": {
+                "name": tool_name,
+                "arguments": arguments
+            },
+            "id": int(time.time() * 1000)
+        }
+        
+        try:
+            with httpx.Client() as client:
+                # VAP can take minutes, so we set a long timeout
+                response = client.post(url, json=payload, timeout=310.0)
+                if response.status_code == 200:
+                    result = response.json()
+                    if "error" in result:
+                        error_data = result["error"]
+                        error_msg = error_data.get("message", str(error_data))
+                        raise RuntimeError(f"MCP Tool Error '{tool_name}': {error_msg}")
+                    return result.get("result", {})
+                else:
+                    raise RuntimeError(f"Failed to call MCP tool '{tool_name}': Status {response.status_code}, {response.text}")
+        except Exception as e:
+            logger.error(f"[MCPManager.call_tool] Error calling MCP tool '{tool_name}': {e}")
+            raise
 
     def cleanup(self):
         """Cleanup handler. No process to kill anymore as it's managed externally."""

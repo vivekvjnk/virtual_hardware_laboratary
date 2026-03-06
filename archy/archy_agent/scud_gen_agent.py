@@ -13,7 +13,8 @@ from openhands.sdk import (
     get_logger,
 )
 from openhands.sdk.tool.spec import Tool
-from openhands.tools.file_editor import FileEditorTool
+# from openhands.tools.file_editor import FileEditorTool
+from openhands.tools.gemini import GEMINI_FILE_TOOLS
 # from openhands.sdk.conversation.event_filter_config import EventFilterConfig
 
 from openhands.sdk import get_logger
@@ -63,7 +64,8 @@ def archy_build_scud(
         # condenser=condenser,
         system_prompt_filename=sys_prompt_path,
         tools=[
-            Tool(name=FileEditorTool.name),
+            # Tool(name=FileEditorTool.name),
+            *GEMINI_FILE_TOOLS
         ],
     )
     persistence_dir = "./.conversations"
