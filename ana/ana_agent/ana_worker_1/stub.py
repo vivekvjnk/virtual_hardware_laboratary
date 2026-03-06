@@ -1,6 +1,5 @@
 import shutil
 import logging
-import os
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -26,7 +25,7 @@ def run_ana_w1_stub(workspace: str, circuit_name: str, **kwargs):
         logger.info("No previous iteration dir found")
     else:
         # First iteration. Feed circuit with error
-        source_path = Path("tests/Mocks/test_project_no_error.tsx")
+        source_path = Path("tests/Mocks/bms_main_board.tsx")
         logger.info(f"Found previous iteration dir: {prev_dir}")
 
 

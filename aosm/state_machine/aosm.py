@@ -45,7 +45,8 @@ class AOSM:
         self._main_loop_task: Optional[asyncio.Task] = None
         self.project_id: Optional[str] = None
         self.sync_client = SyncClient(self.web_socket_client, self.workspace_manager)
-        self.mcp_manager = MCPManager(endpoint="http://localhost:8081")
+        # self.mcp_manager = MCPManager(endpoint="http://localhost:8081")
+        self.mcp_manager = None
         self.agent_state = {
             "archy": AgentStatus.IDLE,
             "librarian": AgentStatus.IDLE,
@@ -651,7 +652,22 @@ class AOSM:
             if os.environ.get("STUBS") == "true":
                 logger.info("[AOSM._run_librarian] Running Librarian in STUB mode")
                 self.update_agent_status("librarian", AgentStatus.RUNNING)
-                await asyncio.to_thread(process_scud_stub, str(scud_path), instructions=instructions)
+                
+                # Stub mode: Load deterministic component list from JSON
+                components = None
+                try:
+                    mock_json_path =  Path("tests" / "Mock" / "components.json")
+                    if mock_json_path.exists():
+                        import json
+                        with open(mock_json_path, "r") as f:
+                            components = json.load(f)
+                            logger.info(f"[AOSM._run_librarian] Stub mode: Loaded components from {mock_json_path}: {components}")
+                    else:
+                        logger.warning(f"[AOSM._run_librarian] Mock JSON not found at: {mock_json_path}")
+                except Exception as e:
+                    logger.warning(f"[AOSM._run_librarian] Failed to load mock components: {e}")
+
+                await asyncio.to_thread(process_scud_stub, str(scud_path), components=components, instructions=instructions)
                 self.update_agent_status("librarian", AgentStatus.IDLE)
             else:
                 # LibrarianAgent defaults to http://localhost:8080/mcp

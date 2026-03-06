@@ -56,92 +56,74 @@ def parse_scud_components(scud_content: str) -> List[Dict[str, str]]:
             
     return components
 
-def resolve_component_stub(part_number: str, mcp_url: str) -> Optional[Dict]:
+def resolve_component_stub(part_number: str, mcp_url: str) -> str:
     """
-    Stub for the 3-step resolve_component process.
+    Deterministically resolves a component using the run_terminal_command pattern.
+    Mimics search, multi-key navigation (stubbed), null-input validation, and enter.
     """
     logger.info(f"[resolve_component_stub] Resolving: {part_number}")
     
-    try:
-        start_res = call_mcp_function(mcp_url, "resolve_component_start", {"component_name": part_number})
-        if not start_res:
-            return None
-        start_data = json.loads(start_res)
-        task_id = start_data.get("task_id")
-        if not task_id:
-            return None
-    except Exception as e:
-        logger.error(f"[LibrarianStub] resolve_component_start error: {e}")
-        return None
+    # 1. Search
+    search_cmd = f"tsci search {part_number}"
+    logger.info(f"[LibrarianStub] Executing: {search_cmd}")
+    call_mcp_function(mcp_url, "run_terminal_command", {"command": search_cmd})
 
-    max_retries = 30
-    for i in range(max_retries):
-        try:
-            status_res = call_mcp_function(mcp_url, "resolve_component_status", {"task_id": task_id})
-            if not status_res:
-                 continue
-            status_data = json.loads(status_res)
-            state = status_data.get("state")
-            
-            if state == "finished":
-                return status_data
-            elif state == "failed":
-                return None
-            elif state == "selection_required":
-                selection = status_data.get("selection", {})
-                selection_id = selection.get("selection_id")
-                options = selection.get("options", [])
-                if options:
-                    selected = options[0]
-                    call_mcp_function(mcp_url, "resolve_component_select", {
-                        "task_id": task_id,
-                        "selection_id": selection_id,
-                        "selected_option": selected
-                    })
-            time.sleep(1)
-        except Exception as e:
-            logger.error(f"[resolve_component_stub] resolve_component_status error: {e}")
-            time.sleep(1)
-            
-    return None
+    # 2. Import (Simulated interactive flow)
+    import_cmd = f"tsci import {part_number}"
+    logger.info(f"[LibrarianStub] Executing: {import_cmd}")
+    call_mcp_function(mcp_url, "run_terminal_command", {"command": import_cmd})
 
-def process_scud_stub(scud_path: str, mcp_url: str = "http://localhost:8080/mcp", instructions: str = None):
+    # 2.1. Simulate state validation (Null input)
+    logger.info("[LibrarianStub] Validating terminal state via null input...")
+    call_mcp_function(mcp_url, "run_terminal_command", {"command": "", "is_input": True})
+
+    # 2.2. Confirm selection (ENTER)
+    logger.info("[LibrarianStub] Confirming selection with ENTER")
+    res = call_mcp_function(mcp_url, "run_terminal_command", {"command": "ENTER", "is_input": True})
+    
+    return "imported (JLCPCB)" if part_number in res.text else "imported (registry)"
+
+def process_scud_stub(scud_path: str, mcp_url: str = "http://localhost:8082/sse", components: List[str] = None, instructions: str = None):
     """
     Stub for LibrarianAgent.process_scud.
+    Uses a deterministic list of components instead of parsing SCUD.
     """
     logger.info(f"[process_scud_stub] STUB MODE: Processing SCUD: {scud_path}")
     if not os.path.exists(scud_path):
+        logger.error(f"[process_scud_stub] SCUD path does not exist: {scud_path}")
         return
 
+    if components is None:
+        components = ["BQ79616", "ISO7342", "MMBT3904LT1G", "BZX84C24", "NCP18XH103F03RB"]
+    
     with open(scud_path, 'r') as f:
         scud_content = f.read()
 
-    components = ["BQ79616","ISO7342","MMBT3904LT1G","BZX84C24","NCP18XH103F03RB"]
     mappings = []
     
-    # Also list local components first to mimic the agent behavior
-    try:
-        call_mcp_function(mcp_url, "list_local_components")
-    except:
-        pass
-
     for comp in components:
         clean_pn = comp.replace("-", "_").replace(" ", "_")
-        res = resolve_component_stub(clean_pn, mcp_url)
-        if res:
-            source = res.get("source", "global")
-            location = res.get("location", comp)
-            mappings.append(f"- ({comp}) -> {source} ({location})")
-        else:
-            mappings.append(f"- ({comp}) -> FAILED")
+        try:
+            source = resolve_component_stub(clean_pn, mcp_url)
+            mappings.append(f"| {comp} | {comp} | {source} |")
+        except Exception as e:
+            logger.error(f"[process_scud_stub] Failed to resolve {comp}: {e}")
+            mappings.append(f"| {comp} | | missing |")
 
-    mapping_section = "\n# Library Mapping\n\n" + "\n".join(mappings) + "\n"
+    mapping_section = "\n### Library Mapping\n\n"
+    mapping_section += "| Component Name | Imported Component Name | Status |\n"
+    mapping_section += "|---|---|---|\n"
+    mapping_section += "\n".join(mappings) + "\n"
     
-    if "# Library Mapping" in scud_content:
-        new_content = re.sub(r'# Library Mapping\s*\n.*?(?=\n#|$)', mapping_section, scud_content, flags=re.DOTALL)
+    # Append or replace Library Mapping section
+    if "### Library Mapping" in scud_content:
+        new_content = re.sub(r'### Library Mapping\s*\n.*?(?=\n#|$)', mapping_section, scud_content, flags=re.DOTALL)
+    elif "## Library Mapping" in scud_content:
+         new_content = re.sub(r'## Library Mapping\s*\n.*?(?=\n#|$)', mapping_section, scud_content, flags=re.DOTALL)
     else:
-        if "# Connectivity & Signal Flow" in scud_content:
-            new_content = scud_content.replace("# Connectivity & Signal Flow", mapping_section + "\n# Connectivity & Signal Flow")
+        # Append after Components Inventory
+        if "## Components Inventory" in scud_content:
+            new_content = scud_content.replace("## Components Inventory", "## Components Inventory\n" + mapping_section)
         else:
             new_content = scud_content.rstrip() + "\n\n" + mapping_section
             
