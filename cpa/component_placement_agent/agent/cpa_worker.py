@@ -17,7 +17,7 @@ from openhands.sdk.security.llm_analyzer import LLMSecurityAnalyzer
 from openhands.sdk.tool import Tool
 from openhands.tools.file_editor import FileEditorTool
 from openhands.tools.terminal import TerminalTool
-from openhands.sdk.mcp import create_mcp_tools
+from openhands.tools.gemini import GEMINI_FILE_TOOLS
 
 from pathlib import Path
 
@@ -104,11 +104,11 @@ def run_cpa_agent(workspace: str, circuit_name: str, scud_path: str, previous_it
     mcp_config = {
         "mcpServers": {
             "snapshot_tool": {
-                "transport": "sse",
-                "url": "http://localhost:8083/sse"
+                "transport": "http",
+                "url": "http://localhost:8083/mcp"
             },
             "vap_eval_tool": {
-                "transport": "sse",
+                "transport": "http",
                 "url": "http://localhost:8081/mcp/vap"
             }
         }
@@ -117,6 +117,7 @@ def run_cpa_agent(workspace: str, circuit_name: str, scud_path: str, previous_it
     tools = [
         Tool(name=TerminalTool.name),
         Tool(name=FileEditorTool.name),
+        *GEMINI_FILE_TOOLS,
     ]
     
     # Prepare User Prompt
@@ -143,7 +144,7 @@ def run_cpa_agent(workspace: str, circuit_name: str, scud_path: str, previous_it
     user_message += (
         f"\n\n**NOTE**: All modifications should apply to '{circuit_name}.tsx' in your workspace."
         f"\nMake sure to run evaluation and verify the snapshot output."
-    )
+        )
     
     logger.info(f"[run_cpa_agent] Final user message:\n{user_message}")
     
