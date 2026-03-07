@@ -18,6 +18,7 @@ from workspace.manager import WorkspaceManager
 from archy_agent.main import orchestrate_archy, _archy_build_scud_stub
 from librarian_agent.agent import LibrarianAgent
 from librarian_agent.stub import process_scud_stub
+from component_placement_agent.state_machine.cpa_sm import CPASm
 
 logger = logging.getLogger(__name__)
 
@@ -45,8 +46,8 @@ class AOSM:
         self._main_loop_task: Optional[asyncio.Task] = None
         self.project_id: Optional[str] = None
         self.sync_client = SyncClient(self.web_socket_client, self.workspace_manager)
-        # self.mcp_manager = MCPManager(endpoint="http://localhost:8081")
-        self.mcp_manager = None
+        self.mcp_manager = MCPManager(endpoint="http://localhost:8081/mcp/vap")
+        # self.mcp_manager = None
         self.agent_state = {
             "archy": AgentStatus.IDLE,
             "librarian": AgentStatus.IDLE,

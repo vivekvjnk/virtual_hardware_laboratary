@@ -17,6 +17,7 @@ dependencies = [
     "aosm",
     "archy",
     "librarian",
+    "cpa",
 ]
 
 [tool.uv.workspace]
@@ -31,6 +32,7 @@ members = [
     "archy",
     "archy/sam3_repo",
     "librarian",
+    "cpa",
 ]
 
 [tool.uv.sources]
@@ -44,3 +46,4 @@ aosm = { workspace = true }
 archy = { workspace = true }
 sam3 = { workspace = true }
 librarian = { workspace = true }
+cpa = { workspace = true }
