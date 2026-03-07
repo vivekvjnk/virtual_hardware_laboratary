@@ -6,6 +6,7 @@ import json
 import sys
 from typing import Optional, Dict, Any, List
 import uuid
+from pathlib import Path
 
 from ana_agent.observer import ObserverAgent, ObserverMode
 from ana_agent.observer.stub import run_observer_stub
@@ -57,7 +58,7 @@ class ANADStateMachine:
             
 
         # Managers
-        self.mcp_manager = MCPManager(endpoint="http://localhost:8081")
+        self.mcp_manager = MCPManager(endpoint="http://localhost:8081/mcp/vap")
 
         # Initial Message
         self.current_message: Dict[str, Any] = {
@@ -350,10 +351,10 @@ class ANADStateMachine:
         result_msg["auto_fix_count"] = auto_fix_count
         
         try:
-            scud_path = self.workspace_manager.get_scud_path()
-            library_path = self.workspace_manager.get_library_path()
+            scud_path:Path = self.workspace_manager.get_scud_path()
+            library_path:Path = self.workspace_manager.get_library_path()
 
-            current_iter_dir = self.workspace_manager.current_iteration_path
+            current_iter_dir:Path = self.workspace_manager.current_iteration_path
             schematic_images_path = os.path.join(current_iter_dir, "schematic_images")
             observations = result_msg.get("observations", [])
 
@@ -405,9 +406,15 @@ class ANADStateMachine:
             
             if not os.path.exists(self.workspace_manager.get_circuit_tsx_path()):
                 logger.error(f"[ANADStateMachine._handle_trigger_w1] ANA-W1 did not produce circuit file")
-                result_msg["hil_wait_packet"] = {"reason":"ANA_ERROR", "message": "ANA-W1 did not produce circuit file"}
-                result_msg["proposed_next_state"] = State.PREPARE_HIL
-                return result_msg
+                # Check if any circuit file(ending with .tsx) is present in the current iteration directory
+                circuit_paths = current_iter_dir.glob("*.tsx")
+                if circuit_paths:
+                    logger.warning(f"[ANADStateMachine._handle_trigger_w1] Renaming agent given circuit name {circuit_paths[0]} to {self.workspace_manager.get_circuit_tsx_path()}")
+                    shutil.move(circuit_paths[0],str(self.workspace_manager.get_circuit_tsx_path()))
+                else:
+                    result_msg["hil_wait_packet"] = {"reason":"ANA_ERROR", "message": "ANA-W1 did not produce circuit file"}
+                    result_msg["proposed_next_state"] = State.PREPARE_HIL
+                    return result_msg
             # Now clear the observation list. ana_w1 successfully consumed observations
             result_msg["observations"] = []
             return result_msg

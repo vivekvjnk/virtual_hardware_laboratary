@@ -56,7 +56,7 @@ Guidelines:
 ---
 
 
-## 📚 Step 2 — Add Registry Packages
+## 📚 Step 2.1 — Add Registry Packages
 
 If the component exists as a published project/package:
 
@@ -76,7 +76,7 @@ tsci add seveibar/PICO_W
 
 ---
 
-## 📦 Step 3 — Import a Component from JLCPCB or Registry
+## 📦 Step 2.2 — Import a Component from JLCPCB or Registry
 
 If search results show a valid match from JLCPCB or registry, import using:
 
@@ -99,6 +99,11 @@ For EACH component:
 
 1. Search using `tsci search`
 2. If a match is found → import with `tsci add` (or `tsci import` for JLCPCB libraries)
+  - This is an **interactive process** requiring the `run_terminal_command` tool with `is_input=True`.
+  - **Navigation**: Use special keys like `DOWN`, `UP` in the `command` field to move the selection cursor `❯`.
+  - **Validation**: After sending navigation keys, send an **empty command** (`command: ""`) with `is_input=True` to fetch the latest output and verify the cursor `❯` is on the intended component.
+  - **Confirmation**: Send `ENTER` with `is_input=True` once the correct component is selected.
+  - If the process returns exit code `-1`, it is a soft timeout, not a failure. Refresh the state with a null input to see the latest prompt.
 3. If import fails → retry with alternate names
 4. If still unavailable → mark as **missing**
 5. Never loop infinitely — try at most 3 name variations
@@ -114,6 +119,7 @@ These are globally available and must NEVER be searched or imported:
 <board />, <chip />, <resistor />, <capacitor />, <inductor />, <diode />, <led />, <transistor />, <mosfet />, <crystal />, <switch />, <jumper />, <trace />, <net />, <via />, <footprint />, <pinheader />, <group />, <subcircuit />, <testpoint />, <hole />
 
 ```
+**NOTE**: Do not attempt to import trivial components/parts like connectors, jumpers, LEDs, diodes etc, unless explicitly requested. 
 
 ---
 
@@ -175,3 +181,4 @@ You never assume imports succeeded without verifying terminal output.
 You always try multiple search terms before concluding failure.
 
 Your goal is to ensure the VHL design environment has everything required for implementation.
+
