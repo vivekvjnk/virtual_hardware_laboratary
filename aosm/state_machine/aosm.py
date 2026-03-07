@@ -135,6 +135,14 @@ class AOSM:
             await self._handle_close_project(event)
             return
 
+        if event.type == EventType.TRIGGER_CPA_AGENT:
+            if self.state == AOSMState.IDLE:
+                logger.info(f"👉 [AOSM] Handling TRIGGER_CPA_AGENT in IDLE")
+                await self.transition_to(AOSMState.TRIGGER_CPA, "Direct user trigger for CPA")
+                return
+            else:
+                logger.warning(f"⚠️ [AOSM] TRIGGER_CPA_AGENT received but AOSM is in {self.state} (not IDLE)")
+
         # Dispatch to handler based on current state and event
         handler_name = f"_handle_{self.state.name.lower()}"
         handler = getattr(self, handler_name, None)
@@ -297,6 +305,9 @@ class AOSM:
             await self.transition_to(AOSMState.BOOTSTRAP_PIPELINE, "New schematic uploaded", payload=event.payload)
         elif event.type == EventType.HUMAN_INPUT:
             await self.transition_to(AOSMState.INTENT_CLASSIFY, "User message received", payload=event.payload)
+        
+        elif event.type == EventType.TRIGGER_CPA_AGENT:
+             await self.transition_to(AOSMState.TRIGGER_CPA, "User triggered CPA")
         
         elif event.type == EventType.SYNTHESIZE_CIRCUIT:
             info = self.workspace_manager.get_workspace_info()
@@ -576,6 +587,49 @@ class AOSM:
                         "scud_content": scud_content
                     }
                 ))
+
+    async def _handle_trigger_cpa(self, event: BaseEvent):
+        logger.info(f"[AOSM._handle_trigger_cpa] In TRIGGER_CPA state...")
+        if event.type == EventType.STATE_TRANSITION:
+            logger.info(f"[AOSM._handle_trigger_cpa] Triggering CPA State Machine.")
+            
+            project_id = self.project_id
+            circuit_id = self.current_message.get("circuit_id") or (self.project_root_info.get("circuit_name") if self.project_root_info else None)
+            
+            if not circuit_id:
+                logger.error("[AOSM._handle_trigger_cpa] No circuit_id found. Cannot trigger CPA.")
+                await self.transition_to(AOSMState.IDLE, "CPA trigger failed: No circuit ID")
+                return
+
+            cpa_sm = CPASm(
+                workspace_manager=self.workspace_manager,
+                circuit_name=circuit_id,
+                web_socket_client=self.web_socket_client,
+                sync_client=self.sync_client,
+                project_id=project_id,
+                parent_notify=self._parent_notify
+            )
+            
+            # Update status to running
+            # self.update_agent_status("ana", AgentStatus.RUNNING) # Maybe use a 'cpa' status?
+            # For now AOSM status is RUNNING
+            
+            asyncio.create_task(cpa_sm.run())
+            await self.transition_to(AOSMState.WAIT_FOR_CPA, "CPA-SM started")
+
+    async def _handle_wait_for_cpa(self, event: BaseEvent):
+        logger.info(f"[AOSM._handle_wait_for_cpa] In WAIT_FOR_CPA state...")
+        if event.type == EventType.ANA_NOTIFY: # CPASm uses the same notification pattern
+            logger.info(f"[AOSM._handle_wait_for_cpa] Notification from CPA: {event.payload}")
+            
+            reason = event.payload.get("reason")
+            if reason == "EXIT":
+                decision = event.payload.get("decision", "REJECT")
+                # For CPA, if it's SUCCESS, we might want to PRESENT_RESULT
+                # If it's ERROR, we might want to IDLE or ERROR_PRESENTED
+                await self.transition_to(AOSMState.PRESENT_RESULT, payload=event.payload)
+            elif reason == "ERROR":
+                 await self.transition_to(AOSMState.ERROR_PRESENTED, payload=event.payload)
 
     # --- High-level Orchestration Logic ---
 

@@ -18,7 +18,8 @@ class CPASm:
                  circuit_name: str,
                  web_socket_client: Optional[VHLWebSocketClient] = None,
                  sync_client: Optional[SyncClient] = None,
-                 project_id: Optional[str] = None):
+                 project_id: Optional[str] = None,
+                 parent_notify: Optional[callable] = None):
         logger.info(f"[CPASm.__init__] Initializing CPA State Machine for circuit: {circuit_name}")
         
         self.state = CPAState.INIT
@@ -27,6 +28,7 @@ class CPASm:
         self.web_socket_client = web_socket_client
         self.sync_client = sync_client
         self.project_id = project_id
+        self.parent_notify = parent_notify
         
         self.current_message: Dict[str, Any] = {
             "state_id": CPAState.INIT,
@@ -205,4 +207,14 @@ class CPASm:
         """Runs the state machine until completion."""
         while not self.is_terminal():
             await self.step()
+        
+        if self.parent_notify:
+            payload = {
+                "reason": "EXIT",
+                "decision": self.current_message.get("last_decision", "REJECT"),
+                "iteration_dir": self.current_message.get("iteration_dir"),
+                "error": self.current_message.get("error")
+            }
+            await self.parent_notify(payload)
+            
         logger.info("[CPASm.run] CPA State Machine finished.")
