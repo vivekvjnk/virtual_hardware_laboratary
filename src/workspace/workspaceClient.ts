@@ -27,6 +27,7 @@ export class WorkspaceClient implements WorkspaceSender {
     private currentCircuitName: string | null = null;
     private syncManager: SyncManager;
     private isSynthesizable: boolean = false;
+    private isSynthesisCompleted: boolean = false;
     private devServerLock: Promise<void> = Promise.resolve();
     private currentEntryFile: string | null = null;
     private projectState: {
@@ -159,6 +160,7 @@ export class WorkspaceClient implements WorkspaceSender {
                 this.currentProjectId = project_id;
                 this.currentProjectName = project_id;
                 this.isSynthesizable = !!workspace_info?.is_synthesizable;
+                this.isSynthesisCompleted = !!workspace_info?.is_synthesis_completed;
                 this.currentCircuitName = workspace_info?.current_circuit_name || null;
 
                 this.updateProjectState({ backend_status: "initialized", runtime_status: "initializing" });
@@ -240,6 +242,7 @@ export class WorkspaceClient implements WorkspaceSender {
                     this.currentProjectName = null;
                     this.currentCircuitName = null;
                     this.isSynthesizable = false;
+                    this.isSynthesisCompleted = false;
                 }
 
                 // Construct URL
@@ -290,6 +293,7 @@ export class WorkspaceClient implements WorkspaceSender {
                         project_dir: this.projectDir,
                         workspace_info: {
                             is_synthesizable: this.isSynthesizable,
+                            is_synthesis_completed: this.isSynthesisCompleted,
                             current_circuit_name: this.currentCircuitName
                         }
                     }
@@ -352,6 +356,7 @@ export class WorkspaceClient implements WorkspaceSender {
         this.currentProjectName = null;
         this.currentCircuitName = null;
         this.isSynthesizable = false;
+        this.isSynthesisCompleted = false;
         this.activeVapContext = null;
 
         this.updateProjectState({

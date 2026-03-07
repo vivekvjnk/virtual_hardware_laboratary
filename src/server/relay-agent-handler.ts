@@ -60,7 +60,7 @@ export class RelayAgentHandler implements AgentHandler {
             } else {
                 send({ type: "ERROR", payload: { message: "No agent client connected", scope: "vhl_workspace", severity: "error" } } as any)
             }
-        } else if (this.role === "agent") {
+        } else if ((this.role === "agent") || (this.role === "vap_mcp_agent")) {
             // Agent (Backend) -> UI (Runtime) or Workspace Client
             if (msg.type == "PROJECT_CREATED" || msg.type == "PROJECT_LOADED") {
                 // Send message to uiclient and workspace client
