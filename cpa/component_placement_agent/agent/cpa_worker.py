@@ -89,15 +89,15 @@ def run_cpa_agent(workspace: str, circuit_name: str, scud_path: str, previous_it
                 trigger=None,
             ))
             
-    math_utils_skill_path = os.path.join(submodule_root, "skills/math-utils.md")
-    if os.path.exists(math_utils_skill_path):
-        with open(math_utils_skill_path, "r") as f:
-            skills.append(Skill(
-                name="math-utils.md",
-                content=f.read(),
-                source=None,
-                trigger=None,
-            ))
+    # math_utils_skill_path = os.path.join(submodule_root, "skills/math-utils.md")
+    # if os.path.exists(math_utils_skill_path):
+    #     with open(math_utils_skill_path, "r") as f:
+    #         skills.append(Skill(
+    #             name="math-utils.md",
+    #             content=f.read(),
+    #             source=None,
+    #             trigger=None,
+    #         ))
     
     # Configure MCP Tools
     # Needs two servers: UI Snapshot Tool and VAP Evaluation tool
@@ -117,7 +117,7 @@ def run_cpa_agent(workspace: str, circuit_name: str, scud_path: str, previous_it
     tools = [
         Tool(name=TerminalTool.name),
         Tool(name=FileEditorTool.name),
-        *GEMINI_FILE_TOOLS,
+        # *GEMINI_FILE_TOOLS,
     ]
     
     # Prepare User Prompt
