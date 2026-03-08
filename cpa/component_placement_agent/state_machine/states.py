@@ -2,8 +2,8 @@ from enum import Enum, auto
 
 class CPAState(Enum):
     INIT = auto()
-    EXECUTE = auto()
-    VERIFY = auto()
+    TRIGGER_SYNTHESISER = auto()
+    TRIGGER_VALIDATOR = auto()
     FINALIZE = auto()
     EXIT_SUCCESS = auto()
     EXIT_ERROR = auto()
