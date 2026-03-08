@@ -80,6 +80,10 @@ class CPASm:
         # Determine next state
         next_state = result_message.get("proposed_next_state", self.transition_table.get(self.state, self.state))
         
+        # If proposed next state is consumed from result_message, remove it to avoid confusion in next handler
+        if "proposed_next_state" in result_message:
+            del result_message["proposed_next_state"]
+        
         # Update state
         self.state = next_state
         self.current_message = result_message
@@ -95,7 +99,8 @@ class CPASm:
         is_stable_present = self.workspace_manager.get_circuit_path_from_stable().is_file()
         
         # Setup __snapshots__ directory
-        project_dir = self.workspace_manager.get_project_dir()
+        workspace_info = self.workspace_manager.get_workspace_info()
+        project_dir = Path(workspace_info.get("project_root_path"))
         if hasattr(project_dir, 'is_dir'):
             project_dir = Path(str(project_dir))
             
@@ -118,7 +123,8 @@ class CPASm:
                 "get_layout_snapshot",
                 {}
             )
-            
+            logger.info(f"[CPASm._handle_init] Collected snapshots from MCP. Processing and saving to {snapshots_dir}..."
+                        f" Schematic tool call response: {schematic_res}, Layout tool call response: {layout_res}")
             # Assuming the tool returns a dictionary with 'svg' or 'content' field
             # If it's a direct string, adjust accordingly. 
             # Given standard MCP tool call returns, we check common fields.
@@ -129,22 +135,43 @@ class CPASm:
                     return
                 
                 content = None
-                if isinstance(res, str):
-                    content = res
-                elif isinstance(res, dict):
-                    content = res.get("svg") or res.get("content") or res.get("data")
-                    # Fallback: if there's only one key and it contains SVG, use it
+                if isinstance(res, dict):
+                    # Handle the specific MCP Response structure: {'content': [{'type': 'text', 'text': '{"content": "..."}'}]}
+                    mcp_content_list = res.get("content", [])
+                    if isinstance(mcp_content_list, list):
+                        for item in mcp_content_list:
+                            if isinstance(item, dict) and item.get("type") == "text":
+                                text_data = item.get("text")
+                                try:
+                                    parsed_json = json.loads(text_data)
+                                    content = parsed_json.get("content")
+                                    if content:
+                                        break
+                                except (json.JSONDecodeError, TypeError):
+                                    continue
+
+                    # Fallback to legacy structure if new structure parsing failed
+                    if not content:
+                        content = res.get("svg") or res.get("content") or res.get("data")
+                        # Ensure we don't accidentally use the list as the 'content' string
+                        if isinstance(content, list):
+                            content = None
+
+                    # Final fallback: if there's only one key and it contains SVG, use it
                     if not content and len(res) == 1:
                         val = next(iter(res.values()))
                         if isinstance(val, str) and "<svg" in val:
                             content = val
+                
+                if isinstance(res, str):
+                    content = res
                 
                 if content:
                     with open(snapshots_dir / filename, "w") as f:
                         f.write(content)
                     logger.info(f"[CPASm._handle_init] Saved snapshot to {filename}")
                 else:
-                    logger.error(f"[CPASm._handle_init] Could not extract SVG content from MCP response for {filename}: {res}")
+                    logger.error(f"[CPASm._handle_init] Could not extract SVG content from MCP response for {filename}. Response: {res}")
 
             save_snapshot(schematic_res, "schematic.svg")
             save_snapshot(layout_res, "layout.svg")
