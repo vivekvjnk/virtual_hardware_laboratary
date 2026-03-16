@@ -1,6 +1,6 @@
 import os
 import json
-from typing import List, Optional
+from typing import Optional
 from pydantic import SecretStr
 from openhands.sdk import (
     LLM,
@@ -17,7 +17,15 @@ from openhands.sdk.security.llm_analyzer import LLMSecurityAnalyzer
 from openhands.sdk.tool import Tool
 from openhands.tools.file_editor import FileEditorTool
 from openhands.tools.terminal import TerminalTool
-from openhands.tools.gemini import GEMINI_FILE_TOOLS
+from openhands.sdk.tool import register_tool
+
+from openhands.tools.preset.planning import get_planning_agent
+
+from openhands.tools.delegate import (
+    DelegateTool,
+    DelegationVisualizer,
+    register_agent,
+)
 
 from pathlib import Path
 
@@ -33,11 +41,17 @@ if not api_key:
 model = os.getenv("LLM_MODEL", "anthropic/claude-sonnet-4-5-20250929")
 base_url = os.getenv("LLM_BASE_URL")
 
+cpa_conversations  = "./.cpa_conversations"
+cpa_planner = cpa_conversations + "/cpa_planner"
+cpa_orchestrator = cpa_conversations + "/cpa_orchestrator"
+# cpa_worker = cpa_conversations + "/cpa_worker"
+
 llm = LLM(
     usage_id="cpa_agent",
     model=model,
     base_url=base_url,
     api_key=SecretStr(api_key),
+    reasoning_effort="low"
 )
 
 llm_condenser = LLM(
@@ -45,7 +59,11 @@ llm_condenser = LLM(
     model=model,
     base_url=base_url,
     api_key=SecretStr(api_key),
+    reasoning_effort="high"
 )
+
+register_tool("DelegateTool", DelegateTool)
+
 
 # Configure paths
 cwd = os.getcwd()
@@ -54,7 +72,7 @@ logger.info(f"[CPA] CPA: Current working directory: {cwd}")
 logger.info(f"[CPA] CPA: Submodule root directory: {submodule_root}")
 
 
-condenser = LLMSummarizingCondenser(llm=llm_condenser, max_size=70, keep_first=8)
+condenser = LLMSummarizingCondenser(llm=llm_condenser, max_size=120, keep_first=8)
 
 # Conversation Callback
 llm_messages = []
@@ -64,21 +82,36 @@ def conversation_callback(event: Event):
 
 logger.info("[CPA] CPA: Agent script initialized.")
 
-def run_cpa_agent(workspace: str, circuit_name: str, scud_path: str, previous_iteration_dir: Optional[str] = None):
-    """
-    Run the Component Placement Agent (CPA) on a circuit workspace.
-    
-    Args:
-        workspace: Path to the current project workspace loop.
-        circuit_name: Name of the circuit (e.g., 'circuit' for 'circuit.tsx').
-        scud_path: Path to the SCUD requirement document.
-        previous_iteration_dir: Optional path to the previous iteration (Error correction mode).
-    """
-    logger.info(f"[run_cpa_agent] Starting CPA conversation in workspace: {workspace}")
-    
+
+
+
+
+
+def cpa_planner_agent(llm: LLM) -> Agent:
+    """Agent that analyzes the schematic and creates a placement plan."""
+    return Agent(
+        llm=llm,
+        tools=[Tool(name=FileEditorTool.name)],
+        system_prompt_filename=os.path.join(submodule_root, "cpa_planner_prompt.j2"),
+    )
+
+
+def cpa_orchestrator_agent(llm: LLM) -> Agent:
+    """Agent that reads the plan and delegates tasks to the worker."""
+    return Agent(
+        llm=llm,
+        tools=[
+            Tool(name=FileEditorTool.name),
+            Tool(name="DelegateTool"),
+        ],
+        system_prompt_filename=os.path.join(submodule_root, "cpa_orchestrator_prompt.j2"),
+    )
+
+
+def cpa_worker_agent(llm: LLM) -> Agent:
+    """Worker agent that implements specific placement improvements."""
     # Load Skills
     skills = []
-    
     schematic_skill_path = os.path.join(submodule_root, "skills/schematic_component_placement.md")
     if os.path.exists(schematic_skill_path):
         with open(schematic_skill_path, "r") as f:
@@ -89,94 +122,118 @@ def run_cpa_agent(workspace: str, circuit_name: str, scud_path: str, previous_it
                 trigger=None,
             ))
             
-    # math_utils_skill_path = os.path.join(submodule_root, "skills/math-utils.md")
-    # if os.path.exists(math_utils_skill_path):
-    #     with open(math_utils_skill_path, "r") as f:
-    #         skills.append(Skill(
-    #             name="math-utils.md",
-    #             content=f.read(),
-    #             source=None,
-    #             trigger=None,
-    #         ))
-    
-    # Configure MCP Tools
-    # No MCP tools needed for synthesis phase
-    # Core Tools
-    tools = [
-        Tool(name=TerminalTool.name),
-        Tool(name=FileEditorTool.name),
-        # *GEMINI_FILE_TOOLS,
-    ]
-    
-    # Prepare User Prompt
-    sys_prompt_file_path = os.path.join(submodule_root, "cpa_prompt.j2")
-    user_message = ""
-    
-    if not previous_iteration_dir:
-        logger.info(f"[run_cpa_agent] First iteration. Entering synthesis mode.")
-        user_message = (
-            f"Please synthesize the physical component placement for '{circuit_name}.tsx'.\n"
-            f"Read the SCUD file located at '{scud_path}' to understand logical grouping.\n"
-            f"Adhere to schematic placement rules."
-        )
-    else:
-        logger.info(f"[run_cpa_agent] Error correction mode (Prev Iteration: {previous_iteration_dir}).")
-        user_message = (
-            f"There are evaluation validation errors present for '{circuit_name}.tsx'.\n"
-            f"Please review the previous evaluation results in '{previous_iteration_dir}/eval_results' "
-            f"and correct the schematic placement.\n"
-            f"You may read SCUD document at '{scud_path}'."
-        )
-
-    # Note about execution
-    user_message += (
-        f"\n\n**NOTE**: All modifications should apply to '{circuit_name}.tsx' in your workspace."
-        )
-    
-    logger.info(f"[run_cpa_agent] Final user message:\n{user_message}")
-    
-    agent_context = AgentContext(skills=skills)
-    
-    # Initialize Agent
-    agent = Agent(
+    return Agent(
         llm=llm,
-        tools=tools,
-        system_prompt_filename=sys_prompt_file_path,
-        condenser=condenser,
-        agent_context=agent_context,
+        tools=[
+            Tool(name=TerminalTool.name),
+            Tool(name=FileEditorTool.name),
+        ],
+        # system_prompt_filename=os.path.join(submodule_root, "cpa_worker_prompt.j2"),
+        agent_context=AgentContext(
+            skills=skills,
+            system_message_suffix="Focus on schematic component placement for hardware design.",
+        ),
+    )
+
+
+# Register agents
+register_agent(
+    name="cpa_planner_agent",
+    factory_func=cpa_planner_agent,
+    description="Analyzes schematic and creates a placement plan.",
+)
+register_agent(
+    name="cpa_orchestrator_agent",
+    factory_func=cpa_orchestrator_agent,
+    description="Coordinates placement tasks based on a plan.",
+)
+register_agent(
+    name="cpa_worker_agent",
+    factory_func=cpa_worker_agent,
+    description="Implements specific placement improvements in the code.",
+)
+
+
+def run_cpa_agent(workspace: str, circuit_name: str, scud_path: str, previous_iteration_dir: Optional[str] = None):
+    """
+    Run the multi-agent CPA system:
+    1. Planner analyzes and creates a plan.
+    2. Orchestrator executes the plan by delegating to the Worker.
+    """
+    logger.info(f"[run_cpa_agent] Starting Multi-Agent CPA in workspace: {workspace}")
+    
+    # 1. Start Planner Agent
+    logger.info("[run_cpa_agent] Stage 1: Running Planner")
+    planner = cpa_planner_agent(llm)
+    planner_message = (
+        f"Generate a schematic placement improvement plan for '{circuit_name}.tsx'.\n"
+        f"Schematic: {workspace}/__snapshots__/schematic.svg\n"
+        f"SCUD: {scud_path}\n"
+        f"Save the plan to 'cpa_plan.json'."
     )
     
-    # Initialize Conversation
-    conversation = Conversation(
-        agent=agent,
+    planner_conv = Conversation(
+        agent=planner,
         callbacks=[conversation_callback],
         workspace=workspace,
+        persistence_dir=cpa_planner,
     )
-    conversation.set_security_analyzer(LLMSecurityAnalyzer())
+    planner_conv.send_message(planner_message)
+    planner_conv.run()
     
-    # Run
-    conversation.send_message(user_message)
-    conversation.run()
+    # 2. Start Orchestrator Agent
+    logger.info("[run_cpa_agent] Stage 2: Running Orchestrator")
+    orchestrator = cpa_orchestrator_agent(llm)
+    orchestrator_message = (
+        f"Execute the placement plan for '{circuit_name}.tsx' by reading 'cpa_plan.json' "
+        f"and delegating steps to 'cpa_worker_agent'."
+    )
     
-    # After conversation finishes, extract the final result produced by the agent.
-    logger.info("[CPA] Conversation finished. Extracting final result...")
+    orchestrator_conv = Conversation(
+        agent=orchestrator,
+        callbacks=[conversation_callback],
+        workspace=workspace,
+        visualizer=DelegationVisualizer(name="Orchestrator"),
+        persistence_dir=cpa_orchestrator,
+    )
+    orchestrator_conv.send_message(orchestrator_message)
+    orchestrator_conv.run()
     
+    # Final Result
+    logger.info("[CPA] Multi-agent flow finished.")
     result_path = Path(workspace) / "cpa_result.json"
-    
-    # Dummy success allows orchestrator to continue to validation phase
     final_result = {
         "decision": "ACCEPT",
-        "message": "Agent finished synthesis phase."
+        "message": "Multi-agent CPA completed planning and implementation."
     }
     with open(result_path, "w") as f:
         json.dump(final_result, f, indent=2)
     
-    logger.info(f"[CPA] Final Outcome: {final_result.get('decision')}")
-    
     print("=" * 100)
-    print("CPA Agent Conversation finished.")
+    print("Multi-Agent CPA Conversation finished.")
+
+def run_cpa_worker_agent(workspace:str):
+    """
+    Run only the CPA Worker agent for testing and development.
+    This allows us to focus on the worker's implementation without running the full multi-agent flow.
+    """
+    logger.info(f"[run_cpa_worker_agent] Starting CPA Worker Agent in workspace: {workspace}")
+    
+    worker = cpa_worker_agent(llm)
+    worker_message = (
+        "circuit_name: 'bms_board_448b1e6b_eval_board_15d92.tsx', action: 'GROUPING', target_group: 'bms_controller_u1', components: ['U1', 'C2', 'C3', 'C5', 'C6', 'C7', 'C8', 'C9', 'C59'], position: {'schX': 0, 'schY': 0}"
+    )
+    
+    worker_conv = Conversation(
+        agent=worker,
+        callbacks=[conversation_callback],
+        workspace=workspace,
+        persistence_dir=os.path.join(cpa_conversations, "cpa_worker"),
+    )
+    worker_conv.send_message(worker_message)
+    worker_conv.run()
 
 if __name__ == "__main__":
-    test_workspace = os.path.join(cwd, "cpa_test_workspace")
+    test_workspace = os.path.join(cwd, "vhl_workspace/bms_board_448b1e6b/Iterations/tmp")
     test_scud = os.path.join(cwd, "test.scud")
-    run_cpa_agent(test_workspace, "test_circuit", test_scud)
+    run_cpa_worker_agent(test_workspace)

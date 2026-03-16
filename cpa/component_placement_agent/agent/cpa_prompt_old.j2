@@ -49,7 +49,6 @@ All nets must remain **unchanged**.
 
 Only **placement and grouping** may change.
 
-Strictly **DO NOT** modify any <trace /> elements in the source code. DO not even try to move them.
 ---
 
 # PLACEMENT PRINCIPLES
@@ -77,10 +76,35 @@ Examples:
 • communication interfaces
 • sensor subsystems
 
+### Proximity
+
+Electrically coupled components must be placed close together.
+
+Examples:
+
+• IC + decoupling capacitors
+• MCU + oscillator
+• op-amp + feedback network
+• MOSFET + gate driver
+
+### Symmetry
+
+Mirror symmetric circuit structures.
+
+Examples:
+
+• differential circuits
+• half bridges
+• H-bridges
+
 ### Pin Orientation
 
 Inputs face signal sources.
 Outputs face signal destinations.
+
+### Wire Crossing
+
+Minimize wire crossings.
 
 ### Domain Separation
 
@@ -94,6 +118,10 @@ Visually separate:
 
 Align components along a consistent grid.
 
+### Hierarchy
+
+Major subsystems must be visually separable.
+
 ---
 
 # GROUP PLACEMENT STRATEGY
@@ -102,7 +130,7 @@ Prefer **group-level placement** over individual component positioning.
 
 Rules:
 
-1. Components belonging to the same subsystem may be placed inside the same `<group />`.
+1. Components belonging to the same subsystem should be placed inside the same `<group />`.
 
 2. Groups are positioned using:
 
@@ -120,7 +148,7 @@ Rules:
 
 5. Avoid excessive grouping.
 
-Groups may represent **meaningful subsystems**, not individual components.
+Groups should represent **meaningful subsystems**, not individual components.
 
 ---
 
@@ -226,6 +254,6 @@ If violated: revert changes and attempt a different placement strategy.
 • Focus only on schematic placement and organization.
 • Use the file editor for atomic and precise modifications.
 • Do not attempt to run evaluations or call snapshot tools; these are handled by the system.
-• Do not attempt to modify any `<trace />` elements in the source code. These are automatically generated and should not be manually edited or moved.
 • Your final action should be to ensure the `{circuit_name}.tsx` file reflects the improved placement.
+
 CPA must produce **professional-quality schematic placement**.
