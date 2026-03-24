@@ -6,11 +6,15 @@ from pydantic import SecretStr
 from openhands.sdk import (
     LLM,
     Agent,
-    LLMSummarizingCondenser,
     Conversation,
+    Event,
+    get_logger,
+    LargeFileSurgicalCondenser,
+    LLMSummarizingCondenser,
+    PipelineCondenser,
+    Tool,
     Message,
     TextContent,
-    get_logger,
 )
 from openhands.sdk.tool.spec import Tool
 from openhands.tools.file_editor import FileEditorTool
@@ -58,10 +62,22 @@ def archy_build_scud(
         model=model,
         api_key=SecretStr(os.getenv("LLM_API_KEY")),
     )
-    
+    surgical_condenser = LargeFileSurgicalCondenser(
+        threshold_bytes=10240, # 1KB
+        target_tool="file_editor"
+    )
+    pipeline = PipelineCondenser(condensers=[
+        surgical_condenser,
+        # Standard summarizer for general windowing after 50 events
+        LLMSummarizingCondenser(
+            llm=llm.model_copy(update={"usage_id": "condenser"}),
+            max_size=50
+        )
+    ])
+
     agent = Agent(
         llm=llm,
-        # condenser=condenser,
+        condenser=pipeline,
         system_prompt_filename=sys_prompt_path,
         tools=[
             Tool(name=FileEditorTool.name),
