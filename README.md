@@ -20,4 +20,3 @@ Select JSON as the key type.
 Click Create. The JSON file will automatically download to your computer. 
 Google Cloud Documentation
 Google Cloud Documentation
- +7

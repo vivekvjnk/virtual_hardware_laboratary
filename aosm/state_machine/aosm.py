@@ -46,7 +46,8 @@ class AOSM:
         self._main_loop_task: Optional[asyncio.Task] = None
         self.project_id: Optional[str] = None
         self.sync_client = SyncClient(self.web_socket_client, self.workspace_manager)
-        self.mcp_manager = MCPManager(endpoint="http://localhost:8081/mcp/vap")
+        mcp_endpoint = os.getenv("MCP_ENDPOINT", "http://localhost:8081/mcp/vap")
+        self.mcp_manager = MCPManager(endpoint=mcp_endpoint)
         # self.mcp_manager = None
         self.agent_state = {
             "archy": AgentStatus.IDLE,
@@ -58,7 +59,7 @@ class AOSM:
         # Minio configuration (should ideally be from env)
         self.s3_client = boto3.client(
             's3',
-            endpoint_url=os.getenv("MINIO_ENDPOINT", "http://localhost:9000"),
+            endpoint_url=os.getenv("MINIO_ENDPOINT_URL", os.getenv("MINIO_ENDPOINT", "http://localhost:9000")),
             aws_access_key_id=os.getenv("MINIO_ACCESS_KEY", "minioadmin"),
             aws_secret_access_key=os.getenv("MINIO_SECRET_KEY", "supersecretpassword"),
             config=boto3.session.Config(signature_version='s3v4')
@@ -779,7 +780,8 @@ def main():
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(funcName)s - %(levelname)s - %(message)s'
     )
-    aosm = AOSM()
+    ws_url = os.getenv("VHL_WS_URL", "ws://localhost:1080")
+    aosm = AOSM(ws_url=ws_url)
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:

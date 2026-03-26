@@ -6,19 +6,26 @@ services:
     restart: always
     env_file: .env
     environment:
-      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-http://localhost:9000}
-      - VHL_WS_URL=${VHL_WS_URL:-ws://localhost:1080}
-      - MCP_ENDPOINT=${MCP_ENDPOINT:-http://localhost:8081/mcp/vap}
+      - MINIO_ENDPOINT_URL=${MINIO_ENDPOINT_URL:-http://host.docker.internal:9000}
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-http://host.docker.internal:9000}
+      - VHL_WS_URL=${VHL_WS_URL:-ws://host.docker.internal:1080}
+      - MCP_ENDPOINT=${MCP_ENDPOINT:-http://host.docker.internal:8081/mcp/vap}
+
+      - GOOGLE_APPLICATION_CREDENTIALS=/root/.config/gcloud/application_default_credentials.json
+      - GOOGLE_CLOUD_PROJECT=virtual-hardware-laboratary
+      - VERTEXAI_PROJECT=virtual-hardware-laboratary
+      - VERTEXAI_LOCATION=us-central1
+      
+      - GEMINI_2_5_FLASH=vertex_ai/gemini-2.5-flash
+      - LLM_MODEL=vertex_ai/gemini-2.5-flash
+      - LLM_REVIEW_MODEL=vertex_ai/gemini-3-flash-preview
+      - LLM_API_KEY=abc
     volumes:
       - vhl_data:/app/vhl_workspace
       - ./logs:/app/logs
-    ports:
-      - "8000:8000"
-      - "9000:9000"
-      - "1080:1080"
-      - "8081:8081"
-    # For cloud deployment, ensure networking is configured appropriately
-    # e.g., using a reverse proxy or service mesh.
+      - ~/.config/gcloud:/root/.config/gcloud:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
 volumes:
-  vhl_data:
+  vhl_data:  

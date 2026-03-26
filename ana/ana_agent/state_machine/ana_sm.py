@@ -58,7 +58,8 @@ class ANADStateMachine:
             
 
         # Managers
-        self.mcp_manager = MCPManager(endpoint="http://localhost:8081/mcp/vap")
+        mcp_endpoint = os.getenv("MCP_ENDPOINT", "http://localhost:8081/mcp/vap")
+        self.mcp_manager = MCPManager(endpoint=mcp_endpoint)
 
         # Initial Message
         self.current_message: Dict[str, Any] = {
