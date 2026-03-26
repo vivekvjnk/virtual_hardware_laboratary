@@ -1,51 +1,47 @@
 [project]
 name = "virtual-hardware-laboratary"
 version = "0.1.0"
-description = "Add your description here"
+description = "Hardware laboratory for AI agents "
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "boto3>=1.42.21",
     "google-cloud-aiplatform>=1.38",
-    "fastapi==0.110.0",
     "openhands-sdk",
     "openhands-tools",
     "python-dotenv>=1.2.1",
     "ana",
-    "ana-mcp-server",
     "vhl-protocol",
     "vhl-workspace",
     "aosm",
     "archy",
     "librarian",
-    "cpa",
+    "litellm",
 ]
 
 [tool.uv.workspace]
 members = [
-    "agent-sdk/openhands-sdk",
-    "agent-sdk/openhands-tools",
-    "ana-mcp-server",
     "ana",
     "vhl_protocol",
     "workspace",
     "aosm",
     "archy",
-    "archy/sam3_repo",
     "librarian",
-    "cpa",
 ]
 
 [tool.uv.sources]
-openhands-sdk = { workspace = true }
-openhands-tools = { workspace = true }
-ana-mcp-server = { workspace = true }
+litellm = { git = "https://github.com/vivekvjnk/litellm.git", branch = "fix/vertex-gemini-multimodal-drop" }
+openhands-sdk = { git = "https://github.com/vivekvjnk/agent-sdk.git", branch = "main", subdirectory = "openhands-sdk" }
+openhands-tools = { git = "https://github.com/vivekvjnk/agent-sdk.git", branch = "main", subdirectory = "openhands-tools" }
+
 ana = { workspace = true }
 vhl-protocol = { workspace = true }
 vhl-workspace = { workspace = true }
 aosm = { workspace = true }
 archy = { workspace = true }
-sam3 = { workspace = true }
 librarian = { workspace = true }
-cpa = { workspace = true }
-litellm = { path = "../litellm", editable = true }
+
+[tool.uv]
+override-dependencies = [
+    "litellm @ git+https://github.com/vivekvjnk/litellm.git@fix/vertex-gemini-multimodal-drop"
+]

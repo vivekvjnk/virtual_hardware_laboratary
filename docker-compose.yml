@@ -1,0 +1,24 @@
+services:
+  vhl-backend:
+    build: .
+    image: vhl-backend:latest
+    container_name: vhl-backend
+    restart: always
+    env_file: .env
+    environment:
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-http://localhost:9000}
+      - VHL_WS_URL=${VHL_WS_URL:-ws://localhost:1080}
+      - MCP_ENDPOINT=${MCP_ENDPOINT:-http://localhost:8081/mcp/vap}
+    volumes:
+      - vhl_data:/app/vhl_workspace
+      - ./logs:/app/logs
+    ports:
+      - "8000:8000"
+      - "9000:9000"
+      - "1080:1080"
+      - "8081:8081"
+    # For cloud deployment, ensure networking is configured appropriately
+    # e.g., using a reverse proxy or service mesh.
+
+volumes:
+  vhl_data:

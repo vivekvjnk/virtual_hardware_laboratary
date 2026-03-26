@@ -18,8 +18,6 @@ from openhands.sdk import (
 )
 from openhands.sdk.tool.spec import Tool
 from openhands.tools.file_editor import FileEditorTool
-# from openhands.tools.gemini import GEMINI_FILE_TOOLS
-# from openhands.sdk.conversation.event_filter_config import EventFilterConfig
 
 from openhands.sdk import get_logger
 

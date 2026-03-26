@@ -6,12 +6,7 @@ dependencies = [
     "pydantic",
     "mcp",
     "httpx",
-    "torch",
-    "matplotlib",
-    "numpy",
-    "pillow",
     "setuptools",
-    "sam3",
 ]
 
 [build-system]
@@ -26,6 +21,3 @@ build-backend = "setuptools.build_meta"
 where = ["."]
 include = ["archy_agent*"]
 
-
-[tool.uv.sources]
-sam3 = { workspace = true }

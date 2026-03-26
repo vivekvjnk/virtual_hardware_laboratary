@@ -1,8 +1,0 @@
-[submodule "agent-sdk"]
-	path = agent-sdk
-	url = git@github.com:vivekvjnk/agent-sdk.git
-[submodule "archy/sam3_repo"]
-	path = archy/sam3_repo
-	url = git@github.com:vivekvjnk/sam3.git
-[submodule "archy/sam3_repo/subrepo"]
-	branch = fix_pkg_resource

@@ -4,7 +4,6 @@ import logging
 from pathlib import Path
 from typing import Union
 from PIL import Image, ImageEnhance, ImageOps, ImageDraw
-from archy_agent.image_to_schematic.image_to_segments import run_schematic_segmentation_pipeline
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
