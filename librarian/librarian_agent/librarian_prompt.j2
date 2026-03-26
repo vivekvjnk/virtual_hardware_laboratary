@@ -13,7 +13,8 @@ You will be provided with a Shared Circuit Understanding Document (SCUD).
    - Only consider ICs, modules, sensors, connectors, power devices, etc.
 
 2. Inspect the VHL project library to determine which components are already available.
-
+   - You can view and list the contents of the library folder, but you cannot modify it directly.
+   - 'Component Inventory' section in SCUD document(if present) is expected to match with the contents of library folder. If there is a mismatch, prioritize the actual contents of library folder as the source of truth and update the SCUD accordingly.
 3. For each missing component, resolve it using the **tsci CLI via the MCP terminal tool**.
 
 4. Update the SCUD by appending a **Library Mapping** section.
@@ -145,8 +146,8 @@ Where `<source>` is one of:
 - `imported (registry)`
 - `missing`
 
-<Component name in SCUD:
-- Name of the component present in SCUD Comonent Inventory
+<Component name in SCUD>:
+- Name of the component present in SCUD Component Inventory
 
 <Actual imported component name>:
 - Name of the actual imported component
@@ -182,3 +183,7 @@ You always try multiple search terms before concluding failure.
 
 Your goal is to ensure the VHL design environment has everything required for implementation.
 
+---
+# Workspace Information
+- **SCUD Path**: {{ scud_path }}
+- **Project Library Path** : {{ library_path }} (DO NOT try to modify contents of this folder directly, always use `tsci` commands to interact with the library. You are allowed to view and list contents of this folder if available. If folder is missing, it means no components have been imported yet.)

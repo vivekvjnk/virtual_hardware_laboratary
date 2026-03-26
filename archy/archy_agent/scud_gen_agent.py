@@ -23,7 +23,6 @@ from openhands.tools.file_editor import FileEditorTool
 
 from openhands.sdk import get_logger
 
-
 logger = get_logger(__name__)
 
 api_key = os.getenv("LLM_API_KEY")
@@ -71,7 +70,7 @@ def archy_build_scud(
         # Standard summarizer for general windowing after 50 events
         LLMSummarizingCondenser(
             llm=llm.model_copy(update={"usage_id": "condenser"}),
-            max_size=50
+            max_size=80
         )
     ])
 
@@ -93,13 +92,19 @@ def archy_build_scud(
 
     # Use the provided image_path or default to original
     final_image_path = image_path if image_path else workspace / "UserArtefacts" / f"{image_id}.png"
-
+    # image_segment_paths = os.listdir(workspace / "schematic_images" / image_id)
+    image_segment_paths = str(workspace / "schematic_images" / image_id)
+    # image_segments_string = "\n".join([str(Path(workspace / "schematic_images" / image_id / path)) for path in image_segment_paths])
     user_msg = (
         f"The original schematic image is located in '{final_image_path}'.\n"
-        f"Segmented schematic images are available under '{workspace}/schematic_images/{image_id}/'.\n"
-        f"Please construct the SCUD file and save it as '{workspace}/{image_id}.scud'.\n"
+        f"Following set of segmented crops are available in the given path\n"
+        f"'{image_segment_paths}'\n"
+        f"Refer these focused crops to clarify details in the original image and incrementally build the SCUD document.\n"
+        f"Once viewed images will be automatically condensed in the conversation history to preserve context window space. You can always refer back to the original and cropped images in the given paths if needed.\n You can use the condensed observations as reference to make sure if you have viewed the images properly and extracted the relevant details from them before making inferences."
         f"Use the FileEditorTool to read the image files."
-        f"NOTE: While incrementally constructing the SCUD document, use file_editor tool with short string replacements. Do not attempt to rewrite the entire document with each change, as this will lead to token overflow issues. Instead, identify specific sections to update and only modify those parts using the tool."
+        f"Please construct the SCUD file and save it as '{workspace}/{image_id}.scud'.\n"
+        f"NOTE: While incrementally constructing the SCUD document, use file_editor tool with short string replacements. Do not attempt to rewrite the entire document with each change, as this will lead to token overflow issues. Instead, identify specific sections to update and only modify those parts using the tool.\n"
+        f"Always use absolute paths with FileEditorTool."
     )
     
 

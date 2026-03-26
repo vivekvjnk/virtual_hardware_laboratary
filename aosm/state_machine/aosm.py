@@ -18,7 +18,7 @@ from workspace.manager import WorkspaceManager
 from archy_agent.main import orchestrate_archy, _archy_build_scud_stub
 from librarian_agent.agent import LibrarianAgent
 from librarian_agent.stub import process_scud_stub
-from component_placement_agent.state_machine.cpa_sm import CPASm
+# from component_placement_agent.state_machine.cpa_sm import CPASm
 
 logger = logging.getLogger(__name__)
 
@@ -601,20 +601,20 @@ class AOSM:
                 await self.transition_to(AOSMState.IDLE, "CPA trigger failed: No circuit ID")
                 return
 
-            cpa_sm = CPASm(
-                workspace_manager=self.workspace_manager,
-                circuit_name=circuit_id,
-                web_socket_client=self.web_socket_client,
-                sync_client=self.sync_client,
-                project_id=project_id,
-                parent_notify=self._parent_notify
-            )
+            # cpa_sm = CPASm(
+            #     workspace_manager=self.workspace_manager,
+            #     circuit_name=circuit_id,
+            #     web_socket_client=self.web_socket_client,
+            #     sync_client=self.sync_client,
+            #     project_id=project_id,
+            #     parent_notify=self._parent_notify
+            # )
             
             # Update status to running
             # self.update_agent_status("ana", AgentStatus.RUNNING) # Maybe use a 'cpa' status?
             # For now AOSM status is RUNNING
-            
-            asyncio.create_task(cpa_sm.run())
+            logger.warning("[AOSM._handle_trigger_cpa] CPA is not implemented yet. This is a placeholder for where CPA would be triggered.")
+            # asyncio.create_task(cpa_sm.run())
             await self.transition_to(AOSMState.WAIT_FOR_CPA, "CPA-SM started")
 
     async def _handle_wait_for_cpa(self, event: BaseEvent):
@@ -726,7 +726,7 @@ class AOSM:
                 self.update_agent_status("librarian", AgentStatus.IDLE)
             else:
                 # LibrarianAgent defaults to http://localhost:8080/mcp
-                librarian = LibrarianAgent()
+                librarian = LibrarianAgent(working_dir=self.workspace_manager.project_root)
                 # process_scud involves network/LLM, run in thread
                 self.update_agent_status("librarian", AgentStatus.RUNNING)
                 await asyncio.to_thread(librarian.process_scud, str(scud_path), instructions=instructions)

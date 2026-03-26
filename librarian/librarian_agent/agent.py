@@ -12,8 +12,7 @@ from openhands.sdk import (
     get_logger,
 )
 from openhands.sdk.tool import Tool
-# from openhands.tools.file_editor import FileEditorTool
-from openhands.tools.gemini import GEMINI_FILE_TOOLS
+from openhands.tools.file_editor import FileEditorTool
 from openhands.tools.terminal import TerminalTool
 
 from pathlib import Path
@@ -21,10 +20,10 @@ from pathlib import Path
 logger = get_logger(__name__)
 
 class LibrarianAgent:
-    def __init__(self, mcp_url: str = "http://localhost:8082/sse"):
+    def __init__(self, mcp_url: str = "http://localhost:8082/sse",working_dir: str = None):
         self.mcp_url = mcp_url
+        self.working_dir = working_dir
         self.llm = self._setup_llm()
-        self.agent = self._setup_agent()
         self.llm_messages = []
 
     def _setup_llm(self,usage_id="librarian_agent") -> LLM:
@@ -42,12 +41,10 @@ class LibrarianAgent:
             api_key=SecretStr(api_key),
         )
 
-    def _setup_agent(self) -> Agent:
+    def _setup_agent(self,sys_prompt_kwargs=None) -> Agent:
         tools = [
-            # Tool(name=FileEditorTool.name),
-            *GEMINI_FILE_TOOLS
-            # Terminal tool might be useful for debugging or file ops, but FileEditor is primary
-            # Tool(name=TerminalTool.name), 
+            Tool(name=FileEditorTool.name),
+            Tool(name=TerminalTool.name), 
         ]
 
         mcp_config = {
@@ -58,7 +55,8 @@ class LibrarianAgent:
                 }
             }
         }
-        
+        logger.info(f"[LibrarianAgent._setup_agent] System prompt args: {sys_prompt_kwargs}")
+
         llm_condenser = self._setup_llm(usage_id="librarian_condenser")
         condenser = LLMSummarizingCondenser(llm=llm_condenser, max_size=80, keep_first=8)
     
@@ -71,6 +69,7 @@ class LibrarianAgent:
             mcp_config=mcp_config,
             system_prompt_filename = sys_prompt_path,
             condenser=condenser,
+            system_prompt_kwargs = sys_prompt_kwargs,
         )
 
     def _conversation_callback(self, event: Event):
@@ -84,28 +83,25 @@ class LibrarianAgent:
         if not os.path.exists(scud_path):
             raise FileNotFoundError(f"SCUD file not found at: {scud_path}")
 
-        cwd = os.getcwd()
-        
+        library_path = os.path.join(self.working_dir,"lib/imports/")
+        agent = self._setup_agent(sys_prompt_kwargs={"scud_path": scud_path, "library_path": library_path})
         conversation = Conversation(
-            agent=self.agent,
+            agent=agent,
             callbacks=[self._conversation_callback],
-            workspace=cwd,
+            workspace=self.working_dir,
         )
 
         logger.info(f"[LibrarianAgent.process_scud] Starting Librarian Agent for SCUD: {scud_path}")
         
-        # We send a message to kick off the process
-        # The system prompt already tells the agent what to do, but we need to point it to the file.
-        user_message = (
-            f"Please process the SCUD file located at '{scud_path}'. "
-            "Analyze the 'Components Inventory', check the VHL Library, "
-            "create missing components if necessary, and update the SCUD file "
-            "with a 'Library Mapping' section."
-        )
-
         if instructions:
-            user_message += f"\n\nAdditional instructions from the user: {instructions}"
-        
+            user_message = f"\n{instructions}"
+        else:
+            # We send a message to kick off the process
+            user_message = (
+                "Analyze the 'Components Inventory', check the VHL Library, "
+                "create missing components if necessary, and update the SCUD file "
+                "with a 'Library Mapping' section."
+            )
         conversation.send_message(user_message)
         conversation.run()
         
@@ -113,6 +109,6 @@ class LibrarianAgent:
 
 
 if __name__ == "__main__":
-    agent = LibrarianAgent()
-    scud_file_path = "vhl_workspace/bms_communication_852f986d/bms_communication_852f986d_BQ79600_eval_board_da255.scud"  # Update this path to your SCUD file
+    agent = LibrarianAgent(working_dir="/home/pst/Documents/VHL-V0.01/VHL_agent_backend/vhl_workspace/amc_board_74747893")
+    scud_file_path = "/home/pst/Documents/VHL-V0.01/VHL_agent_backend/vhl_workspace/amc_board_74747893/amc_board_74747893_amc1311_eval_2d43c.scud"  # Update this path to your SCUD file
     agent.process_scud(scud_file_path)
