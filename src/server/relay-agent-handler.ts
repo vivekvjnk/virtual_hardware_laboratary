@@ -72,6 +72,7 @@ export class RelayAgentHandler implements AgentHandler {
             else if (msg.type === "WORKSPACE_DOWNLOAD" || msg.type === "WORKSPACE_UPLOAD" ||
                 msg.type === "VAP_EXECUTE" || msg.type === "VAP_DECISION" || msg.type === "START_DEV_SERVER" ||
                 msg.type === "DOWNLOAD_REQUEST" || msg.type === "UPLOAD_REQUEST") {
+                    console.debug("[Websocket Relay] Relaying message from VHL_Agent_Backend to Workspace Client:", msg)
                 if (RelayAgentHandler.workspaceClient) {
                     RelayAgentHandler.workspaceClient(msg)
                 } else {

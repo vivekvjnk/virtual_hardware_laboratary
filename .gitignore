@@ -4,3 +4,9 @@ tests/*.js
 .db/
 docs/
 eval_results/
+workspace/index.tsx
+**__pycache__**
+incremental_log.log
+package.json
+vhl_det.log
+node_modules/*

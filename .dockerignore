@@ -1,0 +1,20 @@
+.git
+**/node_modules
+**/venv
+**/.venv
+**/__pycache__
+*.log
+.db
+docs
+eval_results
+.vscode
+.gitmodules
+*.test.js
+*.test.ts
+.env
+.DS_Store
+# Keep dist/runframe if it is needed for the build
+# But let pnpm build handle others
+# dist/
+# !dist/runframe
+
