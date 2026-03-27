@@ -7,7 +7,7 @@ import asyncio
 from typing import Dict, Any, Optional, Union
 
 from openhands.sdk import get_logger
-from ana_agent.ana_worker_2.utils.object_store import MinioObjectStore
+# from ana_agent.ana_worker_2.utils.object_store import MinioObjectStore
 from vhl_protocol.sync.client import SyncClient
 from vhl_protocol.client.client import VHLWebSocketClient
 
@@ -26,12 +26,12 @@ class ANA_validation_agent:
     3. Poll for evaluation status.
     4. Collect and extract evaluation results.
     """
-    def __init__(self, web_socket_client: VHLWebSocketClient, sync_client: Optional[SyncClient] = None, project_id: Optional[str] = None, minio_url: str = "http://127.0.0.1:9000", mcp_manager: Any = None):
+    def __init__(self, web_socket_client: VHLWebSocketClient, sync_client: Optional[SyncClient] = None, project_id: Optional[str] = None, minio_url: Optional[str] = None, mcp_manager: Any = None):
         self.web_socket_client = web_socket_client
         self.sync_client = sync_client
         self.project_id = project_id
         self.minio_url = minio_url
-        self.object_store = MinioObjectStore(endpoint_url=minio_url)
+        # self.object_store = MinioObjectStore(endpoint_url=minio_url) if minio_url else None
         self.mcp_manager = mcp_manager
 
     async def validate_circuit(self, circuit_name: str, workspace: str, iteration_id: str) -> Dict[str, Any]:

@@ -1,43 +1,24 @@
 import os
-import boto3
-from botocore.client import Config
-from typing import Dict, Optional
 import logging
+from typing import Dict, Optional, Union
+from vhl_protocol.utils.object_storage import get_storage_client
 
 logger = logging.getLogger(__name__)
 
 class MinioObjectStore:
-    def __init__(self, endpoint_url: str = "http://127.0.0.1:9000", 
-                 access_key: str = "minioadmin", 
-                 secret_key: str = "supersecretpassword", 
-                 bucket_name: str = "vhl"):
+    """
+    Bridge class that provides convenience methods for object storage
+    using the unified ObjectStorageClient.
+    """
+    def __init__(self, endpoint_url: Optional[str] = None):
         """
-        Initialize Minio Object Store client using S3 compatible API.
+        Initialize using the unified storage client.
+        endpoint_url is kept for backward compatibility but ignored if STORAGE_BACKEND is set.
         """
-        self.endpoint_url = endpoint_url
-        self.bucket_name = bucket_name
-        self.s3 = boto3.client(
-            's3',
-            endpoint_url=endpoint_url,
-            aws_access_key_id=access_key,
-            aws_secret_access_key=secret_key
-        )
-        self._ensure_bucket_exists()
-
-    def _ensure_bucket_exists(self):
-        """
-        Checks if the bucket exists, creates it if it doesn't.
-        """
-        try:
-            self.s3.head_bucket(Bucket=self.bucket_name)
-            logger.info(f"[MinioObjectStore._ensure_bucket_exists] Bucket '{self.bucket_name}' already exists.")
-        except Exception:
-            logger.info(f"[MinioObjectStore._ensure_bucket_exists] Bucket '{self.bucket_name}' does not exist. Creating...")
-            try:
-                self.s3.create_bucket(Bucket=self.bucket_name)
-            except Exception as e:
-                logger.error(f"[MinioObjectStore._ensure_bucket_exists] Failed to create bucket '{self.bucket_name}': {e}")
-                raise
+        self.storage_client = get_storage_client()
+        # Fallback for URL generation in MinIO
+        self.endpoint_url = endpoint_url or os.environ.get("MINIO_ENDPOINT_URL", "http://127.0.0.1:9000")
+        self.bucket_name = os.environ.get("MINIO_BUCKET", "vhl") if not os.environ.get("STORAGE_BACKEND") == "gcs" else os.environ.get("GCS_BUCKET_NAME", "vhl-storage")
 
     def upload_tsx_files(self, directory_path: str) -> Dict[str, str]:
         """
@@ -56,9 +37,9 @@ class MinioObjectStore:
                     continue
                 object_key = filename
                 try:
-                    self.s3.upload_file(file_path, self.bucket_name, object_key)
+                    self.storage_client.upload_file(file_path, object_key)
                     mapping[filename] = object_key
-                    logger.info(f"[MinioObjectStore.upload_tsx_files] Uploaded {filename} to {self.bucket_name}/{object_key}")
+                    logger.info(f"[MinioObjectStore.upload_tsx_files] Uploaded {filename} to {object_key}")
                 except Exception as e:
                     logger.error(f"[MinioObjectStore.upload_tsx_files] Failed to upload {filename}: {e}")
         
@@ -73,8 +54,8 @@ class MinioObjectStore:
             object_key = os.path.basename(file_path)
         
         try:
-            self.s3.upload_file(file_path, self.bucket_name, object_key)
-            logger.info(f"[MinioObjectStore.upload_file] Uploaded {file_path} to {self.bucket_name}/{object_key}")
+            self.storage_client.upload_file(file_path, object_key)
+            logger.info(f"[MinioObjectStore.upload_file] Uploaded {file_path} to {object_key}")
             return object_key
         except Exception as e:
             logger.error(f"[MinioObjectStore.upload_file] Failed to upload {file_path}: {e}")
@@ -85,7 +66,7 @@ class MinioObjectStore:
         Downloads a file from the bucket.
         """
         try:
-            self.s3.download_file(self.bucket_name, object_key, download_path)
+            self.storage_client.download_file(object_key, download_path)
             logger.info(f"[MinioObjectStore.download_file] Downloaded {object_key} to {download_path}")
         except Exception as e:
             logger.error(f"[MinioObjectStore.download_file] Failed to download {object_key}: {e}")
@@ -95,4 +76,7 @@ class MinioObjectStore:
         """
         Returns the URL for the object.
         """
+        # For GCS, this would need a different URL format if used for public access
+        if os.environ.get("STORAGE_BACKEND") == "gcs":
+            return f"https://storage.googleapis.com/{self.bucket_name}/{object_key}"
         return f"{self.endpoint_url}/{self.bucket_name}/{object_key}"

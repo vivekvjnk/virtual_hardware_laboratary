@@ -4,7 +4,7 @@ from typing import Optional, Dict, Any
 from ..client.client import VHLWebSocketClient
 from ..models import BaseEvent, EventType, SyncPayload
 from ..utils.hashing import compute_file_hash, compute_directory_hash
-from ..utils.minio import get_minio_client
+from ..utils.object_storage import get_storage_client
 from ..utils.zip import compress_directory, decompress_zip, atomic_replace_directory, atomic_replace_file
 import tempfile
 from pathlib import Path
@@ -19,7 +19,7 @@ class SyncClient:
         self.web_socket_client = web_socket_client
         self.workspace_manager = workspace_manager
         self.base_dir = str(workspace_manager.workspace_root)
-        self.minio = get_minio_client()
+        self.storage_client = get_storage_client()
         self.web_socket_client.add_subscriber(self.handle_runtime_message)
 
     def get_resource_path(self, project_id: str, resource_type: str, iteration_id: Optional[str] = None) -> str:
@@ -107,10 +107,10 @@ class SyncClient:
                 else:
                     blob_to_upload = str(path)
 
-                logger.info(f"[SyncClient.handle_upload_request] Uploading {payload.resource_type} to MinIO (blob_id={blob_id})...")
-                await asyncio.to_thread(self.minio.upload_file, blob_to_upload, blob_id)
+                logger.info(f"[SyncClient.handle_upload_request] Uploading {payload.resource_type} to storage (blob_id={blob_id})...")
+                await asyncio.to_thread(self.storage_client.upload_file, blob_to_upload, blob_id)
             else:
-                logger.debug(f"[SyncClient.handle_upload_request] Blob {blob_id} already exists in MinIO. Skipping upload.")
+                logger.debug(f"[SyncClient.handle_upload_request] Blob {blob_id} already exists in storage. Skipping upload.")
 
             download_payload = SyncPayload(
                 sync_id=sync_id,
@@ -157,7 +157,7 @@ class SyncClient:
 
         try:
             tmp_file = scratch_dir / "downloaded_blob"
-            await asyncio.to_thread(self.minio.download_file, payload.blob_id, str(tmp_file))
+            await asyncio.to_thread(self.storage_client.download_file, payload.blob_id, str(tmp_file))
 
             if payload.resource_type in ["Library", "Evaluation", "EvaluationOutput"]:
                 extract_dir = scratch_dir / "extracted"
