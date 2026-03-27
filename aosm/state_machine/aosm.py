@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 import shutil
-import boto3
+# import boto3
 from typing import Optional, Dict, Any
 from pathlib import Path
 from state_machine.states import AOSMState
@@ -46,7 +46,8 @@ class AOSM:
         self._main_loop_task: Optional[asyncio.Task] = None
         self.project_id: Optional[str] = None
         self.sync_client = SyncClient(self.web_socket_client, self.workspace_manager)
-        mcp_endpoint = os.getenv("MCP_ENDPOINT", "http://localhost:8081/mcp/vap")
+        mcp_endpoint = os.getenv("MCP_ENDPOINT", "http://host.docker.internal:8081/mcp/vap")
+        self.librarian_mcp_url = os.getenv("LIBRARIAN_MCP_URL", "http://host.docker.internal:8082/sse")
         self.mcp_manager = MCPManager(endpoint=mcp_endpoint)
         # self.mcp_manager = None
         self.agent_state = {
@@ -56,15 +57,7 @@ class AOSM:
             "aosm": AgentStatus.RUNNING
         }
         
-        # Minio configuration (should ideally be from env)
-        self.s3_client = boto3.client(
-            's3',
-            endpoint_url=os.getenv("MINIO_ENDPOINT_URL", os.getenv("MINIO_ENDPOINT", "http://localhost:9000")),
-            aws_access_key_id=os.getenv("MINIO_ACCESS_KEY", "minioadmin"),
-            aws_secret_access_key=os.getenv("MINIO_SECRET_KEY", "supersecretpassword"),
-            config=boto3.session.Config(signature_version='s3v4')
-        )
-        self.bucket_name = os.getenv("MINIO_BUCKET", "vhl")
+        # Storage client is managed by SyncClient
 
     async def start(self):
         """Starts AOSM and the WebSocket client."""
@@ -727,7 +720,7 @@ class AOSM:
                 self.update_agent_status("librarian", AgentStatus.IDLE)
             else:
                 # LibrarianAgent defaults to http://localhost:8080/mcp
-                librarian = LibrarianAgent(working_dir=self.workspace_manager.project_root)
+                librarian = LibrarianAgent(mcp_url=self.librarian_mcp_url, working_dir=self.workspace_manager.project_root)
                 # process_scud involves network/LLM, run in thread
                 self.update_agent_status("librarian", AgentStatus.RUNNING)
                 await asyncio.to_thread(librarian.process_scud, str(scud_path), instructions=instructions)
@@ -735,7 +728,7 @@ class AOSM:
             logger.info(f"[AOSM._run_librarian] Librarian Agent completed successfully")
         except Exception as e:
             self.update_agent_status("librarian", AgentStatus.IDLE)
-            logger.error(f"[AOSM._run_librarian] Librarian Agent failed: {e}")
+            logger.error(f"[AOSM._run_librarian] Librarian Agent failed: {e}", exc_info=True)
             # We proceed even if Librarian fails, but log the error
             pass
 

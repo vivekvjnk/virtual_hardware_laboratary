@@ -37,7 +37,7 @@ class LibrarianAgent:
         return LLM(
             usage_id=usage_id,
             model=model,
-            base_url=base_url,
+            # base_url=base_url,
             api_key=SecretStr(api_key),
         )
 

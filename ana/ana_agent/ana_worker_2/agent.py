@@ -21,17 +21,16 @@ class ANA_validation_agent:
     ANA-W2 Agent: Deterministic workflow for circuit evaluation using VHL-VAP.
     
     Responsibilities:
-    1. Upload circuit file to MinIO object store.
+    1. Sync circuit file to object store.
     2. Invoke VAP process via MCP.
     3. Poll for evaluation status.
     4. Collect and extract evaluation results.
     """
-    def __init__(self, web_socket_client: VHLWebSocketClient, sync_client: Optional[SyncClient] = None, project_id: Optional[str] = None, minio_url: Optional[str] = None, mcp_manager: Any = None):
+    def __init__(self, web_socket_client: VHLWebSocketClient, sync_client: Optional[SyncClient] = None, project_id: Optional[str] = None, storage_url: Optional[str] = None, mcp_manager: Any = None):
         self.web_socket_client = web_socket_client
         self.sync_client = sync_client
         self.project_id = project_id
-        self.minio_url = minio_url
-        # self.object_store = MinioObjectStore(endpoint_url=minio_url) if minio_url else None
+        self.storage_url = storage_url
         self.mcp_manager = mcp_manager
 
     async def validate_circuit(self, circuit_name: str, workspace: str, iteration_id: str) -> Dict[str, Any]:

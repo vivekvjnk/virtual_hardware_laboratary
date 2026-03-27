@@ -40,9 +40,13 @@ class SyncClient:
                 await self.handle_upload_request(payload)
             elif event.type == EventType.DOWNLOAD_REQUEST:
                 await self.handle_download_request(payload)
+            elif event.type == EventType.SYNC_ERROR:
+                logger.error(f"[SyncClient] Received SYNC_ERROR: {payload.reason}")
+            elif event.type == EventType.SYNC_COMPLETE:
+                logger.info(f"[SyncClient] Received SYNC_COMPLETE for {payload.resource_type} (sync_id={payload.sync_id})")
         except Exception as e:
             logger.error(f"[SyncClient.handle_runtime_message] Error handling sync message {event.type}: {e}", exc_info=True)
-            if hasattr(event.payload, "sync_id"):
+            if isinstance(event.payload, dict) and "sync_id" in event.payload:
                 await self.send_sync_error(event.payload["sync_id"], event.payload["project_id"], str(e))
 
     async def send_sync_error(self, sync_id: str, project_id: str, reason: str):
@@ -62,7 +66,7 @@ class SyncClient:
         Handle an UPLOAD_REQUEST: the sender wants us to upload our local artefact
         to the object store, then notify them with a DOWNLOAD_REQUEST so they can fetch it.
 
-        Flow: local hash → [hash check] → compress (if dir) → [MinIO existence check] → upload → DOWNLOAD_REQUEST
+        Flow: local hash → [hash check] → compress (if dir) → [storage existence check] → upload → DOWNLOAD_REQUEST
 
         If payload.hash (the sender's local hash) is provided and matches our local hash,
         both sides already have the same content — emit SYNC_COMPLETE and skip the upload.
@@ -98,19 +102,24 @@ class SyncClient:
         temp_zip = None
 
         try:
-            # Skip upload if blob already exists in MinIO
-            if not await asyncio.to_thread(self.minio.object_exists, blob_id):
+            # Skip upload if blob already exists in storage
+            logger.debug(f"[SyncClient.handle_upload_request] Checking storage for blob_id={blob_id}")
+            blob_exists = await asyncio.to_thread(self.storage_client.object_exists, blob_id)
+            
+            if not blob_exists:
                 if path.is_dir():
                     temp_zip = Path(tempfile.gettempdir()) / f"upload_{sync_id}.zip"
+                    logger.debug(f"[SyncClient.handle_upload_request] Compressing directory {path} to {temp_zip}")
                     compress_directory(str(path), str(temp_zip))
                     blob_to_upload = str(temp_zip)
                 else:
                     blob_to_upload = str(path)
 
-                logger.info(f"[SyncClient.handle_upload_request] Uploading {payload.resource_type} to storage (blob_id={blob_id})...")
+                logger.info(f"[SyncClient.handle_upload_request] Uploading {payload.resource_type} to storage (blob_id={blob_id}, path={blob_to_upload})...")
                 await asyncio.to_thread(self.storage_client.upload_file, blob_to_upload, blob_id)
+                logger.debug(f"[SyncClient.handle_upload_request] Upload completed for blob_id={blob_id}")
             else:
-                logger.debug(f"[SyncClient.handle_upload_request] Blob {blob_id} already exists in storage. Skipping upload.")
+                logger.info(f"[SyncClient.handle_upload_request] Blob {blob_id} already exists in storage. Skipping upload.")
 
             download_payload = SyncPayload(
                 sync_id=sync_id,
@@ -144,7 +153,7 @@ class SyncClient:
         The payload carries the sender's local hash (set during upload) which we use
         to verify integrity after downloading.
 
-        Flow: MinIO download → hash verify → decompress (if needed) → atomic apply → SYNC_COMPLETE
+        Flow: storage download → hash verify → decompress (if needed) → atomic apply → SYNC_COMPLETE
         """
         sync_id = payload.sync_id
         logger.info(f"[SyncClient.handle_download_request] Handling DOWNLOAD_REQUEST for {payload.resource_type} (sync_id={sync_id})")
@@ -157,20 +166,27 @@ class SyncClient:
 
         try:
             tmp_file = scratch_dir / "downloaded_blob"
+            logger.info(f"[SyncClient.handle_download_request] Downloading blob {payload.blob_id} from storage to {tmp_file}...")
             await asyncio.to_thread(self.storage_client.download_file, payload.blob_id, str(tmp_file))
+            logger.debug(f"[SyncClient.handle_download_request] Download completed for blob {payload.blob_id}")
 
             if payload.resource_type in ["Library", "Evaluation", "EvaluationOutput"]:
                 extract_dir = scratch_dir / "extracted"
                 extract_dir.mkdir(parents=True, exist_ok=True)
+                logger.debug(f"[SyncClient.handle_download_request] Decompressing {tmp_file} to {extract_dir}")
                 decompress_zip(str(tmp_file), str(extract_dir))
                 computed_hash = compute_directory_hash(str(extract_dir))
+                logger.debug(f"[SyncClient.handle_download_request] Computed directory hash: {computed_hash}, expected: {payload.hash}")
                 if computed_hash != payload.hash:
                     raise ValueError(f"Hash mismatch! Expected {payload.hash}, got {computed_hash}")
+                logger.debug(f"[SyncClient.handle_download_request] Applying atomic directory replace: {extract_dir} -> {target_path}")
                 atomic_replace_directory(str(extract_dir), str(target_path))
             else:
                 computed_hash = compute_file_hash(str(tmp_file))
+                logger.debug(f"[SyncClient.handle_download_request] Computed file hash: {computed_hash}, expected: {payload.hash}")
                 if computed_hash != payload.hash:
                     raise ValueError(f"Hash mismatch! Expected {payload.hash}, got {computed_hash}")
+                logger.debug(f"[SyncClient.handle_download_request] Applying atomic file replace: {tmp_file} -> {target_path}")
                 atomic_replace_file(str(tmp_file), str(target_path))
 
             logger.info(f"[SyncClient.handle_download_request] Successfully applied {payload.resource_type}")

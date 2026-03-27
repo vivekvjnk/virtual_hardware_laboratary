@@ -114,9 +114,9 @@ def get_storage_client() -> ObjectStorageClient:
     if _client is None:
         backend = os.environ.get("STORAGE_BACKEND", "minio").lower()
         if backend == "gcs":
-            logger.info("[ObjectStorage] Using Google Cloud Storage backend")
             _client = GCSClient()
+            logger.info(f"[ObjectStorage] Using Google Cloud Storage backend (bucket: {_client.bucket_name})")
         else:
-            logger.info("[ObjectStorage] Using MinIO backend")
             _client = MinioClient()
+            logger.info(f"[ObjectStorage] Using MinIO backend (bucket: {_client.bucket_name}, endpoint: {_client.endpoint_url})")
     return _client
