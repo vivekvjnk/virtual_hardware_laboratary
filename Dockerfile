@@ -97,7 +97,7 @@ ENV PATH="/app/venv/bin:${PATH}" \
 RUN mkdir -p /app/lib /app/circuits 
 
 # Expose required ports
-EXPOSE 8080 8081 8082 8083
+EXPOSE 8080 8081 8082 8083 1080 3020
 
 # Entrypoint setup
 RUN chmod +x /app/start.sh
