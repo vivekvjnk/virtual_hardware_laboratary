@@ -22,6 +22,11 @@ services:
       - VHL_LIBRARY_DIR=/app/lib
       - SNAPSHOT_PORT=8083
       - MINIO_ENDPOINT=minio
+     
+      # Defaults to 'minio' locally
+      - STORAGE_BACKEND=${STORAGE_BACKEND:-minio}
+      - GCS_BUCKET_NAME=${GCS_BUCKET_NAME:-vhl-local-bucket}
+
     restart: unless-stopped
 
   minio:
