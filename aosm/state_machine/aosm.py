@@ -767,12 +767,39 @@ class AOSM:
         # 5. Transition to STARTUP
         await self.transition_to(AOSMState.STARTUP, "Project closed by user")
 
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/health":
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"status": "healthy"}')
+        else:
+            self.send_response(404)
+            self.end_headers()
+    
+    def log_message(self, format, *args):
+        pass # Suppress HTTP logs to avoid spam
+
+def run_health_server():
+    port = int(os.environ.get("PORT", "8000"))
+    server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
+    logger.info(f"Starting health check server on port {port}")
+    server.serve_forever()
+
 def main():
     # Test stub
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(funcName)s - %(levelname)s - %(message)s'
     )
+    
+    # Start health check thread
+    threading.Thread(target=run_health_server, daemon=True).start()
+    
     ws_url = os.getenv("VHL_WS_URL", "ws://localhost:1080")
     aosm = AOSM(ws_url=ws_url)
     loop = asyncio.new_event_loop()
