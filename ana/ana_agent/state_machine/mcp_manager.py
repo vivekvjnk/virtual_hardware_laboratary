@@ -51,6 +51,7 @@ class MCPManager:
                     s.settimeout(1)
                     # We check 127.0.0.1 for local services, or host from URL
                     host = urllib.parse.urlparse(self.base_url).hostname or "127.0.0.1"
+                    logger.debug(f"[MCPManager.ensure_server_running] Attempting socket connection to {host}:{self.port}...")
                     s.connect((host, self.port))
                 
                 # 2. HTTP health check
