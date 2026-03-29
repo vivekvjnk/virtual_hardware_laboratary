@@ -1,8 +1,7 @@
 import asyncio
 import logging
 import os
-import shutil
-# import boto3
+import sys
 from typing import Optional, Dict, Any
 from pathlib import Path
 from state_machine.states import AOSMState
@@ -791,7 +790,8 @@ def main():
     # Test stub
     logging.basicConfig(
         level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(funcName)s - %(levelname)s - %(message)s'
+        format='%(asctime)s - %(name)s - %(funcName)s - %(levelname)s - %(message)s',
+        stream=sys.stdout
     )
     
     ws_url = os.getenv("VHL_WS_URL", "ws://localhost:1080")
