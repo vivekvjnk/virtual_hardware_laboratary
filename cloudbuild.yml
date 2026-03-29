@@ -51,7 +51,7 @@ steps:
 
       # OVERRIDE the entrypoint to a dumb loop
       - '--command=sh'
-      - '--args=-c,while true; do echo "DEBUG: Backend container is ALIVE"; sleep 5; done'
+      - '--args=-c,while true; do curl -v http://localhost:1080 || echo "CURL FAILED"; sleep 5; done'
       
       - '--region=europe-west1'
 
