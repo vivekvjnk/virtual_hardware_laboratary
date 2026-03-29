@@ -79,7 +79,7 @@ export class AgentWebSocketServer {
         })
 
         if (options.port) {
-            console.log(`Agent WebSocket Server starting on ws://${options.host || "localhost"}:${options.port}${options.path || ""}`)
+            console.log(`Agent WebSocket Server starting on ws://${options.host || "0.0.0.0"}:${options.port}${options.path || ""}`)
         } else if (options.server) {
             console.log(`Agent WebSocket Server attached to HTTP server at path: ${options.path || "/"}`)
         }

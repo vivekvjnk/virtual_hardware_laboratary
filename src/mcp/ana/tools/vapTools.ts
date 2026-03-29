@@ -2,7 +2,7 @@
 import { WebSocket } from 'ws';
 import { randomUUID } from 'crypto';
 
-const RELAY_URL = process.env.VHL_WS_SERVER || 'ws://localhost:1080';
+const RELAY_URL = process.env.VHL_WS_SERVER || 'ws://0.0.0.0:1080';
 
 export async function evaluateCircuit(args: { circuit_name: string, blob_id: string, iteration_id?: string }) {
     console.log(`[MCP VAP] Triggering VAP evaluation for ${args.circuit_name}`);

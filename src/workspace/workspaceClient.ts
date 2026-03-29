@@ -185,7 +185,7 @@ export class WorkspaceClient implements WorkspaceSender {
                 const relativePath = path.relative(this.workspaceDir, this.projectDir!);
                 const entryFile = this.currentCircuitName ? `${this.currentCircuitName}.tsx` : "index.circuit.tsx";
                 const targetFile = path.join(relativePath, entryFile);
-                const reloadUrl = `http://localhost:3020/#file=${encodeURIComponent(targetFile)}`;
+                const reloadUrl = `http://0.0.0.0:3020/#file=${encodeURIComponent(targetFile)}`;
 
                 // Start dev server for the project
                 await this.startDevServer(this.projectDir, entryFile);
@@ -250,7 +250,7 @@ export class WorkspaceClient implements WorkspaceSender {
                 // If relativePath is empty, we are at root. Otherwise we target our circuit file or default to index.circuit.tsx
                 const entryFile = this.currentCircuitName ? `${this.currentCircuitName}.tsx` : "index.circuit.tsx";
                 const targetFile = relativePath === "" ? "" : path.join(relativePath, entryFile);
-                const reloadUrl = `http://localhost:3020/${targetFile ? `#file=${encodeURIComponent(targetFile)}` : ""}`;
+                const reloadUrl = `http://0.0.0.0:3020/${targetFile ? `#file=${encodeURIComponent(targetFile)}` : ""}`;
 
                 // Only restart if the path is different OR entry file matches
                 if (this.currentDevServerPath !== fullPath || this.currentEntryFile !== entryFile) {
@@ -393,7 +393,7 @@ export class WorkspaceClient implements WorkspaceSender {
             // Construct and send DEV_SERVER_READY
             const relativePath = path.relative(this.workspaceDir, this.projectDir);
             const targetFile = path.join(relativePath, entryFile);
-            const reloadUrl = `http://localhost:3020/#file=${encodeURIComponent(targetFile)}`;
+            const reloadUrl = `http://0.0.0.0:3020/#file=${encodeURIComponent(targetFile)}`;
 
             this.send({
                 id: randomUUID(),
@@ -502,8 +502,8 @@ export class WorkspaceClient implements WorkspaceSender {
                 const output = data.toString();
                 console.log(`[tsci dev] ${output}`);
 
-                // Detection logic: wait for "Local: http://localhost:..."
-                if (output.includes("Local:   http://localhost:")) {
+                // Detection logic: wait for "Local: http://0.0.0.0:..."
+                if (output.includes("Local:   http://0.0.0.0:")) {
                     console.log("[WorkspaceClient] Dev server ready event detected: ", projectPath);
                     // Only send generic ready message if we are at the workspace root.
                     // Specific project ready messages (with hashes) are handled by the callers 
@@ -516,7 +516,7 @@ export class WorkspaceClient implements WorkspaceSender {
                             timestamp: new Date().toISOString(),
                             source: "vhl_workspace",
                             payload: {
-                                url: "http://localhost:3020",
+                                url: "http://0.0.0.0:3020",
                                 project_path: projectPath
                             }
                         });

@@ -3,7 +3,7 @@ import { WORKSPACE_DIR } from "../config/paths.js";
 import { COWWorkspaceManager } from "../utils/cowWorkspace.js";
 import { setProjectDir } from "./projectContext.js";
 
-const SERVER_URL = process.env.VHL_WS_SERVER || "ws://localhost:1080";
+const SERVER_URL = process.env.VHL_WS_SERVER || "ws://0.0.0.0:1080";
 const WORKSPACE_PATH = process.env.VHL_WORKSPACE_DIR || WORKSPACE_DIR;
 
 console.log("[Workspace] Starting workspace client...");

@@ -2,7 +2,7 @@
 
 # Configuration
 PORT=${SNAPSHOT_PORT:-8083}
-URL="http://localhost:$PORT/mcp"
+URL="http://0.0.0.0:$PORT/mcp"
 
 echo "🚀 Starting MCP Server Validation on $URL"
 
