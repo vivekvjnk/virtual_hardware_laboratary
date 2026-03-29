@@ -65,6 +65,7 @@ class EventType(str, Enum):
     SYSTEM_STATE = "SYSTEM_STATE"
     PROJECT_STATE = "PROJECT_STATE"
     AGENT_STATE = "AGENT_STATE"
+    AGENT_HEALTH = "AGENT_HEALTH"
 
     # Sync Protocol
     UPLOAD_REQUEST = "UPLOAD_REQUEST"
@@ -189,3 +190,8 @@ class AgentStatePayload(BaseModel):
     librarian: AgentStatus
     ana: AgentStatus
     aosm: AgentStatus
+
+class AgentHealthPayload(BaseModel):
+    mcp_manager_status: str
+    librarian_mcp_url: Optional[str] = None
+    agent_states: Dict[str, str] = Field(default_factory=dict)

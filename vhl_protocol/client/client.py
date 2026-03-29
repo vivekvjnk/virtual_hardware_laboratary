@@ -13,6 +13,7 @@ from ..models import (
     AuthorityRequiredPayload, ErrorPayload, WorkspacePayload,
     VAPExecutePayload,  ProjectsListPayload,
     AgentStatePayload, 
+    AgentHealthPayload,
     AgentStatus
 )
 
@@ -261,3 +262,11 @@ class VHLWebSocketClient:
     async def emit_agent_state(self, archy: AgentStatus, librarian: AgentStatus, ana: AgentStatus, aosm: AgentStatus):
         payload = AgentStatePayload(archy=archy, librarian=librarian, ana=ana, aosm=aosm)
         await self.emit(EventType.AGENT_STATE, payload)
+
+    async def emit_agent_health(self, mcp_manager_status: str, librarian_mcp_url: Optional[str], agent_states: dict):
+        payload = AgentHealthPayload(
+            mcp_manager_status=mcp_manager_status,
+            librarian_mcp_url=librarian_mcp_url,
+            agent_states=agent_states
+        )
+        await self.emit(EventType.AGENT_HEALTH, payload)

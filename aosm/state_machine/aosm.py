@@ -70,6 +70,7 @@ class AOSM:
         if self.mcp_manager:
             await asyncio.to_thread(self.mcp_manager.ensure_server_running)
         self._main_loop_task = asyncio.create_task(self._main_loop())
+        asyncio.create_task(self._heartbeat_loop())
         await self.broadcast_agent_state()
 
     async def broadcast_agent_state(self):
@@ -110,6 +111,24 @@ class AOSM:
                 logger.error(f"[AOSM._main_loop] Error processing event: {e}", exc_info=True)
             finally:
                 self.event_queue.task_done()
+
+    async def _heartbeat_loop(self):
+        """Loop that emits AGENT_HEALTH telemetry back to VHL_runtime."""
+        logger.info("[AOSM._heartbeat_loop] started.")
+        while True:
+            try:
+                mcp_status = "initialized" if self.mcp_manager else "not_initialized"
+                agent_states = {k: v.name if hasattr(v, 'name') else str(v) for k, v in self.agent_state.items()}
+                
+                await self.web_socket_client.emit_agent_health(
+                    mcp_manager_status=mcp_status,
+                    librarian_mcp_url=self.librarian_mcp_url,
+                    agent_states=agent_states
+                )
+            except Exception as e:
+                logger.error(f"[AOSM._heartbeat_loop] Error emitting heartbeat: {e}")
+            finally:
+                await asyncio.sleep(15)
 
     async def process_event(self, event: BaseEvent):
         """
@@ -721,7 +740,6 @@ class AOSM:
                 await asyncio.to_thread(process_scud_stub, str(scud_path), components=components, instructions=instructions)
                 self.update_agent_status("librarian", AgentStatus.IDLE)
             else:
-                # LibrarianAgent defaults to http://localhost:8080/mcp
                 librarian = LibrarianAgent(mcp_url=self.librarian_mcp_url, working_dir=self.workspace_manager.project_root)
                 # process_scud involves network/LLM, run in thread
                 self.update_agent_status("librarian", AgentStatus.RUNNING)
@@ -769,29 +787,6 @@ class AOSM:
         # 5. Transition to STARTUP
         await self.transition_to(AOSMState.STARTUP, "Project closed by user")
 
-import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
-
-class HealthCheckHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        if self.path == "/health":
-            self.send_response(200)
-            self.send_header("Content-type", "application/json")
-            self.end_headers()
-            self.wfile.write(b'{"status": "healthy"}')
-        else:
-            self.send_response(404)
-            self.end_headers()
-    
-    def log_message(self, format, *args):
-        pass # Suppress HTTP logs to avoid spam
-
-def run_health_server():
-    port = int(os.environ.get("PORT", "8000"))
-    server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
-    logger.info(f"Starting health check server on port {port}")
-    server.serve_forever()
-
 def main():
     # Test stub
     logging.basicConfig(
@@ -799,11 +794,9 @@ def main():
         format='%(asctime)s - %(name)s - %(funcName)s - %(levelname)s - %(message)s'
     )
     
-    # Start health check thread
-    threading.Thread(target=run_health_server, daemon=True).start()
-    
     ws_url = os.getenv("VHL_WS_URL", "ws://localhost:1080")
     aosm = AOSM(ws_url=ws_url)
+    
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:

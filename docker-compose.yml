@@ -1,6 +1,8 @@
 services:
   vhl-backend:
     build: .
+    ports:
+      - "8000:8000"
     image: vhl-backend:latest
     container_name: vhl-backend
     restart: always
