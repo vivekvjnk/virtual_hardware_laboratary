@@ -41,6 +41,8 @@ steps:
       # Container 2: Backend Sidecar
       - '--container=backend-container'
       - '--image=gcr.io/$PROJECT_ID/vhl-agent-backend-sidecar' # Matches Step 3
+      - '--cpu=1'
+      - '--memory=1Gi'   # <--- Increased memory to prevent OOM crashes
       
       - '--region=europe-west1'
 
