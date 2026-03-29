@@ -1,12 +1,42 @@
 steps:
-  # Build the container image
+  # 1. Fetch the Backend branch
+  - name: 'gcr.io/cloud-builders/git'
+    args: 
+      - 'clone'
+      - '--branch'
+      - 'deployment/agent-backend' # The name of your backend branch
+      - 'https://github.com/vivekvjnk/virtual_hardware_laboratary.git'
+      - './backend-source'
+
+  # 2. Build the container image
   - name: 'gcr.io/cloud-builders/docker'
     args: ['build', '-t', 'gcr.io/$PROJECT_ID/vhl-runtime', '.']
     env:
       - 'DOCKER_BUILDKIT=1'
-  # Push the image to Artifact Registry
+  # 3. Build the Backend Image (Sidecar)
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/vhl-agent-backend-sidecar', './backend-source']
+
+  # 4. Push the images to Artifact Registry
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', 'gcr.io/$PROJECT_ID/vhl-runtime']
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/vhl-agent-backend-sidecar']
+
+  # 5. Deploy as Sidecars
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'beta'
+      - 'run'
+      - 'deploy'
+      - 'unified-runtime-service'
+      - '--image=gcr.io/$PROJECT_ID/runtime-service' # This receives the external traffic
+      - '--container=backend-container'
+      - '--image=gcr.io/$PROJECT_ID/vhl-agent-backend-sidecar' # This is reachable via localhost
+      - '--region=europe-west1'
+      - '--port=8080' # Port for the main Runtime entry point
 
 images:
   - 'gcr.io/$PROJECT_ID/vhl-runtime'
+  - 'gcr.io/$PROJECT_ID/vhl-agent-backend-sidecar'
