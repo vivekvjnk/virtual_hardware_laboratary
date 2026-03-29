@@ -61,7 +61,7 @@ class MCPManager:
                         logger.info(f"[MCPManager.ensure_server_running] MCP Server is healthy at {self.base_url}")
                         self._sync_state()
                         return
-            except (ConnectionRefusedError, socket.timeout, httpx.RequestError):
+            except (ConnectionRefusedError, socket.timeout, httpx.RequestError, socket.error):
                 if i % 5 == 0:
                     logger.info(f"[MCPManager.ensure_server_running] Waiting for MCP Server... (attempt {i+1}/{max_retries})")
                 time.sleep(1)

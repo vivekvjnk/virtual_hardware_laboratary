@@ -112,7 +112,8 @@ def get_storage_client() -> ObjectStorageClient:
     """Return the appropriate storage client based on STORAGE_BACKEND environment variable."""
     global _client
     if _client is None:
-        backend = os.environ.get("STORAGE_BACKEND", "minio").lower()
+        default_backend = "gcs" if "K_SERVICE" in os.environ else "minio"
+        backend = os.environ.get("STORAGE_BACKEND", default_backend).lower()
         if backend == "gcs":
             _client = GCSClient()
             logger.info(f"[ObjectStorage] Using Google Cloud Storage backend (bucket: {_client.bucket_name})")

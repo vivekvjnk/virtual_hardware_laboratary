@@ -16,9 +16,9 @@ class MinioObjectStore:
         endpoint_url is kept for backward compatibility but ignored if STORAGE_BACKEND is set.
         """
         self.storage_client = get_storage_client()
+        self.bucket_name = getattr(self.storage_client, "bucket_name", "vhl-storage")
         # Fallback for URL generation in MinIO
         self.endpoint_url = endpoint_url or os.environ.get("MINIO_ENDPOINT_URL", "http://127.0.0.1:9000")
-        self.bucket_name = os.environ.get("MINIO_BUCKET", "vhl") if not os.environ.get("STORAGE_BACKEND") == "gcs" else os.environ.get("GCS_BUCKET_NAME", "vhl-storage")
 
     def upload_tsx_files(self, directory_path: str) -> Dict[str, str]:
         """
@@ -77,6 +77,6 @@ class MinioObjectStore:
         Returns the URL for the object.
         """
         # For GCS, this would need a different URL format if used for public access
-        if os.environ.get("STORAGE_BACKEND") == "gcs":
+        if self.storage_client.__class__.__name__ == "GCSClient":
             return f"https://storage.googleapis.com/{self.bucket_name}/{object_key}"
         return f"{self.endpoint_url}/{self.bucket_name}/{object_key}"

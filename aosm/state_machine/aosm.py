@@ -46,8 +46,10 @@ class AOSM:
         self._main_loop_task: Optional[asyncio.Task] = None
         self.project_id: Optional[str] = None
         self.sync_client = SyncClient(self.web_socket_client, self.workspace_manager)
-        mcp_endpoint = os.getenv("MCP_ENDPOINT", "http://host.docker.internal:8081/mcp/vap")
-        self.librarian_mcp_url = os.getenv("LIBRARIAN_MCP_URL", "http://host.docker.internal:8082/sse")
+        mcp_default = "http://localhost:8081/mcp/vap" if "K_SERVICE" in os.environ else "http://host.docker.internal:8081/mcp/vap"
+        mcp_endpoint = os.getenv("MCP_ENDPOINT", mcp_default)
+        lib_default = "http://localhost:8082/sse" if "K_SERVICE" in os.environ else "http://host.docker.internal:8082/sse"
+        self.librarian_mcp_url = os.getenv("LIBRARIAN_MCP_URL", lib_default)
         self.mcp_manager = MCPManager(endpoint=mcp_endpoint)
         # self.mcp_manager = None
         self.agent_state = {

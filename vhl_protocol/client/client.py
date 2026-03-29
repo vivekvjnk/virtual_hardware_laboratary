@@ -4,6 +4,8 @@ import logging
 from typing import Optional, Callable, Awaitable, List
 from pydantic import BaseModel
 import websockets
+from websockets.exceptions import ConnectionClosed
+
 from ..models import (
     BaseEvent, EventType, EventSource, HILRequestPayload,
     HumanInputPayload, StateTransitionPayload,
@@ -85,7 +87,7 @@ class VHLWebSocketClient:
                     for task in pending:
                         task.cancel()
                         
-            except (websockets.ConnectionClosed, ConnectionRefusedError) as e:
+            except (ConnectionClosed, ConnectionRefusedError) as e:
                 if self._is_running:
                     logger.warning(f"[VHLWebSocketClient._run] Connection lost or failed: {e}. Retrying in 5 seconds...")
                     self._ws = None
