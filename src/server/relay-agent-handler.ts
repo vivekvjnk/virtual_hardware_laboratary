@@ -61,6 +61,12 @@ export class RelayAgentHandler implements AgentHandler {
                 send({ type: "ERROR", payload: { message: "No agent client connected", scope: "vhl_workspace", severity: "error" } } as any)
             }
         } else if ((this.role === "agent") || (this.role === "vap_mcp_agent")) {
+            // Intercept Heartbeat directly
+            if (msg.type === "AGENT_HEALTH") {
+                console.log("[HEARTBEAT] Backend health report: ", msg.payload)
+                return // Prevent further forwarding unless UI explicitly wants it
+            }
+
             // Agent (Backend) -> UI (Runtime) or Workspace Client
             if (msg.type == "PROJECT_CREATED" || msg.type == "PROJECT_LOADED") {
                 // Send message to uiclient and workspace client
@@ -72,7 +78,7 @@ export class RelayAgentHandler implements AgentHandler {
             else if (msg.type === "WORKSPACE_DOWNLOAD" || msg.type === "WORKSPACE_UPLOAD" ||
                 msg.type === "VAP_EXECUTE" || msg.type === "VAP_DECISION" || msg.type === "START_DEV_SERVER" ||
                 msg.type === "DOWNLOAD_REQUEST" || msg.type === "UPLOAD_REQUEST") {
-                    console.debug("[Websocket Relay] Relaying message from VHL_Agent_Backend to Workspace Client:", msg)
+                console.debug("[Websocket Relay] Relaying message from VHL_Agent_Backend to Workspace Client:", msg)
                 if (RelayAgentHandler.workspaceClient) {
                     RelayAgentHandler.workspaceClient(msg)
                 } else {

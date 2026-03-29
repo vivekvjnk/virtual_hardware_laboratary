@@ -52,6 +52,7 @@ export type EventType =
     | "DOWNLOAD_REQUEST"
     | "SYNC_COMPLETE"
     | "SYNC_ERROR"
+    | "AGENT_HEALTH"
 
 export interface AgentMessage {
     id: string
