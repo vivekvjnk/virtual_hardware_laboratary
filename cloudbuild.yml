@@ -34,9 +34,14 @@ steps:
       - 'run'
       - 'deploy'
       - 'unified-runtime-service'
-      - '--image=gcr.io/$PROJECT_ID/vhl-runtime' # Matches Step 2
+      # Container 1: Runtime
+      - '--container=vhl-runtime-container' 
+      - '--image=gcr.io/$PROJECT_ID/vhl-runtime'
+      - '--port=8080'
+      # Container 2: Backend Sidecar
       - '--container=backend-container'
       - '--image=gcr.io/$PROJECT_ID/vhl-agent-backend-sidecar' # Matches Step 3
+      
       - '--region=europe-west1'
       - '--port=8080' # Ensure your Runtime Dockerfile EXPOSEs 8080
 
