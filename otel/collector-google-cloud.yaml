@@ -19,8 +19,8 @@ processors:
     timeout: 5s
 
 exporters:
-  debug:
-    verbosity: basic
+  # debug:
+  #   verbosity: basic
 
   googlecloud:
     project: ${env:GOOGLE_CLOUD_PROJECT}
@@ -30,4 +30,4 @@ service:
     traces:
       receivers: [otlp]
       processors: [batch]
-      exporters: [googlecloud, debug]
+      exporters: [googlecloud]
