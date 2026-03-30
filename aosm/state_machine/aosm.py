@@ -21,6 +21,21 @@ from librarian_agent.stub import process_scud_stub
 
 logger = logging.getLogger(__name__)
 
+import socket
+import logging
+
+def debug_local_ports():
+    logging.info("--- STARTING VHL PORT DIAGNOSTIC ---")
+    for port in [1080, 8081]:
+        # socket.AF_INET strictly forces an IPv4 check
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        result = sock.connect_ex(('0.0.0.0', port))
+        status = "OPEN (Listening)" if result == 0 else f"CLOSED (Error Code: {result})"
+        print(f"VHL DIAGNOSTIC: 0.0.0.0:{port} is {status}")
+        sock.close()
+
+
+
 class AOSM:
     """
     Agentic Orchestration State Machine (AOSM)
@@ -28,6 +43,7 @@ class AOSM:
     """
     def __init__(self, ws_url: str = "ws://localhost:1080"):
         logger.info(f"[AOSM.__init__] Initializing AOSM with ws_url: {ws_url}")
+        debug_local_ports()
         self.state = AOSMState.STARTUP
         self.web_socket_client = VHLWebSocketClient(
             url=ws_url,
