@@ -15,8 +15,9 @@ receivers:
 
 processors:
   batch:
-    send_batch_size: 512
-    timeout: 5s
+  resourcedetection:
+    detectors: [gcp]
+    timeout: 2s
 
 exporters:
   # debug:
@@ -24,10 +25,20 @@ exporters:
 
   googlecloud:
     project: ${env:GOOGLE_CLOUD_PROJECT}
+    log:
+      default_log_name: "vhl-backend-logs"
 
 service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [batch]
+      processors: [resourcedetection, batch]
+      exporters: [googlecloud]
+    metrics:
+      receivers: [otlp]
+      processors: [resourcedetection, batch]
+      exporters: [googlecloud]
+    logs:
+      receivers: [otlp]
+      processors: [resourcedetection, batch]
       exporters: [googlecloud]
