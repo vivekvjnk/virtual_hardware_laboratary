@@ -16,21 +16,90 @@ from observability.config import ObservabilityConfig, OtelBackend
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Re-export Traceloop decorators for convenience.
-# When tracing is disabled these are replaced with no-op passthrough
-# decorators so call-sites never need to care about the state.
-# ---------------------------------------------------------------------------
+import functools
+import asyncio
+from typing import Any, Callable, Optional, TypeVar
 
-def _noop_decorator(name: str = "", **kwargs):
-    """No-op decorator returned when tracing is disabled."""
-    def decorator(fn):
-        return fn
-    return decorator
+F = TypeVar("F", bound=Callable[..., Any])
 
-# Defaults — will be overwritten by init_observability() when tracing is on.
-workflow = _noop_decorator
-task = _noop_decorator
+class DecoratorProxy:
+    """
+    A late-binding proxy for Traceloop decorators.
+    
+    This allows modules to import @workflow and @task at import time (before
+    init_observability() is called). When the decorated functions are eventually
+    called, they will use the real Traceloop decorators if they have been
+    initialized, otherwise they will fall back to a no-op.
+    """
+    def __init__(self, type_name: str):
+        self._type_name = type_name
+        self._real_decorator: Optional[Callable] = None
+
+    def __call__(self, name: Optional[str] = None, **kwargs) -> Callable[[F], F]:
+        def decorator(fn: F) -> F:
+            # Cache the decorated version once initialized
+            decorated_fn_cached = None
+
+            if asyncio.iscoroutinefunction(fn):
+                @functools.wraps(fn)
+                async def async_wrapper(*fargs, **fkwargs):
+                    nonlocal decorated_fn_cached
+                    if self._real_decorator:
+                        if decorated_fn_cached is None:
+                            decorated_fn_cached = self._real_decorator(name=name, **kwargs)(fn)
+                        return await decorated_fn_cached(*fargs, **fkwargs)
+                    return await fn(*fargs, **fkwargs)
+                return async_wrapper # type: ignore
+            else:
+                @functools.wraps(fn)
+                def sync_wrapper(*fargs, **fkwargs):
+                    nonlocal decorated_fn_cached
+                    if self._real_decorator:
+                        if decorated_fn_cached is None:
+                            decorated_fn_cached = self._real_decorator(name=name, **kwargs)(fn)
+                        return decorated_fn_cached(*fargs, **fkwargs)
+                    return fn(*fargs, **fkwargs)
+                return sync_wrapper # type: ignore
+        return decorator
+
+# Proxies — these are what modules import
+workflow = DecoratorProxy("workflow")
+task = DecoratorProxy("task")
+
+def inject_context(carrier: dict) -> None:
+    """Inject current OTel context into a dictionary carrier."""
+    try:
+        from opentelemetry import propagate
+        propagate.inject(carrier)
+    except ImportError:
+        pass
+
+def extract_context(carrier: dict):
+    """Extract OTel context from a dictionary carrier."""
+    try:
+        from opentelemetry import propagate
+        return propagate.extract(carrier)
+    except ImportError:
+        return None
+
+def attach_context(ctx):
+    """Attach a previously extracted context to the current task."""
+    if ctx:
+        try:
+            from opentelemetry import context
+            return context.attach(ctx)
+        except ImportError:
+            pass
+    return None
+
+def detach_context(token):
+    """Detach a context token."""
+    if token:
+        try:
+            from opentelemetry import context
+            context.detach(token)
+        except ImportError:
+            pass
 
 
 def init_observability() -> None:
@@ -90,9 +159,10 @@ def init_observability() -> None:
         disable_batch=False,  # Let the SDK batch before sending to collector
     )
 
-    # Expose real decorators now that tracing is initialised
-    workflow = _wf
-    task = _tk
+    # Expose real decorators now that tracing is initialised by setting them 
+    # on the proxy objects.
+    workflow._real_decorator = _wf
+    task._real_decorator = _tk
 
     # Attach the OTel span log handler
     from observability.logging import attach_otel_log_handler

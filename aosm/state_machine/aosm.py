@@ -19,7 +19,7 @@ from librarian_agent.agent import LibrarianAgent
 from librarian_agent.stub import process_scud_stub
 # from component_placement_agent.state_machine.cpa_sm import CPASm
 
-from observability import workflow, task
+from observability import workflow, task, inject_context, extract_context, attach_context, detach_context
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +63,7 @@ class AOSM:
         
         # Storage client is managed by SyncClient
 
+    @workflow(name="aosm_start")
     async def start(self):
         """Starts AOSM and the WebSocket client."""
         logger.info("[AOSM.start] Starting AOSM...")
@@ -101,18 +102,27 @@ class AOSM:
     async def _handle_ws_event(self, event: BaseEvent):
         """Callback for received WebSocket events."""
         logger.debug(f"[AOSM._handle_ws_event] AOSM received event: {event.type}")
+        inject_context(event.otel_context)
         await self.event_queue.put(event)
 
-    @workflow(name="aosm_event_loop_iteration")
     async def _main_loop(self):
         """Main loop that processes events and drives transitions."""
         while True:
             event = await self.event_queue.get()
+            
+            # Skip heartbeats/health events to avoid trace clutter
+            if event.type == EventType.AGENT_HEALTH:
+                self.event_queue.task_done()
+                continue
+
+            ctx = extract_context(event.otel_context)
+            token = attach_context(ctx)
             try:
                 await self.process_event(event)
             except Exception as e:
                 logger.error(f"[AOSM._main_loop] Error processing event: {e}", exc_info=True)
             finally:
+                detach_context(token)
                 self.event_queue.task_done()
 
     async def _heartbeat_loop(self):
@@ -133,7 +143,7 @@ class AOSM:
             finally:
                 await asyncio.sleep(15)
 
-    @task(name="aosm_process_event")
+    @workflow(name="aosm_process_event")
     async def process_event(self, event: BaseEvent):
         """
         Processes a single event and triggers state transitions.
@@ -202,11 +212,13 @@ class AOSM:
         logger.info(f"[AOSM.transition_to] Transitioning: {from_state.name} -> {next_state.name} (Reason: {reason})\nPayload: {len(payload) if payload else None}")
         # Push an internal transition event to the queue to trigger any "on_enter" logic
         # or immediate next steps in the state machine loop.
-        await self.event_queue.put(BaseEvent(
+        event = BaseEvent(
             type=EventType.STATE_TRANSITION,
             source=EventSource.BACKEND,
             payload=payload
-        ))
+        )
+        inject_context(event.otel_context)
+        await self.event_queue.put(event)
         
 
     async def _parent_notify(self, payload: Dict[str, Any]):
@@ -214,11 +226,13 @@ class AOSM:
         Callback passed to child state machines (like ANA) to notify AOSM of events.
         """
         logger.info(f"[AOSM._parent_notify] Received parent notification with payload: {payload}")
-        await self.event_queue.put(BaseEvent(
+        event = BaseEvent(
             type=EventType.ANA_NOTIFY,
             source=EventSource.ANA,
             payload=payload
-        ))
+        )
+        inject_context(event.otel_context)
+        await self.event_queue.put(event)
 
     # --- State Handlers ---
 

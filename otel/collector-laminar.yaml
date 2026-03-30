@@ -19,8 +19,8 @@ processors:
     timeout: 5s
 
 exporters:
-  debug:
-    verbosity: detailed
+  # debug:
+  #   verbosity: basic
 
   otlp/laminar:
     endpoint: ${env:LMNR_BASE_URL}
@@ -35,4 +35,5 @@ service:
     traces:
       receivers: [otlp]
       processors: [batch]
-      exporters: [otlp/laminar, debug]
+      # exporters: [otlp/laminar, debug]
+      exporters: [otlp/laminar]

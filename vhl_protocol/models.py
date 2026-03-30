@@ -85,6 +85,7 @@ class BaseEvent(BaseModel):
     timestamp: str = Field(default_factory=lambda: datetime.utcnow().isoformat() + "Z") # ISO-8601
     source: EventSource
     payload: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    otel_context: Optional[Dict[str, str]] = Field(default_factory=dict, description="OTel context for cross-task tracing")
 
 # Payload models
 
