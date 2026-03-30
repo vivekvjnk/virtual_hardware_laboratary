@@ -50,10 +50,10 @@ steps:
       - '--set-env-vars=PYTHONUNBUFFERED=1,LOG_LEVEL=DEBUG' # Force logs out
 
       # OVERRIDE the entrypoint to a dumb loop
-      - '--command=sh'
+      # - '--command=sh'
       # Using Python to ping the runtime instead of curl
-      - "--args=-c,while true; do python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:1080')\" && echo 'DEBUG: CONNECTION SUCCESS' || echo 'DEBUG: CONNECTION FAILED'; sleep 5; done"
-      
+      # - "--args=-c,while true; do python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:1080')\" && echo 'DEBUG: CONNECTION SUCCESS' || echo 'DEBUG: CONNECTION FAILED'; sleep 5; done"
+
       - '--region=europe-west1'
 
 images:
