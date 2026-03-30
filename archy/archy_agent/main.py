@@ -5,10 +5,13 @@ from pathlib import Path
 from typing import Union
 from PIL import Image, ImageEnhance, ImageOps, ImageDraw
 
+from observability import workflow, task
+
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("archy_orchestrator")
 
+@task(name="archy_preprocess_image")
 def _preprocess_image(image_path: Path, output_path: Path, contrast_factor: float = 1.3):
     """Preprocess image by converting to grayscale and increasing contrast."""
     logger.info(f"Preprocessing image: {image_path} -> {output_path}")
@@ -26,6 +29,7 @@ def _preprocess_image(image_path: Path, output_path: Path, contrast_factor: floa
         logger.error(f"Error during image preprocessing: {e}")
         raise
 
+@task(name="archy_image_segmentation")
 def crop_image_into_segments(image_path: Path, output_dir: Path, num_segments: int = 4, overlap_pct: float = 0.1):
     """
     Segments the image into a grid of specified segments with overlap.
@@ -166,6 +170,7 @@ def _archy_build_scud_stub(image_id: str, workspace_path: Path, image_path: Path
     logger.info(f"[_archy_build_scud_stub] [STUB] Dummy SCUD document generated: {scud_file}")
     return scud_file
     
+@workflow(name="archy_orchestration")
 def orchestrate_archy(workspace_path: Union[str, Path], image_id: str):
     """
     Main orchestration function for the Archy module.

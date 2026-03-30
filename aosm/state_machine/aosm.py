@@ -19,21 +19,9 @@ from librarian_agent.agent import LibrarianAgent
 from librarian_agent.stub import process_scud_stub
 # from component_placement_agent.state_machine.cpa_sm import CPASm
 
+from observability import workflow, task
+
 logger = logging.getLogger(__name__)
-
-import socket
-import logging
-
-def debug_local_ports():
-    logging.info("--- STARTING VHL PORT DIAGNOSTIC ---")
-    for port in [1080, 8081]:
-        # socket.AF_INET strictly forces an IPv4 check
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        result = sock.connect_ex(('0.0.0.0', port))
-        status = "OPEN (Listening)" if result == 0 else f"CLOSED (Error Code: {result})"
-        print(f"VHL DIAGNOSTIC: 0.0.0.0:{port} is {status}")
-        sock.close()
-
 
 
 class AOSM:
@@ -43,7 +31,6 @@ class AOSM:
     """
     def __init__(self, ws_url: str = "ws://localhost:1080"):
         logger.info(f"[AOSM.__init__] Initializing AOSM with ws_url: {ws_url}")
-        debug_local_ports()
         self.state = AOSMState.STARTUP
         self.web_socket_client = VHLWebSocketClient(
             url=ws_url,
@@ -116,6 +103,7 @@ class AOSM:
         logger.debug(f"[AOSM._handle_ws_event] AOSM received event: {event.type}")
         await self.event_queue.put(event)
 
+    @workflow(name="aosm_event_loop_iteration")
     async def _main_loop(self):
         """Main loop that processes events and drives transitions."""
         while True:
@@ -145,6 +133,7 @@ class AOSM:
             finally:
                 await asyncio.sleep(15)
 
+    @task(name="aosm_process_event")
     async def process_event(self, event: BaseEvent):
         """
         Processes a single event and triggers state transitions.
@@ -210,7 +199,7 @@ class AOSM:
         
         
         
-        logger.info(f"[AOSM.transition_to] Transitioning: {from_state.name} -> {next_state.name} (Reason: {reason})\nPayload: {payload}")
+        logger.info(f"[AOSM.transition_to] Transitioning: {from_state.name} -> {next_state.name} (Reason: {reason})\nPayload: {len(payload) if payload else None}")
         # Push an internal transition event to the queue to trigger any "on_enter" logic
         # or immediate next steps in the state machine loop.
         await self.event_queue.put(BaseEvent(
@@ -357,7 +346,13 @@ class AOSM:
         logger.info(f"[AOSM._handle_idle] In BOOTSTRAP_PIPELINE state...")
         # We trigger the bootstrap logic upon entering this state.
         if event.type == EventType.STATE_TRANSITION:
-            scud_path,image_id = await self._run_bootstrap(event)
+            # scud_path,image_id = await self._run_bootstrap(event)
+            result = await self._run_bootstrap(event)
+            if result is None:
+                raise ValueError("Bootstrap failed: No result returned")
+            
+            scud_path, image_id = result
+
             self.current_message["circuit_id"] = image_id
             if scud_path:
                 self.current_message["scud_path"] = str(scud_path)
@@ -663,6 +658,7 @@ class AOSM:
 
     # --- High-level Orchestration Logic ---
 
+    @workflow(name="bootstrap_pipeline")
     async def _run_bootstrap(self, event: BaseEvent):
         """Logic for BOOTSTRAP_PIPELINE."""
         logger.info("[AOSM._run_bootstrap] Executing Bootstrap Pipeline...")
@@ -730,6 +726,7 @@ class AOSM:
             
         return scud_path,image_id
 
+    @workflow(name="librarian_pipeline")
     async def _run_librarian(self, scud_path: Path, instructions: str = None):
         """Logic for triggering Librarian Agent to resolve components."""
         logger.info(f"[AOSM._run_librarian] Triggering Librarian Agent for SCUD: {scud_path} (Instructions: {instructions})")
@@ -809,6 +806,10 @@ def main():
         format='%(asctime)s - %(name)s - %(funcName)s - %(levelname)s - %(message)s',
         stream=sys.stdout
     )
+
+    # Initialise OpenLLMetry observability (before any LLM calls)
+    from observability import init_observability
+    init_observability()
     
     ws_url = os.getenv("VHL_WS_URL", "ws://localhost:1080")
     aosm = AOSM(ws_url=ws_url)

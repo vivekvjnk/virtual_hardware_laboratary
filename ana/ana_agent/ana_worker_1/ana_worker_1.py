@@ -19,6 +19,8 @@ from openhands.tools.terminal import TerminalTool
 
 from pathlib import Path
 
+from observability import task
+
 # Configure Logging
 logger = get_logger(__name__)
 
@@ -70,6 +72,7 @@ def conversation_callback(event: Event):
 
 logger.info("[ANA-W1] ANA-W1: Agent initialized successfully.")
 
+@task(name="ana_w1_synthesis")
 def run_ana_w1_agent(workspace:str,scud_path: str, schematic_images_path: str = None,library_path: str = None,circuit_name: str = None,previous_iteration_dir: str = None, observations: List[str] = None):
     """
     Process a SCUD file and analyze its components.

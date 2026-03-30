@@ -21,6 +21,8 @@ from openhands.tools.file_editor import FileEditorTool
 
 from openhands.sdk import get_logger
 
+from observability import task
+
 logger = get_logger(__name__)
 
 api_key = os.getenv("LLM_API_KEY")
@@ -38,6 +40,7 @@ llm_condenser = LLM(
     api_key=SecretStr(api_key),
 )
 
+@task(name="archy_scud_generation")
 def archy_build_scud(
     image_id: str,
     workspace: Path,
@@ -81,11 +84,11 @@ def archy_build_scud(
             # *GEMINI_FILE_TOOLS
         ],
     )
-    persistence_dir = "./.conversations"
+    # persistence_dir = "./.conversations"
     conversation = Conversation(
         agent=agent,
         workspace=str(workspace),
-        persistence_dir = persistence_dir,
+        # persistence_dir = persistence_dir,
     )
 
     # Use the provided image_path or default to original

@@ -19,6 +19,8 @@ from ana_agent.state_machine.mcp_manager import MCPManager
 from vhl_protocol.sync.client import SyncClient
 from vhl_protocol.client.client import VHLWebSocketClient
 
+from observability import workflow, task
+
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +85,7 @@ class ANADStateMachine:
         # MCP Setup
         self.mcp_manager.ensure_server_running()
 
+    @task(name="ana_step")
     async def step(self, event: Optional[str] = None, data: Optional[Dict[str, Any]] = None):
         """Executes one step of the state machine using message passing framework."""
         logger.info(f"[ANADStateMachine.step] Stepping from state: {self.state}")
@@ -193,6 +196,7 @@ class ANADStateMachine:
                 
         return result_msg
 
+    @task(name="ana_observe")
     async def _handle_observe(self, message: Dict[str, Any]) -> Dict[str, Any]:
         logger.info(f"[ANADStateMachine._handle_observe] State: OBSERVE. Triggered from: {message.get('from_state_id')}")
         logger.debug(f"[ANADStateMachine._handle_observe] Message: {message}")
@@ -340,6 +344,7 @@ class ANADStateMachine:
         result_msg["state_id"] = State.PREPARE_FIX
         return result_msg
 
+    @task(name="ana_trigger_w1")
     async def _handle_trigger_w1(self, message: Dict[str, Any]) -> Dict[str, Any]:
         logger.info(f"[ANADStateMachine._handle_trigger_w1] State: TRIGGER_W1. Triggered from: {message.get('from_state_id')}")
         logger.debug(f"[ANADStateMachine._handle_trigger_w1] Message: {message}")
@@ -425,6 +430,7 @@ class ANADStateMachine:
             result_msg["proposed_next_state"] = State.PREPARE_HIL
             return result_msg
 
+    @task(name="ana_trigger_w2")
     async def _handle_trigger_w2(self, message: Dict[str, Any]) -> Dict[str, Any]:
         logger.info(f"[ANADStateMachine._handle_trigger_w2] State: TRIGGER_W2. Triggered from: {message.get('from_state_id')}")
         logger.debug(f"[ANADStateMachine._handle_trigger_w2] Message: {message}")
@@ -536,6 +542,7 @@ class ANADStateMachine:
     def cleanup(self):
         self.mcp_manager.cleanup()
 
+    @workflow(name="ana_pipeline")
     async def run(self):
         """Runs the state machine loop until a terminal state is reached."""
         logger.info("[ANADStateMachine.run] --- Starting State Machine ---")

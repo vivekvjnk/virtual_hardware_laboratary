@@ -1,0 +1,38 @@
+# OTel Collector config — Laminar backend
+# Routes traces to Laminar via OTLP/gRPC with bearer-token auth.
+#
+# Required env vars:
+#   LMNR_BASE_URL       — e.g. https://api.lmnr.ai:8443
+#   LMNR_PROJECT_API_KEY — Laminar project API key
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    send_batch_size: 512
+    timeout: 5s
+
+exporters:
+  debug:
+    verbosity: detailed
+
+  otlp/laminar:
+    endpoint: ${env:LMNR_BASE_URL}
+    headers:
+      authorization: "Bearer ${env:LMNR_PROJECT_API_KEY}"
+    tls:
+      insecure: true
+      
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp/laminar, debug]

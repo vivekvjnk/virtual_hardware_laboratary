@@ -15,6 +15,8 @@ from openhands.tools.file_editor import FileEditorTool
 from openhands.tools.gemini import GEMINI_FILE_TOOLS
 from openhands.tools.terminal import TerminalTool
 
+from observability import task
+
 from ana_agent.observer.observer_system_prompt import build_observer_system_prompt, ObserverMode
 
 
@@ -90,6 +92,7 @@ class ObserverAgent:
 
         logger.info(f"[ObserverAgent.__init__] Observer Agent initialized with MCP URL: {mcp_url}")
     
+    @task(name="observer_observe")
     def observe(
         self,
         mode: ObserverMode,

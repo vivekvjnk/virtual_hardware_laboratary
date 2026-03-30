@@ -13,6 +13,8 @@ from vhl_protocol.client.client import VHLWebSocketClient
 
 from vhl_protocol.models import EventType, SyncPayload
 
+from observability import task
+
 # Configure logger
 logger = get_logger(__name__)
 
@@ -33,6 +35,7 @@ class ANA_validation_agent:
         self.storage_url = storage_url
         self.mcp_manager = mcp_manager
 
+    @task(name="ana_w2_validation")
     async def validate_circuit(self, circuit_name: str, workspace: str, iteration_id: str) -> Dict[str, Any]:
         """
         Process the circuit file: upload to object store, invoke VAP, poll for status, and collect results.

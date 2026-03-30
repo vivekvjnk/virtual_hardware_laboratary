@@ -18,6 +18,8 @@ dependencies = [
     "archy",
     "librarian",
     "litellm",
+    "traceloop-sdk",
+    "opentelemetry-exporter-otlp-proto-grpc",
 ]
 
 [tool.uv.workspace]

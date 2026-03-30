@@ -17,6 +17,8 @@ from openhands.tools.terminal import TerminalTool
 
 from pathlib import Path
 
+from observability import task
+
 logger = get_logger(__name__)
 
 class LibrarianAgent:
@@ -76,6 +78,7 @@ class LibrarianAgent:
         if isinstance(event, LLMConvertibleEvent):
             self.llm_messages.append(event.to_llm_message())
 
+    @task(name="librarian_process_scud")
     def process_scud(self, scud_path: str, instructions: str = None) -> None:
         """
         Process the SCUD file: read it, check components, and update it.

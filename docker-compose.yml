@@ -7,6 +7,9 @@ services:
     container_name: vhl-backend
     restart: always
     env_file: .env
+    depends_on:
+      otel-collector:
+        condition: service_started
     environment:
       - MINIO_ENDPOINT_URL=${MINIO_ENDPOINT_URL:-http://host.docker.internal:9000}
       - MINIO_ENDPOINT=${MINIO_ENDPOINT:-http://host.docker.internal:9000}
@@ -25,6 +28,11 @@ services:
       - LLM_MODEL=vertex_ai/gemini-2.5-flash
       - LLM_REVIEW_MODEL=vertex_ai/gemini-3-flash-preview
       - LLM_API_KEY=abc
+
+      # --- Observability ---
+      - OTEL_BACKEND=${OTEL_BACKEND:-none}
+      - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-vhl-agent-backend}
+      - OTEL_COLLECTOR_ENDPOINT=otel-collector:4317
     volumes:
       - vhl_data:/app/vhl_workspace
       - ./logs:/app/logs
@@ -32,5 +40,25 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.148.0
+    container_name: otel-collector
+    restart: always
+    command: ["--config", "/etc/otelcol/config.yaml"]
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+    volumes:
+      - ./otel/${OTEL_COLLECTOR_CONFIG:-collector-laminar.yaml}:/etc/otelcol/config.yaml:ro
+      - ~/.config/gcloud:/root/.config/gcloud:ro
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/root/.config/gcloud/application_default_credentials.json
+      - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT:-virtual-hardware-laboratary}
+      - LMNR_BASE_URL=http://host.docker.internal:8444
+      - LMNR_PROJECT_API_KEY=EHFIEjWNwiWp2tB2I20IJxrBGgh5VHwHNM5m4H3Gtlxg4l0Mv2iSRAoDqEDE85cV
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
 volumes:
   vhl_data:  
+  
