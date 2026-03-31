@@ -30,7 +30,7 @@ COPY dist/tscircuit-cli.tgz /tmp/
 
 # 2. Build VHL_runtime
 COPY package.json pnpm-lock.yaml tsconfig.json ./
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile && pnpm add /tmp/tscircuit-cli.tgz
 COPY src ./src
 RUN pnpm build && pnpm prune --prod
 
@@ -77,9 +77,9 @@ COPY --from=builder /app /app
 # Copy the CLI tarball
 COPY --from=builder /tmp/tscircuit-cli.tgz /tmp/
 
-# Install the updated CLI globally in the runtime image
-RUN npm install -g /tmp/tscircuit-cli.tgz && \
-    ln -s $(which tscircuit-cli) /usr/local/bin/tsci
+# Link the local CLI to /usr/local/bin/tsci
+RUN ln -s /app/node_modules/.bin/tscircuit-cli /usr/local/bin/tsci && \
+    chmod +x /usr/local/bin/tsci
 
 # Environment variables
 ENV PATH="/app/venv/bin:${PATH}" \
