@@ -41,19 +41,15 @@ steps:
       # Container 1: Runtime
       - '--container=vhl-runtime-container' 
       - '--image=gcr.io/$PROJECT_ID/vhl-runtime'
-      - '--port=8080'
+      - '--port=3020'
+      
       # Container 2: Backend Sidecar
       - '--container=backend-container'
       - '--image=gcr.io/$PROJECT_ID/vhl-agent-backend-sidecar' # Matches Step 3
       - '--cpu=1'
       - '--memory=1Gi'   # <--- Increased memory to prevent OOM crashes
       - '--set-env-vars=PYTHONUNBUFFERED=1,LOG_LEVEL=DEBUG' # Force logs out
-
-      # OVERRIDE the entrypoint to a dumb loop
-      # - '--command=sh'
-      # Using Python to ping the runtime instead of curl
-      # - "--args=-c,while true; do python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:1080')\" && echo 'DEBUG: CONNECTION SUCCESS' || echo 'DEBUG: CONNECTION FAILED'; sleep 5; done"
-
+      
       - '--region=europe-west1'
 
 images:
