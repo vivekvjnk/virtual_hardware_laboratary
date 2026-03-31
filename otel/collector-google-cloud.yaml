@@ -24,11 +24,13 @@ exporters:
     verbosity: basic
 
   googlecloud:
-    project: ${env:GOOGLE_CLOUD_PROJECT}
     log:
       default_log_name: "vhl-backend-logs"
 
 service:
+  telemetry:
+      logs:
+        level: "info"
   pipelines:
     traces:
       receivers: [otlp]
