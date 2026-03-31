@@ -15,6 +15,6 @@ eval_results
 .DS_Store
 # Keep dist/runframe if it is needed for the build
 # But let pnpm build handle others
-# dist/
-# !dist/runframe
+# Explicitly include dist for artifacts
+!dist
 

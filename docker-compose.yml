@@ -1,9 +1,9 @@
 version: '3.8'
 
 services:
-  vhl-library:
+  vhl-runtime:
     build: .
-    container_name: vhl-library
+    container_name: vhl-runtime
     ports:
       - "8080:8080"
       - "8081:8081"

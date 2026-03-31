@@ -25,34 +25,27 @@ ENV BUN_INSTALL="/root/.bun"
 ENV PATH="$BUN_INSTALL/bin:$PATH"
 RUN npm install -g pnpm
 
-# Install tscircuit globally
-RUN bun install -g tscircuit
+# 1. Copy the pre-built CLI tarball (prepared by prepare_vhl_build.sh)
+COPY dist/tscircuit-cli.tgz /tmp/
 
-# 1. Python venv and dependencies
-COPY requirements.txt ./
-RUN --mount=type=cache,target=/root/.cache/pip \
-    python3 -m venv /app/venv && \
-    /app/venv/bin/pip install --upgrade pip && \
-    /app/venv/bin/pip install -r requirements.txt
-
-# 2. Node.js dependencies and build
+# 2. Build VHL_runtime
 COPY package.json pnpm-lock.yaml tsconfig.json ./
-RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
-    pnpm install --frozen-lockfile
-
-# Copy source and build binary
+RUN pnpm install --frozen-lockfile
 COPY src ./src
-RUN pnpm build && \
-    pnpm prune --prod # Remove devDependencies after build
+RUN pnpm build && pnpm prune --prod
 
-# 3. Handle local packages and other directories
+# 3. Handle local packages and directories
 COPY packages ./packages
 COPY workspace ./workspace
-COPY dist/runframe ./runframe
 COPY start.sh ./
+COPY dist/runframe /app/runframe_bundle
+COPY requirements.txt ./
 
-# Set up editable installs in the venv
-RUN /app/venv/bin/pip install -e /app/packages/oh-sdk && \
+# 4. Set up Python venv
+RUN python3 -m venv /app/venv && \
+    /app/venv/bin/pip install --upgrade pip && \
+    /app/venv/bin/pip install -r requirements.txt && \
+    /app/venv/bin/pip install -e /app/packages/oh-sdk && \
     /app/venv/bin/pip install --no-deps -e /app/packages/oh-tools
 
 # ---------------------------
@@ -63,7 +56,7 @@ FROM python:3.12-slim-bookworm AS runtime
 ARG DEBIAN_FRONTEND=noninteractive
 WORKDIR /app
 
-# Install runtime dependencies ONLY
+# Install runtime dependencies
 RUN apt-get update && apt-get install -y \
     curl \
     tmux \
@@ -80,8 +73,13 @@ ENV BUN_INSTALL="/root/.bun"
 ENV PATH="$BUN_INSTALL/bin:$PATH"
 
 # Copy the entire /app folder (already pruned and built)
-# We copy everything because start.sh and editable installs need several subdirs.
 COPY --from=builder /app /app
+# Copy the CLI tarball
+COPY --from=builder /tmp/tscircuit-cli.tgz /tmp/
+
+# Install the updated CLI globally in the runtime image
+RUN npm install -g /tmp/tscircuit-cli.tgz && \
+    ln -s $(which tscircuit-cli) /usr/local/bin/tsci
 
 # Environment variables
 ENV PATH="/app/venv/bin:${PATH}" \
@@ -89,7 +87,7 @@ ENV PATH="/app/venv/bin:${PATH}" \
     PORT=8080 \
     VAP_PORT=8081 \
     VHL_LIBRARY_DIR=/app/lib \
-    RUNFRAME_STANDALONE_FILE_PATH=/app/runframe/standalone.min.js \
+    RUNFRAME_STANDALONE_FILE_PATH=/app/runframe_bundle/standalone.min.js \
     TSCI_SKIP_CLI_UPDATE=true \
     VHL_PROJECT_ROOT=/app
 
