@@ -30,7 +30,7 @@ COPY dist/tscircuit-cli.tgz /tmp/
 
 # 2. Build VHL_runtime
 COPY package.json pnpm-lock.yaml tsconfig.json ./
-RUN pnpm install --frozen-lockfile && pnpm add /tmp/tscircuit-cli.tgz
+RUN pnpm install --no-frozen-lockfile && pnpm add /tmp/tscircuit-cli.tgz
 COPY src ./src
 RUN pnpm build && pnpm prune --prod
 
