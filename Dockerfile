@@ -77,12 +77,13 @@ COPY --from=builder /app /app
 # Copy the CLI tarball
 COPY --from=builder /tmp/tscircuit-cli.tgz /tmp/
 
-# Link the local CLI to /usr/local/bin/tsci
-RUN ln -s /app/node_modules/.bin/tscircuit-cli /usr/local/bin/tsci && \
+# Link the local CLI to /usr/local/bin/tsci (Absolute path to avoid broken relative pnpm links)
+RUN chmod +x /app/node_modules/@tscircuit/cli/cli/entrypoint.js && \
+    ln -s /app/node_modules/@tscircuit/cli/cli/entrypoint.js /usr/local/bin/tsci && \
     chmod +x /usr/local/bin/tsci
 
 # Environment variables
-ENV PATH="/app/venv/bin:${PATH}" \
+ENV PATH="/app/venv/bin:/app/node_modules/.bin:${PATH}" \
     VHL_TRANSPORT=http \
     PORT=8080 \
     VAP_PORT=8081 \
