@@ -33,8 +33,9 @@ SNAPSHOT_PID=$!
 # Start tscircuit-cli server in background (Primary UI and Proxy)
 echo "Starting tscircuit-cli server..."
 export TSCI_SKIP_CLI_UPDATE=true
-tsci dev /app/workspace/index.tsx --port 3020 &
+cd /app/workspace && tsci dev index.tsx --port 3020 &
 TSCI_PID=$!
+cd /app
 
 # Wait for any process to exit
 wait -n $WS_SERVER_PID $WS_CLIENT_PID $ANA_PID $TERMINAL_PID $SNAPSHOT_PID $TSCI_PID

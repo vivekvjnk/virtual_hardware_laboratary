@@ -77,10 +77,11 @@ COPY --from=builder /app /app
 # Copy the CLI tarball
 COPY --from=builder /tmp/tscircuit-cli.tgz /tmp/
 
-# Link the local CLI to /usr/local/bin/tsci (Absolute path to avoid broken relative pnpm links)
-RUN chmod +x /app/node_modules/@tscircuit/cli/cli/entrypoint.js && \
-    ln -s /app/node_modules/@tscircuit/cli/cli/entrypoint.js /usr/local/bin/tsci && \
-    chmod +x /usr/local/bin/tsci
+# Force-install 'sharp' for the correct platform and ensure CLI is ready
+RUN ln -s /app/node_modules/@tscircuit/cli/cli/entrypoint.js /usr/local/bin/tsci && \
+    chmod +x /app/node_modules/@tscircuit/cli/cli/entrypoint.js && \
+    chmod +x /usr/local/bin/tsci && \
+    cd /app && bun add --platform=linux --arch=x64 sharp@0.32.6
 
 # Environment variables
 ENV PATH="/app/venv/bin:/app/node_modules/.bin:${PATH}" \

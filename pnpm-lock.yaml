@@ -32,6 +32,9 @@ importers:
       react:
         specifier: ^19.2.3
         version: 19.2.3
+      sharp:
+        specifier: 0.32.6
+        version: 0.32.6
       tscircuit:
         specifier: ^0.0.1296-libonly
         version: 0.0.1296(@tscircuit/schematic-corpus@0.0.114(typescript@5.9.3))(bun-match-svg@0.0.14(typescript@5.9.3))(looks-same@9.0.1)(three@0.179.1)(typescript@5.9.3)
