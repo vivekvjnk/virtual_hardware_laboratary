@@ -2168,15 +2168,12 @@
     </mxGraphModel>
   </diagram>
   <diagram id="J0PDfOJuWLxMfa2HvqG0" name="Librarian A2A">
-    <mxGraphModel dx="1696" dy="906" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+    <mxGraphModel dx="2228" dy="974" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
         <mxCell id="Bfeg-CFsWBaDbYUgO3TN-1" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;fontSize=19;fontStyle=1" value="&lt;u&gt;Librarian A2A Interaction scenarios&lt;/u&gt;" vertex="1">
           <mxGeometry height="30" width="330" x="270" y="50" as="geometry" />
-        </mxCell>
-        <mxCell id="Bfeg-CFsWBaDbYUgO3TN-35" parent="1" style="ellipse;whiteSpace=wrap;html=1;" value="Librarian" vertex="1">
-          <mxGeometry height="60" width="100" x="679" y="269" as="geometry" />
         </mxCell>
         <mxCell id="Bfeg-CFsWBaDbYUgO3TN-36" edge="1" parent="1" source="Bfeg-CFsWBaDbYUgO3TN-37" style="edgeStyle=none;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.25;exitY=0;exitDx=0;exitDy=0;fontSize=12;startSize=8;endSize=8;startArrow=classic;startFill=1;" target="Bfeg-CFsWBaDbYUgO3TN-39">
           <mxGeometry relative="1" as="geometry" />
@@ -2202,7 +2199,7 @@
         <mxCell id="Bfeg-CFsWBaDbYUgO3TN-43" parent="1" style="ellipse;whiteSpace=wrap;html=1;" value="Archy" vertex="1">
           <mxGeometry height="60" width="100" x="1120" y="319" as="geometry" />
         </mxCell>
-        <mxCell id="Bfeg-CFsWBaDbYUgO3TN-44" edge="1" parent="1" style="endArrow=none;html=1;rounded=0;fontSize=12;startSize=8;endSize=8;curved=1;fillColor=#008a00;strokeColor=#005700;" value="">
+        <mxCell id="Bfeg-CFsWBaDbYUgO3TN-44" edge="1" parent="1" source="Bfeg-CFsWBaDbYUgO3TN-35" style="endArrow=none;html=1;rounded=0;fontSize=12;startSize=8;endSize=8;curved=1;fillColor=#008a00;strokeColor=#005700;" value="">
           <mxGeometry height="50" relative="1" width="50" as="geometry">
             <mxPoint x="729" y="1080" as="sourcePoint" />
             <mxPoint x="728.6399999999999" y="329" as="targetPoint" />
@@ -2211,16 +2208,6 @@
         <mxCell id="Bfeg-CFsWBaDbYUgO3TN-45" connectable="0" parent="Bfeg-CFsWBaDbYUgO3TN-44" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=12;" value="Init" vertex="1">
           <mxGeometry relative="1" x="0.6862" as="geometry">
             <mxPoint y="-4" as="offset" />
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="Bfeg-CFsWBaDbYUgO3TN-46" connectable="0" parent="Bfeg-CFsWBaDbYUgO3TN-44" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=12;" value="Missing component / Import failure" vertex="1">
-          <mxGeometry relative="1" x="-0.0638" y="-1" as="geometry">
-            <mxPoint y="-158" as="offset" />
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="Bfeg-CFsWBaDbYUgO3TN-47" connectable="0" parent="Bfeg-CFsWBaDbYUgO3TN-44" style="edgeLabel;html=1;align=left;verticalAlign=middle;resizable=0;points=[];fontSize=12;" value="Decision based on Archy response&lt;div&gt;- New component suggestion&lt;/div&gt;&lt;div&gt;- Retry import&lt;/div&gt;&lt;div&gt;- Ignore component&lt;/div&gt;" vertex="1">
-          <mxGeometry relative="1" x="-0.8996" y="-1" as="geometry">
-            <mxPoint x="-70" y="-22" as="offset" />
           </mxGeometry>
         </mxCell>
         <mxCell id="Bfeg-CFsWBaDbYUgO3TN-48" edge="1" parent="1" style="endArrow=none;html=1;rounded=0;fontSize=12;startSize=8;endSize=8;curved=1;fillColor=#008a00;strokeColor=#005700;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" target="Bfeg-CFsWBaDbYUgO3TN-37" value="">
@@ -2422,6 +2409,25 @@
           <mxGeometry relative="1" x="-0.4914" y="-13" as="geometry">
             <mxPoint x="-14" y="10" as="offset" />
           </mxGeometry>
+        </mxCell>
+        <mxCell id="vk9WXrHlGsijvtA-oJ7F-1" edge="1" parent="1" style="endArrow=none;html=1;rounded=0;fontSize=12;startSize=8;endSize=8;curved=1;fillColor=#008a00;strokeColor=#005700;" target="Bfeg-CFsWBaDbYUgO3TN-35" value="">
+          <mxGeometry height="50" relative="1" width="50" as="geometry">
+            <mxPoint x="729" y="1080" as="sourcePoint" />
+            <mxPoint x="728.6399999999999" y="329" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="vk9WXrHlGsijvtA-oJ7F-3" connectable="0" parent="vk9WXrHlGsijvtA-oJ7F-1" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=12;" value="Missing component / Import failure" vertex="1">
+          <mxGeometry relative="1" x="-0.0638" y="-1" as="geometry">
+            <mxPoint y="-158" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="vk9WXrHlGsijvtA-oJ7F-4" connectable="0" parent="vk9WXrHlGsijvtA-oJ7F-1" style="edgeLabel;html=1;align=left;verticalAlign=middle;resizable=0;points=[];fontSize=12;" value="Decision based on Archy response&lt;div&gt;- New component suggestion&lt;/div&gt;&lt;div&gt;- Retry import&lt;/div&gt;&lt;div&gt;- Ignore component&lt;/div&gt;" vertex="1">
+          <mxGeometry relative="1" x="-0.8996" y="-1" as="geometry">
+            <mxPoint x="-70" y="-22" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="Bfeg-CFsWBaDbYUgO3TN-35" parent="1" style="ellipse;whiteSpace=wrap;html=1;" value="Librarian" vertex="1">
+          <mxGeometry height="60" width="100" x="679" y="320" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>
