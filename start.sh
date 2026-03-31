@@ -30,8 +30,14 @@ export SNAPSHOT_PORT=8083
 node dist/mcp/ui_snapshot/index.js &
 SNAPSHOT_PID=$!
 
+# Start tscircuit-cli server in background (Primary UI and Proxy)
+echo "Starting tscircuit-cli server..."
+export TSCI_SKIP_CLI_UPDATE=true
+tsci dev /app/workspace/index.tsx --port 3020 > /app/tsci_server.log 2>&1 &
+TSCI_PID=$!
+
 # Wait for any process to exit
-wait -n $WS_SERVER_PID $WS_CLIENT_PID $ANA_PID $TERMINAL_PID $SNAPSHOT_PID
+wait -n $WS_SERVER_PID $WS_CLIENT_PID $ANA_PID $TERMINAL_PID $SNAPSHOT_PID $TSCI_PID
 
 # Exit with status of process that exited first
 exit $?
