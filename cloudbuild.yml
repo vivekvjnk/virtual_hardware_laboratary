@@ -49,7 +49,10 @@ steps:
       - '--image=gcr.io/$PROJECT_ID/vhl-agent-backend-sidecar' # Matches Step 3
       - '--cpu=1'
       - '--memory=1Gi'   # <--- Increased memory to prevent OOM crashes
-      - '--set-env-vars=PYTHONUNBUFFERED=1,LOG_LEVEL=INFO,STORAGE_BACKEND=gcs,GCS_BUCKET_NAME=vhl-storage,GCP_PROJECT=$PROJECT_ID' # Force logs out
+      - '--set-env-vars=VERTEXAI_PROJECT=$PROJECT_ID,VERTEXAI_LOCATION=us-central1'
+      - '--set-env-vars=PYTHONUNBUFFERED=1,LOG_LEVEL=INFO,STORAGE_BACKEND=gcs,GCP_LOCATION=global' # Force logs out
+      - '--set-env-vars=LLM_MODEL=vertex_ai/gemini-2.5-flash, GEMINI_2_5_FLASH=vertex_ai/gemini-2.5-flash'
+      - '--set-env-vars=LLM_API_KEY=abc, LLM_REVIEW_MODEL=vertex_ai/gemini-3-flash-preview, GCS_BUCKET_NAME=vhl-storage,GCP_PROJECT=$PROJECT_ID'
       
       - '--region=europe-west1'
 
