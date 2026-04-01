@@ -8,6 +8,8 @@ WS_SERVER_PID=$!
 
 # Start Workspace WebSocket Client in background
 echo "Starting Workspace WebSocket Client..."
+# The WorkspaceClient will automatically start 'tsci dev' on port 3020 
+# during its connection sequence.
 node dist/workspace/index.js &
 WS_CLIENT_PID=$!
 
@@ -30,15 +32,9 @@ export SNAPSHOT_PORT=8083
 node dist/mcp/ui_snapshot/index.js &
 SNAPSHOT_PID=$!
 
-# Start tscircuit-cli server in background (Primary UI and Proxy)
-echo "Starting tscircuit-cli server..."
-export TSCI_SKIP_CLI_UPDATE=true
-cd /app/workspace && tsci dev index.tsx --port 3020 &
-TSCI_PID=$!
-cd /app
-
 # Wait for any process to exit
-wait -n $WS_SERVER_PID $WS_CLIENT_PID $ANA_PID $TERMINAL_PID $SNAPSHOT_PID $TSCI_PID
+# Note: TSCI_PID is not used here as tsci dev is now a child of the WorkspaceClient
+wait -n $WS_SERVER_PID $WS_CLIENT_PID $ANA_PID $TERMINAL_PID $SNAPSHOT_PID
 
 # Exit with status of process that exited first
 exit $?
