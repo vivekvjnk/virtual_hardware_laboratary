@@ -43,15 +43,18 @@ export class WorkspaceClient implements WorkspaceSender {
     private gatewayServer: http.Server | null = null;
     private readonly GATEWAY_PORT = parseInt(process.env.VHL_WEBUI_PORT || "3020");
     private readonly TSC_DEV_PORT = 3021;
+    private isGatewayStarted: boolean = false;
 
     constructor(serverUrl: string, workspaceDir: string = WORKSPACE_DIR) {
         this.serverUrl = serverUrl;
         this.workspaceDir = workspaceDir;
         this.syncManager = new SyncManager(this.workspaceDir, this);
-        this.setupGatewayServer();
     }
 
     private setupGatewayServer() {
+        if (this.isGatewayStarted) return;
+        this.isGatewayStarted = true;
+
         const proxy = httpProxy.createProxyServer({
             target: `http://127.0.0.1:${this.TSC_DEV_PORT}`,
             ws: true,
@@ -98,6 +101,9 @@ export class WorkspaceClient implements WorkspaceSender {
     public async connect(): Promise<void> {
         console.log(`[WorkspaceClient] Connecting to ${this.serverUrl}...`);
 
+        // Start dev server in workspace root aggressively to prevent UI boot delays or race conditions
+        this.startDevServer(this.workspaceDir);
+
         return new Promise((resolve) => {
             this.ws = new WebSocket(this.serverUrl);
 
@@ -108,8 +114,6 @@ export class WorkspaceClient implements WorkspaceSender {
                     clearTimeout(this.reconnectTimer);
                     this.reconnectTimer = null;
                 }
-                // Start dev server in workspace root by default to avoid lockout
-                this.startDevServer(this.workspaceDir);
                 resolve();
             });
 
@@ -556,6 +560,10 @@ export class WorkspaceClient implements WorkspaceSender {
                 // Detection logic: wait for "Local:..."
                 if (output.includes("Local:") && output.includes(this.TSC_DEV_PORT.toString())) {
                     console.log("[WorkspaceClient] Dev server ready event detected: ", projectPath);
+                    
+                    // Boot the gateway now that the target dev HTTP server is listening on 3021
+                    this.setupGatewayServer();
+                    
                     // Only send generic ready message if we are at the workspace root.
                     // Specific project ready messages (with hashes) are handled by the callers 
                     // of startDevServer or specialized sync handlers.

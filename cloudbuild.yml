@@ -49,7 +49,7 @@ steps:
       - '--image=gcr.io/$PROJECT_ID/vhl-agent-backend-sidecar' # Matches Step 3
       - '--cpu=1'
       - '--memory=1Gi'   # <--- Increased memory to prevent OOM crashes
-      - '--set-env-vars=PYTHONUNBUFFERED=1,LOG_LEVEL=DEBUG' # Force logs out
+      - '--set-env-vars=PYTHONUNBUFFERED=1,LOG_LEVEL=INFO,STORAGE_BACKEND=gcs,GCS_BUCKET_NAME=vhl-storage,GCP_PROJECT=$PROJECT_ID' # Force logs out
       
       - '--region=europe-west1'
 
