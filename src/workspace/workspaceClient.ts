@@ -3,6 +3,8 @@ import { randomUUID } from "crypto";
 import { execSync, spawn, ChildProcess } from "child_process";
 import * as path from "path";
 import * as fs from "fs/promises";
+import * as http from "http";
+import httpProxy from "http-proxy";
 import { WORKSPACE_DIR } from "../config/paths.js";
 import type { WebSocketMessage, AgentMessage } from "../server/types.js";
 import { runtime } from "../vap/runtime.js";
@@ -38,10 +40,59 @@ export class WorkspaceClient implements WorkspaceSender {
             runtime_status: "uninitialized"
         };
 
+    private gatewayServer: http.Server | null = null;
+    private readonly GATEWAY_PORT = parseInt(process.env.VHL_WEBUI_PORT || "3020");
+    private readonly TSC_DEV_PORT = 3021;
+
     constructor(serverUrl: string, workspaceDir: string = WORKSPACE_DIR) {
         this.serverUrl = serverUrl;
         this.workspaceDir = workspaceDir;
         this.syncManager = new SyncManager(this.workspaceDir, this);
+        this.setupGatewayServer();
+    }
+
+    private setupGatewayServer() {
+        const proxy = httpProxy.createProxyServer({
+            target: `http://127.0.0.1:${this.TSC_DEV_PORT}`,
+            ws: true,
+        });
+
+        proxy.on('error', (err, req, res) => {
+            console.error('[Gateway Proxy] Error:', err.message);
+            if (res && 'writeHead' in res) {
+                res.writeHead(502, { 'Content-Type': 'text/plain' });
+                res.end('Bad Gateway: tsci dev server is not ready yet');
+            }
+        });
+
+        this.gatewayServer = http.createServer((req, res) => {
+            proxy.web(req, res);
+        });
+
+        this.gatewayServer.on('upgrade', (req, socket, head) => {
+            if (req.url && req.url.startsWith('/ws-agent')) {
+                console.log(`[Gateway Proxy] Upgrading WebSocket for /ws-agent`);
+                // Proxy directly to the internal Agent WebSocket server using an explicitly constructed URL
+                const agentProxy = httpProxy.createProxyServer({
+                    target: 'ws://127.0.0.1:1080',
+                    ws: true,
+                });
+                
+                agentProxy.on('error', (err, req, socket) => {
+                    console.error('[Gateway Proxy] WebSocket error:', err.message);
+                    socket.destroy();
+                });
+                
+                agentProxy.ws(req, socket, head);
+            } else {
+                // Forward regular web socket traffic (e.g. HMR) to tsci dev
+                proxy.ws(req, socket, head);
+            }
+        });
+
+        this.gatewayServer.listen(this.GATEWAY_PORT, '0.0.0.0', () => {
+            console.log(`[Gateway Proxy] Listening on 0.0.0.0:${this.GATEWAY_PORT}, routing to tsci dev on ${this.TSC_DEV_PORT}`);
+        });
     }
 
     public async connect(): Promise<void> {
@@ -492,7 +543,7 @@ export class WorkspaceClient implements WorkspaceSender {
                 RUNFRAME_STANDALONE_FILE_PATH: process.env.RUNFRAME_STANDALONE_FILE_PATH || "/app/runframe/standalone.min.js"
             };
 
-            this.devServerProcess = spawn("tsci", ["dev", entryFile], {
+            this.devServerProcess = spawn("tsci", ["dev", entryFile, "--port", this.TSC_DEV_PORT.toString()], {
                 cwd: projectPath,
                 env,
                 stdio: ['ignore', 'pipe', 'pipe']
@@ -502,8 +553,8 @@ export class WorkspaceClient implements WorkspaceSender {
                 const output = data.toString();
                 console.log(`[tsci dev] ${output}`);
 
-                // Detection logic: wait for "Local: http://0.0.0.0:..."
-                if (output.includes("Local:   http://0.0.0.0:")) {
+                // Detection logic: wait for "Local:..."
+                if (output.includes("Local:") && output.includes(this.TSC_DEV_PORT.toString())) {
                     console.log("[WorkspaceClient] Dev server ready event detected: ", projectPath);
                     // Only send generic ready message if we are at the workspace root.
                     // Specific project ready messages (with hashes) are handled by the callers 
