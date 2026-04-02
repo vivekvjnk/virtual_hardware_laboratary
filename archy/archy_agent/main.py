@@ -107,130 +107,102 @@ def crop_image_into_segments(image_path: Path, output_dir: Path, num_segments: i
                 
     logger.info(f"Successfully created {num_segments} segments and overview in {output_dir}")
 
-def _archy_build_scud_stub(image_id: str, workspace_path: Path, image_path: Path = None):
-    """Stub implementation of archy_build_scud for faster validation."""
-
-    scud_file = workspace / f"{image_id}.scud"
-    # Check if scud file already exists. If yes, simply return
-    if scud_file.exists():
-        logger.info(f"SCUD file already exists at {scud_file}. Skipping stub generation.")
-        return scud_file
-
-    workspace = Path(workspace_path).resolve()    
+def prepare_archy_workspace(workspace_path: Union[str, Path], image_id: str) -> Path:
+    """
+    Handles all deterministic workspace and artifact preparation steps.
+    Consolidates path resolution, image preprocessing, and segmentation.
+    Returns the path to the preprocessed image.
+    """
+    workspace = Path(workspace_path).resolve()
     source_image_path = workspace / "UserArtefacts" / f"{image_id}.png"
     processed_image_path = workspace / "UserArtefacts" / f"{image_id}_preprocessed.png"
-
-    if not image_path:
-        if not source_image_path.exists():
-            raise FileNotFoundError(f"Source image not found at {source_image_path}")
-        _preprocess_image(source_image_path, processed_image_path)
-        image_path = processed_image_path
-    
-    # Step 1: Segmentation (uses processed image)
-    # Source image is assumed to be at <workspace>/UserArtefacts/<image_id>.png
-    # But we now use the preprocessed image
-    image_path = processed_image_path
-    
-    # Predefined output directory for segments
-    # Consistent with standard naming and scud_gen_agent's expected structure
     output_dir = workspace / "schematic_images" / image_id
-    
-    logger.info(f"[_archy_build_scud_stub] Starting orchestration for image_id: {image_id}")
-    logger.info(f"[_archy_build_scud_stub] Workspace: {workspace}")
-    logger.info(f"[_archy_build_scud_stub] Source Image Path: {image_path}")
-    
-    if not image_path.exists():
-        raise FileNotFoundError(f"Source image not found at {image_path}")
 
-    # Step 1: Segment image to 4 equal quadrants and save to <workspace>/schematic_images/
-    crop_image_into_segments(
-        image_path=image_path,
-        output_dir=output_dir,
-        num_segments=4,
-        overlap_pct=0.1
-    )
+    logger.info(f"[prepare_archy_workspace] Preparing workspace for image_id: {image_id}")
     
+    if not source_image_path.exists():
+        raise FileNotFoundError(f"Source image not found at {source_image_path}")
+
+    # Step 1: Image Preprocessing (Idempotent)
+    if not processed_image_path.exists():
+        logger.info(f"[prepare_archy_workspace] Preprocessed image not found. Generating...")
+        _preprocess_image(source_image_path, processed_image_path)
+    else:
+        logger.info(f"[prepare_archy_workspace] Preprocessed image already exists at {processed_image_path}")
+
+    # Step 2: Image Segmentation (Idempotent)
+    # Check if segments already exist by checking if output_dir has files
+    if not output_dir.exists() or not any(output_dir.iterdir()):
+        logger.info(f"[prepare_archy_workspace] Segments not found. Segmenting image...")
+        crop_image_into_segments(
+            image_path=processed_image_path,
+            output_dir=output_dir,
+            num_segments=4,
+            overlap_pct=0.1
+        )
+    else:
+        logger.info(f"[prepare_archy_workspace] Segments already exist in {output_dir}")
+
+    return processed_image_path
+
+def _archy_build_scud_stub(image_id: str, workspace_path: Path):
+    """Stub implementation of archy_build_scud for faster validation."""
+    workspace = Path(workspace_path).resolve()
+    scud_file = workspace / f"{image_id}.scud"
     
-    # Step 2
+    # Check if scud file already exists
+    if scud_file.exists():
+        logger.info(f"[_archy_build_scud_stub] SCUD file already exists at {scud_file}. Skipping stub generation.")
+        return scud_file
+
     logger.info(f"[_archy_build_scud_stub] [STUB] Generating dummy SCUD document for image_id: {image_id}")
     
-    # Create dummy SCUD file
+    # Define mock SCUD path relative to the script's root (VHL_agent_backend)
+    # The script is in VHL_agent_backend/archy/archy_agent/main.py
+    # Mock is in VHL_agent_backend/tests/Mocks/Archy/...
+    base_dir = Path(__file__).resolve().parents[3] # VHL_agent_backend
+    mock_scud_path = base_dir / "tests" / "Mocks" / "Archy" / "bms_bq_sys_c195dff2_eval_board_0b36a.scud"
     
-    # Load mock SCUD content from VHL_agent_backend/tests/Mocks/Archy/bms_bq_sys_c195dff2_eval_board_0b36a.scud
-    with open("tests/Mocks/Archy/bms_bq_sys_c195dff2_eval_board_0b36a.scud", "r") as f:
-        scud_content = f.read()
+    if not mock_scud_path.exists():
+        # Fallback to local tests path if running from backend root
+        mock_scud_path = Path("tests/Mocks/Archy/bms_bq_sys_c195dff2_eval_board_0b36a.scud")
+
+    try:
+        with open(mock_scud_path, "r") as f:
+            scud_content = f.read()
+    except Exception as e:
+        logger.warning(f"[_archy_build_scud_stub] Could not find mock SCUD at {mock_scud_path}: {e}. Using fallback content.")
+        scud_content = f"DUMMY SCUD FOR {image_id}"
     
     with open(scud_file, "w") as f:
         f.write(scud_content)
 
     logger.info(f"[_archy_build_scud_stub] [STUB] Dummy SCUD document generated: {scud_file}")
     return scud_file
-    
-def orchestrate_archy(workspace_path: Union[str, Path], image_id: str):
+
+def orchestrate_archy(workspace_path: Union[str, Path], image_id: str, image_path: Path):
     """
     Main orchestration function for the Archy module.
     
     Purpose: Generate a Shared Circuit Understanding Document (SCUD) from a schematic image.
     
-    Steps:
-    1. Run image segmentation pipeline on the source schematic.
-    2. Validate that cropped image segments were generated.
-    3. Run Archy agent to generate the SCUD document.
-    4. Verify the SCUD document was created in the workspace.
-    
-    Inputs:
-    - workspace_path: Path to the workspace directory.
-    - image_id: Unique identifier for the source image.
+    Sole Responsibility: Triggering LLM agent in fail-safe mode with proper error handling.
+    Deterministic workspace preparation should be handled by the caller.
     """
     workspace = Path(workspace_path).resolve()
     
-    
-    # 1. Step 0: Image Preprocessing
-    # Source image is assumed to be at <workspace>/UserArtefacts/<image_id>.png
-    source_image_path = workspace / "UserArtefacts" / f"{image_id}.png"
-    processed_image_path = workspace / "UserArtefacts" / f"{image_id}_preprocessed.png"
-    
-    # Predefined output directory for segments
-    # Consistent with standard naming and scud_gen_agent's expected structure
-    output_dir = workspace / "schematic_images" / image_id
-    
-    logger.info(f"[orchestrate_archy] Starting orchestration for image_id: {image_id}")
-    logger.info(f"[orchestrate_archy] Workspace: {workspace}")
-    logger.info(f"[orchestrate_archy] Source Image Path: {source_image_path}")
-    
-    if not source_image_path.exists():
-        raise FileNotFoundError(f"Source image not found at {source_image_path}")
-
-    # Preprocess image before segmentation
-    _preprocess_image(source_image_path, processed_image_path)
-    # Use preprocessed image as baseline for all downstream tasks
-    image_path = processed_image_path
-
-    # Step 1: Segment image to 4 equal quadrants and save to <workspace>/schematic_images/
-    crop_image_into_segments(
-        image_path=image_path,
-        output_dir=output_dir,
-        num_segments=4,
-        overlap_pct=0.1
-    )
-    
-    
-    # Step 2: Trigger Archy Agent (Scud Generation)
-    logger.info("[orchestrate_archy] Step 2/2: Triggering Archy agent for SCUD generation...")
+    # Step 1: Trigger Archy Agent (Scud Generation)
+    logger.info("[orchestrate_archy] Triggering Archy agent for SCUD generation...")
     if os.environ.get("ARCHY_STUB") == "true":
-        _archy_build_scud_stub(image_id=image_id, workspace_path=workspace, image_path=image_path)
+        _archy_build_scud_stub(image_id=image_id, workspace_path=workspace)
     else:
-        from archy_agent.scud_gen_agent import archy_build_scud
-        try:
-            archy_build_scud(
-                image_id=image_id,
-                workspace=workspace,
-                image_path=image_path
-            )
-        except Exception as e:
-            logger.error(f"[orchestrate_archy] Error during SCUD generation: {e}")
-            raise
-
+        from archy_agent.scud_gen_agent import archy_build_scud 
+        archy_build_scud(
+            image_id=image_id,
+            workspace=workspace,
+            image_path=image_path
+        )
+    
     # Final Verification: Check if scud document is created in workspace
     scud_file = workspace / f"{image_id}.scud"
     if not scud_file.exists():
@@ -244,11 +216,26 @@ if __name__ == "__main__":
         print("Usage: python main.py <workspace_path> <image_id>")
         sys.exit(1)
         
-    ws_v_path = sys.argv[1]
+    ws_v_path = Path(sys.argv[1]).resolve()
     img_v_id = sys.argv[2]
     
     try:
-        orchestrate_archy(ws_v_path, img_v_id)
+        # Local preparation for standalone run
+        source_image_path = ws_v_path / "UserArtefacts" / f"{img_v_id}.png"
+        processed_image_path = ws_v_path / "UserArtefacts" / f"{img_v_id}_preprocessed.png"
+        output_dir = ws_v_path / "schematic_images" / img_v_id
+
+        if not source_image_path.exists():
+            logger.error(f"Source image not found at {source_image_path}")
+            sys.exit(1)
+
+        if not processed_image_path.exists():
+            _preprocess_image(source_image_path, processed_image_path)
+        
+        if not output_dir.exists() or not any(output_dir.iterdir()):
+            crop_image_into_segments(processed_image_path, output_dir)
+
+        orchestrate_archy(ws_v_path, img_v_id, processed_image_path)
     except Exception as e:
         logger.error(f"[main] Orchestration failed: {e}")
         sys.exit(1)

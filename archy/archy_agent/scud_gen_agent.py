@@ -52,8 +52,6 @@ def archy_build_scud(
 
     model = os.getenv("LLM_MODEL", "vertex_ai/gemini-3-flash-preview")
 
-    # condenser = LLMSummarizingCondenser(llm=llm_condenser, max_size=120, keep_first=8)
-
     llm = LLM(
         usage_id="agent-1-llm",
         model=model,
@@ -81,18 +79,17 @@ def archy_build_scud(
             # *GEMINI_FILE_TOOLS
         ],
     )
-    persistence_dir = "./.conversations"
+    # persistence_dir = "./.conversations"
     conversation = Conversation(
         agent=agent,
         workspace=str(workspace),
-        persistence_dir = persistence_dir,
+        # persistence_dir = persistence_dir,
     )
 
     # Use the provided image_path or default to original
     final_image_path = image_path if image_path else workspace / "UserArtefacts" / f"{image_id}.png"
-    # image_segment_paths = os.listdir(workspace / "schematic_images" / image_id)
     image_segment_paths = str(workspace / "schematic_images" / image_id)
-    # image_segments_string = "\n".join([str(Path(workspace / "schematic_images" / image_id / path)) for path in image_segment_paths])
+    
     user_msg = (
         f"The original schematic image is located in '{final_image_path}'.\n"
         f"Following set of segmented crops are available in the given path\n"

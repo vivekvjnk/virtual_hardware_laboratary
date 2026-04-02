@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 import sys
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Union, Tuple
 from pathlib import Path
 from state_machine.states import AOSMState
 from vhl_protocol.client.client import VHLWebSocketClient
@@ -14,7 +14,7 @@ import base64
 from ana_agent.state_machine.mcp_manager import MCPManager
 from ana_agent.state_machine import ANADStateMachine
 from workspace.manager import WorkspaceManager
-from archy_agent.main import orchestrate_archy, _archy_build_scud_stub
+from archy_agent.main import orchestrate_archy, prepare_archy_workspace
 from librarian_agent.agent import LibrarianAgent
 from librarian_agent.stub import process_scud_stub
 # from component_placement_agent.state_machine.cpa_sm import CPASm
@@ -352,9 +352,10 @@ class AOSM:
                     source=EventSource.BACKEND,
                     payload={"message": "Project not ready for synthesis. Please upload schematic first."}
                 ))
-        
+    
+    # Agents: Librarian
     async def _handle_bootstrap_pipeline(self, event: BaseEvent):
-        logger.info(f"[AOSM._handle_idle] In BOOTSTRAP_PIPELINE state...")
+        logger.info(f"[AOSM._handle_bootstrap_pipeline] In BOOTSTRAP_PIPELINE state...")
         # We trigger the bootstrap logic upon entering this state.
         if event.type == EventType.STATE_TRANSITION:
             scud_path,image_id = await self._run_bootstrap(event)
@@ -663,18 +664,39 @@ class AOSM:
 
     # --- High-level Orchestration Logic ---
 
-    async def _run_bootstrap(self, event: BaseEvent):
-        """Logic for BOOTSTRAP_PIPELINE."""
-        logger.info("[AOSM._run_bootstrap] Executing Bootstrap Pipeline...")
-        
+
+    # ----ARCHY-----
+    #TODO(V0.1): 
+    # 1. Support for Design document based bootstrapping 
+    #   - Parse detailed design document provided by user
+    #   - Design document may include image + textual description + component preferences
+    #   - Output of this stage is still a SCUD, but with richer information for the downstream modules to work with
+    
+    #TODO(V0.01)
+    # 1. Simplify method by splitting into smaller functions
+    # 2. Archy orchestration: Thread management for Archy
+    # 3. Move image preprocessing out of Archy; orchestrate_archy should only focus on archy orchestration
+    # 4. Isolate Archy LLM agent to a dedicated thread; This would simplify our transition to A2A architecture 
+
+
+    async def _prepare_bootstrap_assets(self, event: BaseEvent) -> Optional[str]:
+        """
+        Validates the incoming event payload and saves the reference image to the workspace.
+        Returns image_id if successful, or None on failure.
+        """
         payload = event.payload or {}
-        filename = payload.get("filename", "unnamed.png")
+        filename = payload.get("filename")
         base64_img = payload.get("base64")
         
+        # Basic validation of the payload
         if not base64_img:
-            logger.error(f"[AOSM._run_bootstrap] Missing base64 in payload: {payload}")
+            logger.error(f"[AOSM._prepare_bootstrap_assets] Missing base64 in payload: {payload}")
             await self.transition_to(AOSMState.ERROR_PRESENTED, "Bootstrap failed: Missing image data")
-            return
+            return None
+        if not filename:
+            logger.error(f"[AOSM._prepare_bootstrap_assets] No filename provided in payload.")
+            await self.transition_to(AOSMState.ERROR_PRESENTED, "Bootstrap failed: No filename provided")
+            return None
         
         # Generate image_id: <file_name_without_extension>_<5 digit uid>
         stem = Path(filename).stem
@@ -683,10 +705,9 @@ class AOSM:
 
         project_root = self.workspace_manager.project_root
         if not project_root:
-            logger.error("[AOSM._run_bootstrap] Project root not set in workspace manager")
+            logger.error("[AOSM._prepare_bootstrap_assets] Project root not set in workspace manager")
             await self.transition_to(AOSMState.ERROR_PRESENTED, "Bootstrap failed: Project not initialized")
-            return
-
+            return None
 
         # 1. Save image to project root under UserArtefacts/
         user_artefacts_dir = project_root / "UserArtefacts"
@@ -694,42 +715,63 @@ class AOSM:
         image_path = user_artefacts_dir / f"{image_id}.png"
         
         try:
-            logger.info(f"[AOSM._run_bootstrap] Saving reference image to {image_path}")
+            logger.info(f"[AOSM._prepare_bootstrap_assets] Saving reference image to {image_path}")
             with open(image_path, "wb") as f:
                 f.write(base64.b64decode(base64_img))
         except Exception as e:
-            logger.error(f"[AOSM._run_bootstrap] Failed to save image: {e}")
+            logger.error(f"[AOSM._prepare_bootstrap_assets] Failed to save image: {e}")
             await self.transition_to(AOSMState.ERROR_PRESENTED, f"Bootstrap failed: Image save error: {str(e)}")
-            return
+            return None
+            
+        return image_id
 
-        # 2. Trigger Archy
+    # Main components
+    # 1. Archy: Image parsing and SCUD generation; Runs in dedicated thread due to CPU intensity; Output is a SCUD file path
+    async def _run_bootstrap(self, event: BaseEvent) -> Tuple[Any, Optional[str]]:
+        """Logic for BOOTSTRAP_PIPELINE."""
+        logger.info("[AOSM._run_bootstrap] Executing Bootstrap Pipeline...")
+        
+        image_id = await self._prepare_bootstrap_assets(event)
+        if not image_id:
+            return None, None
+
+        project_root = self.workspace_manager.project_root
+
         logger.info(f"[AOSM._run_bootstrap] Triggering Archy orchestration for image: {image_id}")
         if os.environ.get("STUBS") == "true":
             logger.info("[AOSM._run_bootstrap] Running Archy in STUB mode")
-            self.update_agent_status("archy", AgentStatus.RUNNING)
-            scud_path = _archy_build_scud_stub(workspace_path=project_root, image_id=image_id)
-            self.update_agent_status("archy", AgentStatus.IDLE)
-        else:    
-            try:
-                # orchestrate_archy is CPU intensive/blocking, run in thread
-                self.update_agent_status("archy", AgentStatus.RUNNING)
-                scud_path = await asyncio.to_thread(
-                    orchestrate_archy, 
-                    workspace_path=project_root, 
-                    image_id=image_id
-                )
-                self.update_agent_status("archy", AgentStatus.IDLE)
-                logger.info(f"[AOSM._run_bootstrap] Archy completed successfully. SCUD generated at: {scud_path}")    
-                # Update current message with the SCUD path for ANA trigger
-                
-            except Exception as e:
-                self.update_agent_status("archy", AgentStatus.IDLE)
-                logger.error(f"[AOSM._run_bootstrap] Archy orchestration failed: {e}")
-                await self.transition_to(AOSMState.ERROR_PRESENTED, f"Archy failed: {str(e)}")
-                return None
-            
-        return scud_path,image_id
+            # set the ARCHY_STUB environment variable, so that archy module runs in stub mode
+            os.environ["ARCHY_STUB"] = "true"
+        
+        try:
+            # Step 1: Workspace and Artifact Preparation (Deterministic)
+            logger.info(f"[AOSM._run_bootstrap] Preparing workspace and artifacts for image: {image_id}")
+            image_path = prepare_archy_workspace(workspace_path=project_root,image_id=image_id,)
 
+            # 2. Trigger Archy orchestration
+            logger.info(f"[AOSM._run_bootstrap] Triggering Archy agent invocation for image: {image_id}")
+            self.update_agent_status("archy", AgentStatus.RUNNING)
+            scud_path = await asyncio.to_thread(
+                orchestrate_archy, 
+                workspace_path=project_root, 
+                image_id=image_id,
+                image_path=image_path
+            )
+            # Update current message with the SCUD path for ANA trigger
+            self.current_message["scud_path"] = str(scud_path)
+            self.current_message["circuit_id"] = image_id
+            
+            self.update_agent_status("archy", AgentStatus.IDLE)
+            logger.info(f"[AOSM._run_bootstrap] Archy completed successfully. SCUD generated at: {scud_path}")    
+            
+        except Exception as e:
+            self.update_agent_status("archy", AgentStatus.IDLE)
+            logger.error(f"[AOSM._run_bootstrap] Archy orchestration failed: {e}")
+            await self.transition_to(AOSMState.ERROR_PRESENTED, f"Archy failed: {str(e)}")
+            return None, None
+        return scud_path,image_id
+    # ----ARCHY-----
+    
     async def _run_librarian(self, scud_path: Path, instructions: str = None):
         """Logic for triggering Librarian Agent to resolve components."""
         logger.info(f"[AOSM._run_librarian] Triggering Librarian Agent for SCUD: {scud_path} (Instructions: {instructions})")
