@@ -21,20 +21,6 @@ from librarian_agent.stub import process_scud_stub
 
 logger = logging.getLogger(__name__)
 
-import socket
-import logging
-
-def debug_local_ports():
-    logging.info("--- STARTING VHL PORT DIAGNOSTIC ---")
-    for port in [1080, 8081]:
-        # socket.AF_INET strictly forces an IPv4 check
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        result = sock.connect_ex(('0.0.0.0', port))
-        status = "OPEN (Listening)" if result == 0 else f"CLOSED (Error Code: {result})"
-        print(f"VHL DIAGNOSTIC: 0.0.0.0:{port} is {status}")
-        sock.close()
-
-
 
 class AOSM:
     """
@@ -43,7 +29,6 @@ class AOSM:
     """
     def __init__(self, ws_url: str = "ws://localhost:1080"):
         logger.info(f"[AOSM.__init__] Initializing AOSM with ws_url: {ws_url}")
-        debug_local_ports()
         self.state = AOSMState.STARTUP
         self.web_socket_client = VHLWebSocketClient(
             url=ws_url,
@@ -231,9 +216,15 @@ class AOSM:
             payload=payload
         ))
 
-    # --- State Handlers ---
+    # --- State Handlers --- BEGIN
 
     async def _handle_startup(self, event: BaseEvent):
+        """
+        Handles PROJECT_CREATE, PROJECT_LOAD, and LIST_PROJECTS events to manage project lifecycle.
+        PROJECT_CREATE: Creates a new project with a unique ID, sets up workspace, and transitions to IDLE.
+        PROJECT_LOAD: Loads an existing project by ID, sets up workspace, and transitions to IDLE.
+        LIST_PROJECTS: Lists all available projects in the workspace and emits them back to the UI.
+        """
         logger.info(f"[AOSM._handle_startup] In STARTUP state...")
         if event.type == EventType.CREATE_PROJECT:
             payload = event.payload or {}
@@ -330,6 +321,13 @@ class AOSM:
             await self.web_socket_client.emit_projects_list(projects)
 
     async def _handle_idle(self, event: BaseEvent):
+        """
+        Default state of the system. Handles following events:
+        - REFERENCE_UPLOADED: Transition to BOOTSTRAP_PIPELINE to prepare assets for Archy.
+        - HUMAN_INPUT: Transition to INTENT_CLASSIFY to classify user intent (modification vs synthesis)
+        - TRIGGER_CPA_AGENT: Direct user trigger to start CPA workflow, transition to TRIGGER_CPA
+        - SYNTHESIZE_CIRCUIT: User trigger to start circuit synthesis. Check if project is synthesizable and transition to TRIGGER_ANA if yes, otherwise emit error.
+        """
         logger.info(f"[AOSM._handle_idle] In IDLE state...")
         if event.type == EventType.REFERENCE_UPLOADED:
             await self.transition_to(AOSMState.BOOTSTRAP_PIPELINE, "New schematic uploaded", payload=event.payload)
@@ -353,30 +351,33 @@ class AOSM:
                     payload={"message": "Project not ready for synthesis. Please upload schematic first."}
                 ))
     
-    # Agents: Librarian
-    async def _handle_bootstrap_pipeline(self, event: BaseEvent):
-        logger.info(f"[AOSM._handle_bootstrap_pipeline] In BOOTSTRAP_PIPELINE state...")
-        # We trigger the bootstrap logic upon entering this state.
-        if event.type == EventType.STATE_TRANSITION:
-            scud_path,image_id = await self._run_bootstrap(event)
-            self.current_message["circuit_id"] = image_id
-            if scud_path:
-                self.current_message["scud_path"] = str(scud_path)
-                await self._run_librarian(scud_path)
-                
-                # Workflow 1.1: Sync lib/imports from VHL runtime to Agent backend
-                if self.project_id:
-                    # Sync Library using centralized client
-                    await self.sync_client.sync_library(self.project_id)
-                    logger.info(f"[AOSM._handle_bootstrap_pipeline] Library sync completed. Transitioning to WAIT_FOR_LIBRARIAN_HIL")
-
-                    # Transition to WAIT_FOR_LIBRARIAN_HIL to let human review librarian results
-                    await self.transition_to(AOSMState.WAIT_FOR_LIBRARIAN_HIL, "Bootstrap and Component resolution completed. Waiting for HIL review.", payload={"scud_path": str(scud_path)})
-                else:
-                    raise ValueError(f"Project id is null : {self.project_id}")
-            else:
-                raise ValueError(f"scud_path is null. {scud_path}")
     
+    async def _handle_bootstrap_pipeline(self, event: BaseEvent):
+        """
+        Prepares necessary assets for Archy Agent after receiving REFERENCE_UPLOADED event in IDLE state.
+        Expects event.payload to contain "image_id" and "image_path" for the uploaded schematic reference.
+        If preparation is successful, transitions to TRIGGER_ARCHY to start Archy Agent. Otherwise, transitions to ERROR_PRESENTED.
+        """
+        logger.info(f"[AOSM._handle_bootstrap_pipeline] In BOOTSTRAP_PIPELINE state...")
+        # We trigger the bootstrap asset preparation upon entering this state.
+        if event.type == EventType.STATE_TRANSITION:
+            try:
+                # Step 1: Prepare assets (Ref, Workspace, Preprocessing)
+                res = await self._prepare_bootstrap_assets(event)
+                if not res:
+                    raise ValueError("Failed to prepare bootstrap assets")
+                image_id, image_path = res
+                
+                # Step 2: Store info for downstream agents
+                self.current_message["circuit_id"] = image_id
+                self.current_message["image_path"] = str(image_path)
+                
+                # Step 3: Transition to ARCHY
+                await self.transition_to(AOSMState.TRIGGER_ARCHY, "Assets prepared. Moving to Archy.")
+            except Exception as e:
+                logger.error(f"[AOSM._handle_bootstrap_pipeline] Preparation failed: {e}")
+                await self.transition_to(AOSMState.ERROR_PRESENTED, f"Bootstrap preparation failed: {e}")
+
     async def _handle_present_result(self, event: BaseEvent):
         logger.info(f"[AOSM._handle_present_result] Presenting results to user...")
         
@@ -417,6 +418,7 @@ class AOSM:
             # After presenting/handling, transition back to IDLE
             await self.transition_to(AOSMState.IDLE, f"Finished processing ANA result: {decision}")
 
+    # TODO: Unncessary node. Remove in later iteration.
     async def _handle_intent_classify(self, event: BaseEvent):
         # In a real scenario, an agent would classify the intent here.
         # For the wireframe, we assume valid modification request.
@@ -427,7 +429,63 @@ class AOSM:
         
         # Transition to TRIGGER_ANA
         await self.transition_to(AOSMState.TRIGGER_ANA, "Intent classified as modification", payload=event.payload)
-        
+    
+    # Agent: Archy
+    async def _handle_trigger_archy(self, event: BaseEvent):
+        logger.info(f"[AOSM._handle_trigger_archy] In TRIGGER_ARCHY state...")
+        if event.type == EventType.STATE_TRANSITION:
+            image_id = self.current_message.get("circuit_id")
+            image_path_str = self.current_message.get("image_path")
+            
+            if not image_id or not image_path_str:
+                logger.error(f"[AOSM._handle_trigger_archy] Missing circuit_id ({image_id}) or image_path ({image_path_str})")
+                await self.transition_to(AOSMState.ERROR_PRESENTED, "Missing session data for Archy")
+                return
+
+            image_path = Path(str(image_path_str))
+            
+            try:
+                scud_path = await self._run_archy(image_id, image_path)
+                if scud_path:
+                    self.current_message["scud_path"] = str(scud_path)
+                    await self.transition_to(AOSMState.TRIGGER_LIBRARIAN, "Archy completed. Moving to Librarian.")
+                else:
+                    raise ValueError("SCUD path not returned from Archy")
+            except Exception as e:
+                logger.error(f"[AOSM._handle_trigger_archy] Archy failed: {e}")
+                await self.transition_to(AOSMState.ERROR_PRESENTED, f"Archy failed: {e}")
+
+    # Agent: Librarian
+    async def _handle_trigger_librarian(self, event: BaseEvent):
+        logger.info(f"[AOSM._handle_trigger_librarian] In TRIGGER_LIBRARIAN state...")
+        if event.type == EventType.STATE_TRANSITION:
+            scud_path_str = self.current_message.get("scud_path")
+            if not scud_path_str:
+                logger.error("[AOSM._handle_trigger_librarian] Missing scud_path in current_message")
+                await self.transition_to(AOSMState.ERROR_PRESENTED, "Missing session data for Librarian")
+                return
+
+            scud_path = Path(str(scud_path_str))
+            
+            try:
+                # Trigger Librarian Agent
+                await self._run_librarian(scud_path)
+                
+                # Workflow 1.1: Sync lib/imports from VHL runtime to Agent backend
+                if self.project_id:
+                    # Sync Library using centralized client
+                    await self.sync_client.sync_library(self.project_id)
+                    logger.info(f"[AOSM._handle_trigger_librarian] Librarian and Sync completed. Transitioning to WAIT_FOR_LIBRARIAN_HIL")
+
+                    # Transition to WAIT_FOR_LIBRARIAN_HIL to let human review librarian results
+                    await self.transition_to(AOSMState.WAIT_FOR_LIBRARIAN_HIL, "Component resolution completed. Waiting for HIL review.", payload={"scud_path": str(scud_path)})
+                else:
+                    raise ValueError(f"Project id is null : {self.project_id}")
+            except Exception as e:
+                logger.error(f"[AOSM._handle_trigger_librarian] Librarian failed: {e}")
+                await self.transition_to(AOSMState.ERROR_PRESENTED, f"Librarian failed: {e}")
+    
+    # Agent: ANA
     async def _handle_trigger_ana(self, event: BaseEvent):
 
         if event.type == EventType.STATE_TRANSITION:
@@ -511,31 +569,6 @@ class AOSM:
         logger.info("[AOSM._handle_cancel_pipeline] Cleaning up cancelled pipeline...")
         await self.transition_to(AOSMState.IDLE, "Cleanup complete")
     
-    async def _wait_and_transition(self, event, task_id, decision):
-                # This runs independently of the main loop
-                if self.mcp_manager:
-                    logger.info(f"[AOSM._wait_and_transition] Applying VAP decision via MCP: {decision} for task {task_id}")
-                    try:
-                        await asyncio.to_thread(
-                            self.mcp_manager.call_tool,
-                            "apply_vap_decision",
-                            {"task_id": task_id, "decision": decision}
-                        )
-                    except Exception as e:
-                        logger.error(f"[AOSM._wait_and_transition] Failed to apply VAP decision via MCP: {e}")
-                        # Fallback to websocket if MCP fails
-                        await self.web_socket_client.emit_evaluation_update(task_id=task_id, decision=decision)
-                else:
-                    await self.web_socket_client.emit_evaluation_update(task_id=task_id, decision=decision)
-                try:
-                    await self.web_socket_client.wait_for_event(
-                        EventType.DEV_SERVER_READY,
-                        timeout=60.0
-                    )
-                    await self.transition_to(AOSMState.PRESENT_RESULT, payload=event.payload)
-                except Exception as e:
-                    logger.error(f"Background wait failed: {e}")
-            
     async def _handle_error_presented(self, event: BaseEvent):
         logger.info(f"[AOSM._handle_error_presented] In ERROR_PRESENTED state...")
         if event.type == EventType.HUMAN_INPUT:
@@ -662,6 +695,33 @@ class AOSM:
             elif reason == "ERROR":
                  await self.transition_to(AOSMState.ERROR_PRESENTED, payload=event.payload)
 
+    # --- State Handlers --- END
+
+    async def _wait_and_transition(self, event, task_id, decision):
+        # This runs independently of the main loop
+        if self.mcp_manager:
+            logger.info(f"[AOSM._wait_and_transition] Applying VAP decision via MCP: {decision} for task {task_id}")
+            try:
+                await asyncio.to_thread(
+                    self.mcp_manager.call_tool,
+                    "apply_vap_decision",
+                    {"task_id": task_id, "decision": decision}
+                )
+            except Exception as e:
+                logger.error(f"[AOSM._wait_and_transition] Failed to apply VAP decision via MCP: {e}")
+                # Fallback to websocket if MCP fails
+                await self.web_socket_client.emit_evaluation_update(task_id=task_id, decision=decision)
+        else:
+            await self.web_socket_client.emit_evaluation_update(task_id=task_id, decision=decision)
+        try:
+            await self.web_socket_client.wait_for_event(
+                EventType.DEV_SERVER_READY,
+                timeout=60.0
+            )
+            await self.transition_to(AOSMState.PRESENT_RESULT, payload=event.payload)
+        except Exception as e:
+            logger.error(f"Background wait failed: {e}")
+
     # --- High-level Orchestration Logic ---
 
 
@@ -679,77 +739,59 @@ class AOSM:
     # 4. Isolate Archy LLM agent to a dedicated thread; This would simplify our transition to A2A architecture 
 
 
-    async def _prepare_bootstrap_assets(self, event: BaseEvent) -> Optional[str]:
-        """
-        Validates the incoming event payload and saves the reference image to the workspace.
-        Returns image_id if successful, or None on failure.
-        """
+    async def _prepare_bootstrap_assets(self, event: BaseEvent) -> Tuple[str, Path]:
+        """Logic for BOOTSTRAP_PIPELINE: Validation, asset saving, and workspace prep."""
+        logger.info("[AOSM._prepare_bootstrap_assets] Preparing assets for Bootstrap Pipeline...")
+        
         payload = event.payload or {}
         filename = payload.get("filename")
         base64_img = payload.get("base64")
         
-        # Basic validation of the payload
-        if not base64_img:
-            logger.error(f"[AOSM._prepare_bootstrap_assets] Missing base64 in payload: {payload}")
-            await self.transition_to(AOSMState.ERROR_PRESENTED, "Bootstrap failed: Missing image data")
-            return None
-        if not filename:
-            logger.error(f"[AOSM._prepare_bootstrap_assets] No filename provided in payload.")
-            await self.transition_to(AOSMState.ERROR_PRESENTED, "Bootstrap failed: No filename provided")
-            return None
+        if not base64_img or not filename:
+            raise ValueError("Missing image data or filename in payload")
         
-        # Generate image_id: <file_name_without_extension>_<5 digit uid>
+        # Ensure type safety for linter
+        assert isinstance(filename, str)
+        assert isinstance(base64_img, str)
+
         stem = Path(filename).stem
         uid = uuid.uuid4().hex[:5]
         image_id = f"{self.workspace_manager.project_id}_{stem}_{uid}"
 
         project_root = self.workspace_manager.project_root
         if not project_root:
-            logger.error("[AOSM._prepare_bootstrap_assets] Project root not set in workspace manager")
-            await self.transition_to(AOSMState.ERROR_PRESENTED, "Bootstrap failed: Project not initialized")
-            return None
+            raise ValueError("Project root not initialized")
 
-        # 1. Save image to project root under UserArtefacts/
+        # Save raw image to project root under UserArtefacts/
         user_artefacts_dir = project_root / "UserArtefacts"
         user_artefacts_dir.mkdir(exist_ok=True)
-        image_path = user_artefacts_dir / f"{image_id}.png"
+        raw_image_path = user_artefacts_dir / f"{image_id}.png"
         
-        try:
-            logger.info(f"[AOSM._prepare_bootstrap_assets] Saving reference image to {image_path}")
-            with open(image_path, "wb") as f:
-                f.write(base64.b64decode(base64_img))
-        except Exception as e:
-            logger.error(f"[AOSM._prepare_bootstrap_assets] Failed to save image: {e}")
-            await self.transition_to(AOSMState.ERROR_PRESENTED, f"Bootstrap failed: Image save error: {str(e)}")
-            return None
+        logger.info(f"[AOSM._prepare_bootstrap_assets] Saving reference image to {raw_image_path}")
+        with open(raw_image_path, "wb") as f:
+            f.write(base64.b64decode(base64_img))
             
-        return image_id
-
-    # Main components
-    # 1. Archy: Image parsing and SCUD generation; Runs in dedicated thread due to CPU intensity; Output is a SCUD file path
-    async def _run_bootstrap(self, event: BaseEvent) -> Tuple[Any, Optional[str]]:
-        """Logic for BOOTSTRAP_PIPELINE."""
-        logger.info("[AOSM._run_bootstrap] Executing Bootstrap Pipeline...")
+        # Run Archy workspace preparation (deterministic preprocessing)
+        # This will create preprocessed image and segments
+        processed_image_path = await asyncio.to_thread(
+            prepare_archy_workspace,
+            workspace_path=project_root,
+            image_id=image_id
+        )
         
-        image_id = await self._prepare_bootstrap_assets(event)
-        if not image_id:
-            return None, None
+        return image_id, processed_image_path
 
+    async def _run_archy(self, image_id: str, image_path: Path):
+        """Logic for TRIGGER_ARCHY: Invocating Archy agent."""
+        logger.info(f"[AOSM._run_archy] Triggering Archy agent invocation for image: {image_id}")
+        
         project_root = self.workspace_manager.project_root
-
-        logger.info(f"[AOSM._run_bootstrap] Triggering Archy orchestration for image: {image_id}")
+        
         if os.environ.get("STUBS") == "true":
-            logger.info("[AOSM._run_bootstrap] Running Archy in STUB mode")
-            # set the ARCHY_STUB environment variable, so that archy module runs in stub mode
+            logger.info("[AOSM._run_archy] Running Archy in STUB mode")
             os.environ["ARCHY_STUB"] = "true"
         
         try:
-            # Step 1: Workspace and Artifact Preparation (Deterministic)
-            logger.info(f"[AOSM._run_bootstrap] Preparing workspace and artifacts for image: {image_id}")
-            image_path = prepare_archy_workspace(workspace_path=project_root,image_id=image_id,)
-
-            # 2. Trigger Archy orchestration
-            logger.info(f"[AOSM._run_bootstrap] Triggering Archy agent invocation for image: {image_id}")
             self.update_agent_status("archy", AgentStatus.RUNNING)
             scud_path = await asyncio.to_thread(
                 orchestrate_archy, 
@@ -757,21 +799,13 @@ class AOSM:
                 image_id=image_id,
                 image_path=image_path
             )
-            # Update current message with the SCUD path for ANA trigger
-            self.current_message["scud_path"] = str(scud_path)
-            self.current_message["circuit_id"] = image_id
-            
             self.update_agent_status("archy", AgentStatus.IDLE)
-            logger.info(f"[AOSM._run_bootstrap] Archy completed successfully. SCUD generated at: {scud_path}")    
-            
+            logger.info(f"[AOSM._run_archy] Archy completed successfully. SCUD generated at: {scud_path}")
+            return scud_path
         except Exception as e:
             self.update_agent_status("archy", AgentStatus.IDLE)
-            logger.error(f"[AOSM._run_bootstrap] Archy orchestration failed: {e}")
-            await self.transition_to(AOSMState.ERROR_PRESENTED, f"Archy failed: {str(e)}")
-            return None, None
-        return scud_path,image_id
-    # ----ARCHY-----
-    
+            raise e
+
     async def _run_librarian(self, scud_path: Path, instructions: str = None):
         """Logic for triggering Librarian Agent to resolve components."""
         logger.info(f"[AOSM._run_librarian] Triggering Librarian Agent for SCUD: {scud_path} (Instructions: {instructions})")
