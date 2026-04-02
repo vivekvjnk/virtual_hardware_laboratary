@@ -42,7 +42,7 @@ steps:
       - '--container=vhl-runtime-container' 
       - '--image=gcr.io/$PROJECT_ID/vhl-runtime'
       - '--port=3020'
-      - '--set-env-vars=VHL_AGENT_WS_URL=/ws-agent'
+      - '--set-env-vars=VHL_AGENT_WS_URL=/ws-agent,STORAGE_BACKEND=gcs,GCS_BUCKET_NAME=vhl-storage'
       
       # Container 2: Backend Sidecar
       - '--container=backend-container'
