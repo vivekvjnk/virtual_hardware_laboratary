@@ -159,8 +159,7 @@ def _archy_build_scud_stub(image_id: str, workspace_path: Path):
     
     # Define mock SCUD path relative to the script's root (VHL_agent_backend)
     # The script is in VHL_agent_backend/archy/archy_agent/main.py
-    # Mock is in VHL_agent_backend/tests/Mocks/Archy/...
-    base_dir = Path(__file__).resolve().parents[3] # VHL_agent_backend
+    base_dir = Path(__file__).resolve().parents[2] # VHL_agent_backend
     mock_scud_path = base_dir / "tests" / "Mocks" / "Archy" / "bms_bq_sys_c195dff2_eval_board_0b36a.scud"
     
     if not mock_scud_path.exists():

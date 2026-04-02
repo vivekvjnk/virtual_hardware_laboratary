@@ -59,29 +59,42 @@ def parse_scud_components(scud_content: str) -> List[Dict[str, str]]:
 def resolve_component_stub(part_number: str, mcp_url: str) -> str:
     """
     Deterministically resolves a component using the run_terminal_command pattern.
-    Mimics search, multi-key navigation (stubbed), null-input validation, and enter.
+    Handles the interactive selection and potential .npmrc confirmation.
     """
     logger.info(f"[resolve_component_stub] Resolving: {part_number}")
     
-    # 1. Search
+    # 1. Search (Optional but kept for parity with current flow)
     search_cmd = f"tsci search {part_number}"
     logger.info(f"[LibrarianStub] Executing: {search_cmd}")
     call_mcp_function(mcp_url, "run_terminal_command", {"command": search_cmd})
 
-    # 2. Import (Simulated interactive flow)
+    # 2. Import (Interactive flow)
     import_cmd = f"tsci import {part_number}"
     logger.info(f"[LibrarianStub] Executing: {import_cmd}")
-    call_mcp_function(mcp_url, "run_terminal_command", {"command": import_cmd})
+    res = call_mcp_function(mcp_url, "run_terminal_command", {"command": import_cmd})
 
-    # 2.1. Simulate state validation (Null input)
-    logger.info("[LibrarianStub] Validating terminal state via null input...")
-    call_mcp_function(mcp_url, "run_terminal_command", {"command": "", "is_input": True})
+    # 2.1. Confirm selection (ENTER)
+    # The first prompt is usually the part selection
+    if "Select a part to import" in res.text:
+        logger.info("[LibrarianStub] Confirming part selection with ENTER")
+        res = call_mcp_function(mcp_url, "run_terminal_command", {"command": "ENTER", "is_input": True})
 
-    # 2.2. Confirm selection (ENTER)
-    logger.info("[LibrarianStub] Confirming selection with ENTER")
-    res = call_mcp_function(mcp_url, "run_terminal_command", {"command": "ENTER", "is_input": True})
-    
-    return "imported (JLCPCB)" if part_number in res.text else "imported (registry)"
+    # 2.2. Handle .npmrc confirmation if it follows (for registry parts)
+    if "Add '@tsci:registry" in res.text or "(Y/n)" in res.text:
+        logger.info("[LibrarianStub] Confirming .npmrc update with ENTER")
+        res = call_mcp_function(mcp_url, "run_terminal_command", {"command": "ENTER", "is_input": True})
+
+    # 3. Determine source from final output
+    final_output = res.text
+    if "from JLCPCB" in final_output or ".tsx" in final_output:
+        return "imported (JLCPCB)"
+    elif "Adding @tsci/" in final_output:
+        return "imported (registry)"
+    elif "Imported" in final_output:
+        return "imported"
+    else:
+        logger.warning(f"[LibrarianStub] Unexpected import output for {part_number}: {final_output}")
+        return "imported (unknown source)"
 
 def process_scud_stub(scud_path: str, mcp_url: str = "http://localhost:8082/sse", components: List[str] = None, instructions: str = None):
     """

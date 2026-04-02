@@ -46,9 +46,9 @@ class AOSM:
         self._main_loop_task: Optional[asyncio.Task] = None
         self.project_id: Optional[str] = None
         self.sync_client = SyncClient(self.web_socket_client, self.workspace_manager)
-        mcp_default = "http://localhost:8081/mcp/vap" if "K_SERVICE" in os.environ else "http://host.docker.internal:8081/mcp/vap"
+        mcp_default = "http://localhost:8081/mcp/vap"
         mcp_endpoint = os.getenv("MCP_ENDPOINT", mcp_default)
-        lib_default = "http://localhost:8082/sse" if "K_SERVICE" in os.environ else "http://host.docker.internal:8082/sse"
+        lib_default = "http://localhost:8082/sse"
         self.librarian_mcp_url = os.getenv("LIBRARIAN_MCP_URL", lib_default)
         self.mcp_manager = MCPManager(endpoint=mcp_endpoint)
         # self.mcp_manager = None
@@ -467,10 +467,10 @@ class AOSM:
 
             scud_path = Path(str(scud_path_str))
             
+            # Trigger Librarian Agent
+            await self._run_librarian(scud_path)
+            
             try:
-                # Trigger Librarian Agent
-                await self._run_librarian(scud_path)
-                
                 # Workflow 1.1: Sync lib/imports from VHL runtime to Agent backend
                 if self.project_id:
                     # Sync Library using centralized client
@@ -483,7 +483,7 @@ class AOSM:
                     raise ValueError(f"Project id is null : {self.project_id}")
             except Exception as e:
                 logger.error(f"[AOSM._handle_trigger_librarian] Librarian failed: {e}")
-                await self.transition_to(AOSMState.ERROR_PRESENTED, f"Librarian failed: {e}")
+                await self.transition_to(AOSMState.ERROR_PRESENTED, f"Librarian failed sync: {e}")
     
     # Agent: ANA
     async def _handle_trigger_ana(self, event: BaseEvent):
@@ -787,9 +787,13 @@ class AOSM:
         
         project_root = self.workspace_manager.project_root
         
+        # Handle Stub Mode
         if os.environ.get("STUBS") == "true":
-            logger.info("[AOSM._run_archy] Running Archy in STUB mode")
+            logger.info(f"[AOSM._run_archy] STUB mode detected. Activating Archy stub for image: {image_id}")
             os.environ["ARCHY_STUB"] = "true"
+        else:
+            # Ensure it's not accidentally left on from a previous run in the same process
+            os.environ.pop("ARCHY_STUB", None)
         
         try:
             self.update_agent_status("archy", AgentStatus.RUNNING)
@@ -809,39 +813,36 @@ class AOSM:
     async def _run_librarian(self, scud_path: Path, instructions: str = None):
         """Logic for triggering Librarian Agent to resolve components."""
         logger.info(f"[AOSM._run_librarian] Triggering Librarian Agent for SCUD: {scud_path} (Instructions: {instructions})")
-        try:
-            if os.environ.get("STUBS") == "true":
-                logger.info("[AOSM._run_librarian] Running Librarian in STUB mode")
-                self.update_agent_status("librarian", AgentStatus.RUNNING)
-                
-                # Stub mode: Load deterministic component list from JSON
-                components = None
-                try:
-                    mock_json_path =  Path("tests" / "Mock" / "components.json")
-                    if mock_json_path.exists():
-                        import json
-                        with open(mock_json_path, "r") as f:
-                            components = json.load(f)
-                            logger.info(f"[AOSM._run_librarian] Stub mode: Loaded components from {mock_json_path}: {components}")
-                    else:
-                        logger.warning(f"[AOSM._run_librarian] Mock JSON not found at: {mock_json_path}")
-                except Exception as e:
-                    logger.warning(f"[AOSM._run_librarian] Failed to load mock components: {e}")
-
-                await asyncio.to_thread(process_scud_stub, str(scud_path), components=components, instructions=instructions)
-                self.update_agent_status("librarian", AgentStatus.IDLE)
+        if os.environ.get("STUBS") == "true":
+            logger.info("[AOSM._run_librarian] Running Librarian in STUB mode")
+            self.update_agent_status("librarian", AgentStatus.RUNNING)
+            # Stub mode: Load deterministic component list from JSON
+            components = None
+            mock_json_path =  Path("tests" / "Mock" / "components.json")
+            if mock_json_path.exists():
+                import json
+                with open(mock_json_path, "r") as f:
+                    components = json.load(f)
+                    logger.info(f"[AOSM._run_librarian] Stub mode: Loaded components from {mock_json_path}: {components}")
             else:
+                raise ValueError(f"[AOSM._run_librarian] Mock JSON not found at: {mock_json_path}")
+                
+            await asyncio.to_thread(process_scud_stub, str(scud_path), components=components, instructions=instructions)
+            self.update_agent_status("librarian", AgentStatus.IDLE)
+        
+        else:
+            try:
                 librarian = LibrarianAgent(mcp_url=self.librarian_mcp_url, working_dir=self.workspace_manager.project_root)
                 # process_scud involves network/LLM, run in thread
                 self.update_agent_status("librarian", AgentStatus.RUNNING)
                 await asyncio.to_thread(librarian.process_scud, str(scud_path), instructions=instructions)
                 self.update_agent_status("librarian", AgentStatus.IDLE)
-            logger.info(f"[AOSM._run_librarian] Librarian Agent completed successfully")
-        except Exception as e:
-            self.update_agent_status("librarian", AgentStatus.IDLE)
-            logger.error(f"[AOSM._run_librarian] Librarian Agent failed: {e}", exc_info=True)
-            # We proceed even if Librarian fails, but log the error
-            pass
+                logger.info(f"[AOSM._run_librarian] Librarian Agent completed successfully")
+            except Exception as e:
+                self.update_agent_status("librarian", AgentStatus.IDLE)
+                logger.error(f"[AOSM._run_librarian] Librarian Agent failed: {e}", exc_info=True)
+                # We proceed even if Librarian fails, but log the error
+                
 
     async def _handle_close_project(self, event: BaseEvent):
         """Global handler for closing the current project."""
