@@ -155,10 +155,7 @@ export class RelayAgentHandler implements AgentHandler {
         } else if (this.role === "vhl_workspace") {
             RelayAgentHandler.workspaceClient = null
             console.log("RelayAgentHandler: Workspace client disconnected")
-            // Notify agent and UIs that workspace is gone
-            if (RelayAgentHandler.agentClient) {
-                RelayAgentHandler.agentClient({ type: "WORKSPACE_DISCONNECTED" })
-            }
+            // TODO Notify agent and UIs that workspace is gone
             RelayAgentHandler.uiClients.forEach(uiSend => uiSend({ type: "WORKSPACE_DISCONNECTED" }))
         }
     }
