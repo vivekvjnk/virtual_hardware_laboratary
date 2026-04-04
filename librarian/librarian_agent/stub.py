@@ -66,6 +66,7 @@ def resolve_component_stub(part_number: str, mcp_url: str) -> str:
     # 1. Search (Optional but kept for parity with current flow)
     search_cmd = f"tsci search {part_number}"
     logger.info(f"[LibrarianStub] Executing: {search_cmd}")
+    # call_mcp_function now returns the raw text if not JSON
     call_mcp_function(mcp_url, "run_terminal_command", {"command": search_cmd})
 
     # 2. Import (Interactive flow)
@@ -75,17 +76,17 @@ def resolve_component_stub(part_number: str, mcp_url: str) -> str:
 
     # 2.1. Confirm selection (ENTER)
     # The first prompt is usually the part selection
-    if "Select a part to import" in res.text:
+    if "Select a part to import" in res:
         logger.info("[LibrarianStub] Confirming part selection with ENTER")
         res = call_mcp_function(mcp_url, "run_terminal_command", {"command": "ENTER", "is_input": True})
 
     # 2.2. Handle .npmrc confirmation if it follows (for registry parts)
-    if "Add '@tsci:registry" in res.text or "(Y/n)" in res.text:
+    if "Add '@tsci:registry" in res or "(Y/n)" in res:
         logger.info("[LibrarianStub] Confirming .npmrc update with ENTER")
         res = call_mcp_function(mcp_url, "run_terminal_command", {"command": "ENTER", "is_input": True})
 
     # 3. Determine source from final output
-    final_output = res.text
+    final_output = res
     if "from JLCPCB" in final_output or ".tsx" in final_output:
         return "imported (JLCPCB)"
     elif "Adding @tsci/" in final_output:
@@ -93,6 +94,10 @@ def resolve_component_stub(part_number: str, mcp_url: str) -> str:
     elif "Imported" in final_output:
         return "imported"
     else:
+        # If we still see the prompt, it might have failed to select
+        if "Select a part to import" in final_output:
+             raise ValueError(f"Failed to confirm selection for {part_number}")
+        
         logger.warning(f"[LibrarianStub] Unexpected import output for {part_number}: {final_output}")
         return "imported (unknown source)"
 
@@ -100,6 +105,7 @@ def process_scud_stub(scud_path: str, mcp_url: str = "http://localhost:8082/sse"
     """
     Stub for LibrarianAgent.process_scud.
     Uses a deterministic list of components instead of parsing SCUD.
+    Includes retry logic for failed resolutions.
     """
     logger.info(f"[process_scud_stub] STUB MODE: Processing SCUD: {scud_path}")
     if not os.path.exists(scud_path):
@@ -112,15 +118,39 @@ def process_scud_stub(scud_path: str, mcp_url: str = "http://localhost:8082/sse"
     with open(scud_path, 'r') as f:
         scud_content = f.read()
 
-    mappings = []
+    # Track resolution status
+    results_map = {} # component -> source
+    to_resolve = components.copy()
     
+    # Retry logic: Up to 3 retries
+    max_retries = 3
+    for attempt in range(max_retries + 1):
+        if not to_resolve:
+            break
+            
+        if attempt > 0:
+            logger.info(f"[process_scud_stub] RETRY ATTEMPT {attempt}/{max_retries} for components: {to_resolve}")
+            # Optional: wait a bit between retries
+            time.sleep(2)
+
+        still_missing = []
+        for comp in to_resolve:
+            clean_pn = comp.replace("-", "_").replace(" ", "_")
+            try:
+                source = resolve_component_stub(clean_pn, mcp_url)
+                results_map[comp] = source
+            except Exception as e:
+                logger.error(f"[process_scud_stub] Failed to resolve {comp} on attempt {attempt}: {e}")
+                still_missing.append(comp)
+        
+        to_resolve = still_missing
+
+    # Build mapping section
+    mappings = []
     for comp in components:
-        clean_pn = comp.replace("-", "_").replace(" ", "_")
-        try:
-            source = resolve_component_stub(clean_pn, mcp_url)
-            mappings.append(f"| {comp} | {comp} | {source} |")
-        except Exception as e:
-            logger.error(f"[process_scud_stub] Failed to resolve {comp}: {e}")
+        if comp in results_map:
+            mappings.append(f"| {comp} | {comp} | {results_map[comp]} |")
+        else:
             mappings.append(f"| {comp} | | missing |")
 
     mapping_section = "\n### Library Mapping\n\n"
@@ -132,7 +162,7 @@ def process_scud_stub(scud_path: str, mcp_url: str = "http://localhost:8082/sse"
     if "### Library Mapping" in scud_content:
         new_content = re.sub(r'### Library Mapping\s*\n.*?(?=\n#|$)', mapping_section, scud_content, flags=re.DOTALL)
     elif "## Library Mapping" in scud_content:
-         new_content = re.sub(r'## Library Mapping\s*\n.*?(?=\n#|$)', mapping_section, scud_content, flags=re.DOTALL)
+        new_content = re.sub(r'## Library Mapping\s*\n.*?(?=\n#|$)', mapping_section, scud_content, flags=re.DOTALL)
     else:
         # Append after Components Inventory
         if "## Components Inventory" in scud_content:

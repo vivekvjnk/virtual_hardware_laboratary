@@ -45,16 +45,20 @@ class MCPInvoker:
         """
         Internal async method to list tools.
         """
-        async with self.client:
-            tools = await self.client.list_tools()
-            return [
-                {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "input_schema": tool.inputSchema
-                }
-                for tool in tools
-            ]
+        try:
+            async with self.client:
+                tools = await self.client.list_tools()
+                return [
+                    {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "input_schema": tool.inputSchema
+                    }
+                    for tool in tools
+                ]
+        except Exception as e:
+            logger.error(f"[MCPInvoker] Failed to list tools: {e}")
+            raise
 
     async def _call_tool_async(self, tool_name: str, arguments: Optional[Dict[str, Any]] = None) -> MCPToolObservation:
         """
@@ -63,11 +67,15 @@ class MCPInvoker:
         if arguments is None:
             arguments = {}
         
-        async with self.client:
-            # call_tool_mcp is the underlying method in fastmcp.Client used by openhands-sdk
-            result = await self.client.call_tool_mcp(name=tool_name, arguments=arguments)
-            # Process the result into a standard MCPToolObservation
-            return MCPToolObservation.from_call_tool_result(tool_name=tool_name, result=result)
+        try:
+            async with self.client:
+                # call_tool_mcp is the underlying method in fastmcp.Client used by openhands-sdk
+                result = await self.client.call_tool_mcp(name=tool_name, arguments=arguments)
+                # Process the result into a standard MCPToolObservation
+                return MCPToolObservation.from_call_tool_result(tool_name=tool_name, result=result)
+        except Exception as e:
+            logger.error(f"[MCPInvoker] Failed to call tool '{tool_name}': {e}")
+            raise
 
     def list_tools(self, timeout: float = 30.0) -> List[Dict[str, Any]]:
         """
@@ -78,19 +86,18 @@ class MCPInvoker:
             timeout=timeout
         )
 
-    def call_tool(self, tool_name: str, arguments: Optional[Dict[str, Any]] = None, timeout: float = 300.0) -> MCPToolObservation:
+    def call_tool(self, tool_name: str, arguments: Optional[Dict[str, Any]] = None, timeout: float = 300.0) -> str:
         """
         Synchronously call a specific tool on the MCP server.
+        Returns the sanitized JSON string OR the raw text if no JSON found.
         """
-        json_results = sanitize_mcp_tool_observation(
-            self.client.call_async_from_sync(
-                self._call_tool_async, 
-                tool_name=tool_name, 
-                arguments=arguments, 
-                timeout=timeout
-            )
+        results = self.client.call_async_from_sync(
+            self._call_tool_async, 
+            tool_name=tool_name, 
+            arguments=arguments, 
+            timeout=timeout
         )
-        return json_results
+        return sanitize_mcp_tool_observation(results)
 
     def close(self):
         """
@@ -98,13 +105,13 @@ class MCPInvoker:
         """
         self.client.sync_close()
 
-def call_mcp_function(url: str, tool_name: str, arguments: Optional[Dict[str, Any]] = None, timeout: float = 300.0) -> MCPToolObservation:
+def call_mcp_function(url: str, tool_name: str, arguments: Optional[Dict[str, Any]] = None, timeout: float = 300.0) -> str:
     """
     Convenience function to call an MCP tool from a given URL.
     
     Example:
-        result = call_mcp_function("http://localhost:8081/mcp", "VAP_status", {"id": "123"})
-        print(result.text)
+        result_json = call_mcp_function("http://localhost:8081/mcp", "VAP_status", {"id": "123"})
+        print(result_json)
     """
     invoker = MCPInvoker(url)
     try:
@@ -126,9 +133,10 @@ def sanitize_mcp_tool_observation(mcp_observation: MCPToolObservation) -> str:
     """
     Extracts and parses JSON from a string that may contain 
     extra text, logs, or tool execution headers.
+    If no JSON block is found, returns the stripped raw text.
     """
     if not mcp_observation:
-        return None
+        return ""
 
     text = mcp_observation.text.strip()
     
@@ -141,11 +149,11 @@ def sanitize_mcp_tool_observation(mcp_observation: MCPToolObservation) -> str:
 
     # 2. Remove common MCP execution prefixes
     # Example: "[Tool 'VAP_init' executed.]"
-    text = re.sub(r'^\[Tool \'.*?\' executed\.\]', '', text).strip()
+    text_no_prefix = re.sub(r'^\[Tool \'.*?\' executed\.\]', '', text).strip()
     
     try:
-        json.loads(text)
-        return text
+        json.loads(text_no_prefix)
+        return text_no_prefix
     except json.JSONDecodeError:
         pass
 
@@ -173,4 +181,5 @@ def sanitize_mcp_tool_observation(mcp_observation: MCPToolObservation) -> str:
         except json.JSONDecodeError:
             continue
     
-    raise ValueError(f"No valid JSON object or array found in the input string: {mcp_observation.text[:100]}...")
+    # 4. Fallback: return the text (without common prefix if it was there)
+    return text_no_prefix if text_no_prefix else text

@@ -50,8 +50,8 @@ class AOSM:
         mcp_endpoint = os.getenv("MCP_ENDPOINT", mcp_default)
         lib_default = "http://localhost:8082/sse"
         self.librarian_mcp_url = os.getenv("LIBRARIAN_MCP_URL", lib_default)
-        self.mcp_manager = MCPManager(endpoint=mcp_endpoint)
-        # self.mcp_manager = None
+        # self.mcp_manager = MCPManager(endpoint=mcp_endpoint)
+        self.mcp_manager = None
         self.agent_state = {
             "archy": AgentStatus.IDLE,
             "librarian": AgentStatus.IDLE,
@@ -712,6 +712,7 @@ class AOSM:
                 # Fallback to websocket if MCP fails
                 await self.web_socket_client.emit_evaluation_update(task_id=task_id, decision=decision)
         else:
+            logger.info(f"[AOSM._wait_and_transition] No MCP manager available. Emitting evaluation update via WebSocket for task {task_id} with decision: {decision}")
             await self.web_socket_client.emit_evaluation_update(task_id=task_id, decision=decision)
         try:
             await self.web_socket_client.wait_for_event(
@@ -818,14 +819,14 @@ class AOSM:
             self.update_agent_status("librarian", AgentStatus.RUNNING)
             # Stub mode: Load deterministic component list from JSON
             components = None
-            mock_json_path =  Path("tests" / "Mock" / "components.json")
+            mock_json_path =  Path("./tests/Mocks/components.json")
             if mock_json_path.exists():
                 import json
                 with open(mock_json_path, "r") as f:
                     components = json.load(f)
                     logger.info(f"[AOSM._run_librarian] Stub mode: Loaded components from {mock_json_path}: {components}")
             else:
-                raise ValueError(f"[AOSM._run_librarian] Mock JSON not found at: {mock_json_path}")
+                raise ValueError(f"[AOSM._run_librarian] Mock JSON not found at: {mock_json_path}. Current working directory: {Path.cwd()}")
                 
             await asyncio.to_thread(process_scud_stub, str(scud_path), components=components, instructions=instructions)
             self.update_agent_status("librarian", AgentStatus.IDLE)
