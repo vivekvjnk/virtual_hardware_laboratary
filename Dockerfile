@@ -62,6 +62,7 @@ RUN apt-get update && apt-get install -y \
     tmux \
     procps \
     sudo \
+    unzip \
     expect \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \

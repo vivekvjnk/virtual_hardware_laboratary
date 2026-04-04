@@ -31,14 +31,14 @@ export class RelayAgentHandler implements AgentHandler {
             // UI (Runtime) -> Agent (Backend)
             // 1. Always relay to Agent if connected
             if (RelayAgentHandler.agentClient) {
-                console.debug("[Websocket Relay] Relaying message from UI to VHL_Agent_Backend:", msg)
+                console.debug("[Websocket Relay] UI Runframe -> Agent backend", msg.type)
                 RelayAgentHandler.agentClient(msg)
             }
 
             // 2. Route specific messages to Workspace Client (Irrespective of Agent connectivity)
-            if (msg.type === "START_DEV_SERVER" || msg.type === "GET_SYSTEM_STATE") {
+            if (msg.type === "GET_SYSTEM_STATE") {
                 if (RelayAgentHandler.workspaceClient) {
-                    console.debug("[Websocket Relay] Relaying message from UI to VHL_Runtime:", msg)
+                    console.debug("[Websocket Relay] UI Runframe -> Runtime Workspace Client", msg.type)
                     RelayAgentHandler.workspaceClient(msg)
                 } else {
                     send({ type: "ERROR", payload: { message: "No workspace client connected", scope: "runtime", severity: "error" } } as any)
@@ -51,11 +51,13 @@ export class RelayAgentHandler implements AgentHandler {
         } else if (this.role === "vhl_workspace") {
             // Workspace Client -> Agent (Backend)
             // Some events also go to UI (Runtime)
-            if (msg.type === "VHL_WORKSPACE_READY" || msg.type === "DEV_SERVER_READY" || msg.type === "SYSTEM_STATE" || msg.type === "PROJECT_STATE") {
+            if (msg.type === "DEV_SERVER_READY" || msg.type === "SYSTEM_STATE" || msg.type === "PROJECT_STATE") {
+                console.debug("[Websocket Relay] Runtime Workspace Client -> UI Runframe", msg.type)
                 RelayAgentHandler.uiClients.forEach(uiSend => uiSend(msg));
             }
 
             if (RelayAgentHandler.agentClient) {
+                console.debug("[Websocket Relay] Runtime Workspace Client -> Agent backend", msg.type)
                 RelayAgentHandler.agentClient(msg)
             } else {
                 send({ type: "ERROR", payload: { message: "No agent client connected", scope: "vhl_workspace", severity: "error" } } as any)
@@ -63,22 +65,23 @@ export class RelayAgentHandler implements AgentHandler {
         } else if ((this.role === "agent") || (this.role === "vap_mcp_agent")) {
             // Intercept Heartbeat directly
             if (msg.type === "AGENT_HEALTH") {
-                console.log("[HEARTBEAT] Backend health report: ", msg.payload)
+                // console.log("[Websocket Relay][HEARTBEAT] Backend health report: ", msg.payload)
                 return // Prevent further forwarding unless UI explicitly wants it
             }
 
-            // Agent (Backend) -> UI (Runtime) or Workspace Client
+            // Agent (Backend) -> UI (Runframe) or Workspace Client
             if (msg.type == "PROJECT_CREATED" || msg.type == "PROJECT_LOADED") {
                 // Send message to uiclient and workspace client
+                console.debug("[Websocket Relay] Agent backend -> UI Runframe and Runtime Workspace Client", msg.type)
                 RelayAgentHandler.uiClients.forEach(uiSend => uiSend(msg))
                 if (RelayAgentHandler.workspaceClient) {
                     RelayAgentHandler.workspaceClient(msg)
                 }
-            } // To workspace client
+            } // To Runtime workspace client
             else if (msg.type === "WORKSPACE_DOWNLOAD" || msg.type === "WORKSPACE_UPLOAD" ||
-                msg.type === "VAP_EXECUTE" || msg.type === "VAP_DECISION" || msg.type === "START_DEV_SERVER" ||
+                msg.type === "VAP_EXECUTE" || msg.type === "VAP_DECISION" ||
                 msg.type === "DOWNLOAD_REQUEST" || msg.type === "UPLOAD_REQUEST") {
-                console.debug("[Websocket Relay] Relaying message from VHL_Agent_Backend to Workspace Client:", msg)
+                console.debug("[Websocket Relay] Agent backend -> Runtime Workspace Client", msg.type)
                 if (RelayAgentHandler.workspaceClient) {
                     RelayAgentHandler.workspaceClient(msg)
                 } else {
@@ -86,6 +89,7 @@ export class RelayAgentHandler implements AgentHandler {
                 }
             }
             else {
+                console.debug("[Websocket Relay] Agent backend -> UI Runframe", msg.type)
                 RelayAgentHandler.uiClients.forEach(uiSend => uiSend(msg))
             }
         } else {

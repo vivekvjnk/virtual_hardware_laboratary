@@ -55,7 +55,9 @@ export class AgentWebSocketServer {
                 console.debug(`[Websocket Relay] Received raw message: ${dataString}`)
                 try {
                     const msg = JSON.parse(dataString) as WebSocketMessage
-                    console.log(`[Websocket Relay] Handling message of type: ${msg.type}`)
+                    if (msg.type !== "AGENT_HEALTH") {
+                        console.log(`[Websocket Relay] Handling message of type: ${msg.type}`)
+                    }
                     await handler.onMessage(msg, send)
                 } catch (err) {
                     console.error("[Websocket Relay] Error handling message:", err, dataString)

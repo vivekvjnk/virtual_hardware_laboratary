@@ -16,12 +16,12 @@ export async function compressDirectory(sourceDir: string, outPath: string): Pro
         });
 
         output.on("close", () => {
-            console.log(`[Workspace] Archive created: ${archive.pointer()} total bytes`);
+            console.log(`[Runtime Workspace] Archive created: ${archive.pointer()} total bytes`);
             resolve();
         });
 
         archive.on("error", (err) => {
-            console.error(`[Workspace] Compression error:`, err);
+            console.error(`[Runtime Workspace] Compression error:`, err);
             reject(err);
         });
 
@@ -41,9 +41,9 @@ export async function decompressZip(zipPath: string, targetDir: string): Promise
     try {
         // Attempt to use 'unzip' command which is standard in many linux/docker environments
         execSync(`unzip -o "${zipPath}" -d "${targetDir}"`);
-        console.log(`[Workspace] Successfully decompressed ${zipPath} to ${targetDir}`);
+        console.log(`[Runtime Workspace] Successfully decompressed ${zipPath} to ${targetDir}`);
     } catch (err: any) {
-        console.error(`[Workspace] Decompression failed (using unzip command):`, err.message);
+        console.error(`[Runtime Workspace] Decompression failed (using unzip command):`, err.message);
         throw new Error(`Failed to decompress workspace: ${err.message}`);
     }
 }
@@ -54,7 +54,7 @@ export async function decompressZip(zipPath: string, targetDir: string): Promise
  * when receiving a workspace upload message.
  */
 export async function runPredefinedOperations(workspaceDir: string): Promise<void> {
-    console.log(`[Workspace] running predefined file operations in ${workspaceDir}`);
+    console.log(`[Runtime Workspace] running predefined file operations in ${workspaceDir}`);
 
     // Example: ensure some directories exist, or run a build script if present
     // For now, we'll just log and ensure the directory exists.

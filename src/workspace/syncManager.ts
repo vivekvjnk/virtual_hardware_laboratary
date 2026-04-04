@@ -202,6 +202,7 @@ export class SyncManager {
                     await fs.unlink(indexPath).catch(() => { });
 
                     const circuitName = payload.data?.circuit_name || "circuit";
+                    console.log(`[Sync] StableCircuit updated, notifying sender to refresh (circuit_name=${circuitName})`);
                     await this.sender.onStableCircuitUpdated(circuitName);
                 }
             }

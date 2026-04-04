@@ -19,14 +19,14 @@ export async function handleVapExecute(
     let taskId = randomUUID();
     let paths: any = null;
     try {
-        console.log("[Workspace] Processing VAP_EXECUTE");
+        console.log("[Runtime Workspace] Processing VAP_EXECUTE");
         const { circuit_name, blob_id, iteration_id } = msg.payload;
         if (!circuit_name || !blob_id) {
             throw new Error("Missing circuit_name or blob_id in VAP_EXECUTE payload");
         }
 
         const datetime = new Date().toISOString().replace(/[:.]/g, "-");
-        console.log(`[Workspace] Setting up COW workspace for circuit: ${circuit_name} (Task: ${taskId})`);
+        console.log(`[Runtime Workspace] Setting up COW workspace for circuit: ${circuit_name} (Task: ${taskId})`);
 
         // 1. Create COW Workspace (hardlink clone)
         paths = await COWWorkspaceManager.createEvaluationWorkspace(taskId, projectDir);
@@ -62,21 +62,21 @@ export async function handleVapExecute(
             taskId
         );
 
-        console.log(`[Workspace] Evaluation started for task ${taskId}. Waiting for completion...`);
+        console.log(`[Runtime Workspace] Evaluation started for task ${taskId}. Waiting for completion...`);
 
         // 5. Wait for completion
         const status = await runtime.waitForTask(taskId);
-        console.log(`[Workspace] Evaluation complete for task ${taskId}. Result: ${status.eval_status}`);
+        console.log(`[Runtime Workspace] Evaluation complete for task ${taskId}. Result: ${status.eval_status}`);
 
         // 6. Report results
         try {
             const zipPath = `${resultsDir}.zip`;
             const objectName = `${circuit_name}_${datetime}_eval_results.zip`;
 
-            console.log(`[Workspace] Compressing results: ${resultsDir} -> ${zipPath}`);
+            console.log(`[Runtime Workspace] Compressing results: ${resultsDir} -> ${zipPath}`);
             await compressDirectory(resultsDir, zipPath);
 
-            console.log(`[Workspace] Uploading results to MinIO: ${objectName}`);
+            console.log(`[Runtime Workspace] Uploading results to MinIO: ${objectName}`);
             await pushObject(zipPath, objectName);
 
             if (status.metadata) {
@@ -91,12 +91,12 @@ export async function handleVapExecute(
                 source: "vhl_workspace",
                 payload: status
             });
-            console.log(`[Workspace] Task ${taskId} results reported and uploaded.`);
+            console.log(`[Runtime Workspace] Task ${taskId} results reported and uploaded.`);
 
             await fs.unlink(zipPath).catch(() => { });
 
         } catch (err: any) {
-            console.error(`[Workspace] Failed to report results for task ${taskId}:`, err);
+            console.error(`[Runtime Workspace] Failed to report results for task ${taskId}:`, err);
             sender.sendError("VAP_REPORT_FAILED", err.message);
         }
 
@@ -110,7 +110,7 @@ export async function handleVapExecute(
         };
 
     } catch (err: any) {
-        console.error("[Workspace] VAP_EXECUTE failed:", err);
+        console.error("[Runtime Workspace] VAP_EXECUTE failed:", err);
         if (taskId) {
             await COWWorkspaceManager.cleanup(taskId).catch(() => { });
         }
@@ -129,25 +129,25 @@ export async function handleVapDecision(
     circuitName: string,
     projectId?: string | null,
 ) {
-    console.log(`[Workspace] Handling agent decision for task ${taskId}: ${decision}`);
+    console.log(`[Runtime Workspace] Handling agent decision for task ${taskId}: ${decision}`);
 
     try {
         if (decision === "ACCEPT") {
-            console.log(`[Workspace] Committing changes for task ${taskId} to ${projectDir}`);
+            console.log(`[Runtime Workspace] Committing changes for task ${taskId} to ${projectDir}`);
             await COWWorkspaceManager.commit(taskId, projectDir, circuitName || undefined);
             // Stable circuit and circuitjson are updated 
             sender.onStableCircuitUpdated(circuitName);
 
         } else {
-            console.log(`[Workspace] Rejecting changes for task ${taskId}`);
+            console.log(`[Runtime Workspace] Rejecting changes for task ${taskId}`);
         }
     } catch (err: any) {
-        console.error(`[Workspace] Failed to apply decision for task ${taskId}:`, err);
+        console.error(`[Runtime Workspace] Failed to apply decision for task ${taskId}:`, err);
         sender.sendError("VAP_DECISION_APPLY_FAILED", err.message);
     } finally {
-        console.log(`[Workspace] Cleaning up COW workspace for task ${taskId}`);
+        console.log(`[Runtime Workspace] Cleaning up COW workspace for task ${taskId}`);
         await COWWorkspaceManager.cleanup(taskId).catch((e) => {
-            console.warn(`[Workspace] Cleanup failed for task ${taskId}:`, e);
+            console.warn(`[Runtime Workspace] Cleanup failed for task ${taskId}:`, e);
         });
     }
 

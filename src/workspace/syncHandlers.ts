@@ -13,7 +13,7 @@ export async function handleWorkspaceUpload(
     sender: WorkspaceSender
 ) {
     try {
-        console.log("[Workspace] Processing WORKSPACE_UPLOAD");
+        console.log("[Runtime Workspace] Processing WORKSPACE_UPLOAD");
         const requestId = msg.id;
 
         await ensureBucket();
@@ -22,10 +22,10 @@ export async function handleWorkspaceUpload(
         const zipPath = path.join(TEMP_DIR, zipName);
         await fs.mkdir(TEMP_DIR, { recursive: true });
 
-        console.log(`[Workspace] Compressing ${workspaceDir} to ${zipPath}`);
+        console.log(`[Runtime Workspace] Compressing ${workspaceDir} to ${zipPath}`);
         await compressDirectory(workspaceDir, zipPath);
 
-        console.log(`[Workspace] Uploading ${zipName} to object store`);
+        console.log(`[Runtime Workspace] Uploading ${zipName} to object store`);
         await pushObject(zipPath, zipName);
 
         sender.send({
@@ -39,12 +39,12 @@ export async function handleWorkspaceUpload(
                 status: "success"
             }
         });
-        console.log(`[Workspace] Sync complete. Artifact ID: ${zipName}`);
+        console.log(`[Runtime Workspace] Sync complete. Artifact ID: ${zipName}`);
 
         await fs.unlink(zipPath).catch(() => { });
 
     } catch (err: any) {
-        console.error("[Workspace] Upload failed:", err);
+        console.error("[Runtime Workspace] Upload failed:", err);
         sender.sendError("WORKSPACE_UPLOAD_FAILED", err.message);
     }
 }
@@ -55,20 +55,20 @@ export async function handleWorkspaceDownload(
     sender: WorkspaceSender
 ) {
     try {
-        console.log("[Workspace] Processing WORKSPACE_DOWNLOAD");
+        console.log("[Runtime Workspace] Processing WORKSPACE_DOWNLOAD");
         const artifactId = msg.artifact_id;
         if (!artifactId) {
             throw new Error("No artifact_id provided in WORKSPACE_UPLOAD message");
         }
 
         const tempDir = path.join(TEMP_DIR, `download_${randomUUID()}`);
-        console.log(`[Workspace] Pulling artifact ${artifactId} to ${tempDir}`);
+        console.log(`[Runtime Workspace] Pulling artifact ${artifactId} to ${tempDir}`);
         const localZipPath = await pullObject(artifactId, tempDir);
 
-        console.log(`[Workspace] Decompressing to ${workspaceDir}`);
+        console.log(`[Runtime Workspace] Decompressing to ${workspaceDir}`);
         await decompressZip(localZipPath, workspaceDir);
 
-        console.log("[Workspace] Running predefined file operations");
+        console.log("[Runtime Workspace] Running predefined file operations");
         await runPredefinedOperations(workspaceDir);
 
         sender.send({
@@ -82,12 +82,12 @@ export async function handleWorkspaceDownload(
                 operation: "download"
             }
         });
-        console.log("[Workspace] Download and sync complete");
+        console.log("[Runtime Workspace] Download and sync complete");
 
         await fs.rm(tempDir, { recursive: true, force: true }).catch(() => { });
 
     } catch (err: any) {
-        console.error("[Workspace] Download failed:", err);
+        console.error("[Runtime Workspace] Download failed:", err);
         sender.sendError("WORKSPACE_DOWNLOAD_FAILED", err.message);
     }
 }

@@ -26,7 +26,7 @@ export class WorkspaceClient implements WorkspaceSender {
     private currentDevServerPath: string | null = null;
     private currentProjectId: string | null = null;
     private currentProjectName: string | null = null;
-    private currentCircuitName: string | null = null;
+    private circuitName: string | null = null;
     private syncManager: SyncManager;
     private isSynthesizable: boolean = false;
     private isSynthesisCompleted: boolean = false;
@@ -216,7 +216,7 @@ export class WorkspaceClient implements WorkspaceSender {
                 this.currentProjectName = project_id;
                 this.isSynthesizable = !!workspace_info?.is_synthesizable;
                 this.isSynthesisCompleted = !!workspace_info?.is_synthesis_completed;
-                this.currentCircuitName = workspace_info?.current_circuit_name || null;
+                this.circuitName = workspace_info?.circuit_name || null;
 
                 this.updateProjectState({ backend_status: "initialized", runtime_status: "initializing" });
 
@@ -238,93 +238,23 @@ export class WorkspaceClient implements WorkspaceSender {
 
                 // Construct the targeted reload URL
                 const relativePath = path.relative(this.workspaceDir, this.projectDir!);
-                const entryFile = this.currentCircuitName ? `${this.currentCircuitName}.tsx` : "index.circuit.tsx";
+                const entryFile = this.circuitName ? `${this.circuitName}.tsx` : "index.circuit.tsx";
                 const targetFile = path.join(relativePath, entryFile);
                 const reloadUrl = `/#file=${encodeURIComponent(targetFile)}`;
 
-                // Start dev server for the project
-                await this.startDevServer(this.projectDir, entryFile);
+                // Start dev server for the project if newly created or if synthesis is not completed
+                if (msg.type === "PROJECT_CREATED" || !this.isSynthesisCompleted) {
+                    await this.startDevServer(this.projectDir, entryFile);
+                }
 
                 this.updateProjectState({ runtime_status: "initialized" });
 
-                this.send({
-                    id: randomUUID(),
-                    type: "DEV_SERVER_READY",
-                    artifact_id: null,
-                    timestamp: new Date().toISOString(),
-                    source: "vhl_workspace",
-                    payload: {
-                        url: reloadUrl,
-                        project_id,
-                        project_dir: this.projectDir,
-                        current_circuit_name: this.currentCircuitName
-                    }
-                });
 
                 setProjectState({
                     projectDir: this.projectDir,
-                    currentCircuitName: this.currentCircuitName
+                    currentCircuitName: this.circuitName
                 });
 
-                break;
-            }
-            case "START_DEV_SERVER": {
-                const { project_path } = (msg as AgentMessage).payload;
-                if (!project_path) {
-                    this.sendError("INVALID_REQUEST", "project_path is required for START_DEV_SERVER");
-                    break;
-                }
-                // Determine if path is absolute or relative to workspace
-                const fullPath = path.isAbsolute(project_path) ? project_path : path.join(this.workspaceDir, project_path);
-                this.projectDir = fullPath; // Update current project dir
-                // setProjectDir(this.projectDir);
-                // await fs.mkdir(path.join(fullPath, "lib"), { recursive: true });
-
-
-
-                // Try to infer project ID from path if it's inside workspace
-                if (fullPath.startsWith(this.workspaceDir) && fullPath !== this.workspaceDir) {
-                    const rel = path.relative(this.workspaceDir, fullPath);
-                    const parts = rel.split(path.sep);
-                    // Assuming first level is project ID
-                    if (parts.length > 0 && parts[0]) {
-                        this.currentProjectId = parts[0];
-                        this.currentProjectName = parts[0]; // Best guess
-                    }
-                } else if (fullPath === this.workspaceDir) {
-                    // Reset to root
-                    this.currentProjectId = null;
-                    this.currentProjectName = null;
-                    this.currentCircuitName = null;
-                    this.isSynthesizable = false;
-                    this.isSynthesisCompleted = false;
-                }
-
-                // Construct URL
-                const relativePath = path.relative(this.workspaceDir, fullPath);
-                // If relativePath is empty, we are at root. Otherwise we target our circuit file or default to index.circuit.tsx
-                const entryFile = this.currentCircuitName ? `${this.currentCircuitName}.tsx` : "index.circuit.tsx";
-                const targetFile = relativePath === "" ? "" : path.join(relativePath, entryFile);
-                const reloadUrl = `/${targetFile ? `#file=${encodeURIComponent(targetFile)}` : ""}`;
-
-                // Only restart if the path is different OR entry file matches
-                if (this.currentDevServerPath !== fullPath || this.currentEntryFile !== entryFile) {
-                    await this.startDevServer(fullPath, entryFile);
-                } else {
-                    // Already running, just trigger reload
-                    this.send({
-                        id: randomUUID(),
-                        type: "DEV_SERVER_READY",
-                        artifact_id: null,
-                        timestamp: new Date().toISOString(),
-                        source: "vhl_workspace",
-                        payload: {
-                            url: reloadUrl,
-                            project_path: fullPath,
-                            current_circuit_name: this.currentCircuitName
-                        }
-                    });
-                }
                 break;
             }
             case "GET_SYSTEM_STATE": {
@@ -344,12 +274,12 @@ export class WorkspaceClient implements WorkspaceSender {
                         state,
                         project_id: this.currentProjectId,
                         project_name: this.currentProjectName,
-                        current_circuit_name: this.currentCircuitName,
+                        circuit_name: this.circuitName,
                         project_dir: this.projectDir,
                         workspace_info: {
                             is_synthesizable: this.isSynthesizable,
                             is_synthesis_completed: this.isSynthesisCompleted,
-                            current_circuit_name: this.currentCircuitName
+                            circuit_name: this.circuitName
                         }
                     }
                 });
@@ -375,7 +305,7 @@ export class WorkspaceClient implements WorkspaceSender {
                 );
                 setProjectState({
                     projectDir: this.projectDir || this.workspaceDir,
-                    currentCircuitName: this.activeVapContext?.circuit_name || this.currentCircuitName
+                    currentCircuitName: this.activeVapContext?.circuit_name || this.circuitName
                 });
 
 
@@ -409,7 +339,7 @@ export class WorkspaceClient implements WorkspaceSender {
         setProjectDir(null);
         this.currentProjectId = null;
         this.currentProjectName = null;
-        this.currentCircuitName = null;
+        this.circuitName = null;
         this.isSynthesizable = false;
         this.isSynthesisCompleted = false;
         this.activeVapContext = null;
@@ -421,7 +351,6 @@ export class WorkspaceClient implements WorkspaceSender {
 
         // 2. Restart dev server at workspace root
         console.log(`[WorkspaceClient] Restarting dev server at workspace root: ${this.workspaceDir}`);
-        await this.startDevServer(this.workspaceDir);
 
         this.send({
             id: randomUUID(),
@@ -439,7 +368,7 @@ export class WorkspaceClient implements WorkspaceSender {
 
     public async onStableCircuitUpdated(circuitName: string): Promise<void> {
         console.log(`[WorkspaceClient] Stable circuit updated: ${circuitName}`);
-        this.currentCircuitName = circuitName;
+        this.circuitName = circuitName;
 
         if (this.projectDir) {
             const entryFile = `${circuitName}.tsx`;
@@ -450,23 +379,10 @@ export class WorkspaceClient implements WorkspaceSender {
             const targetFile = path.join(relativePath, entryFile);
             const reloadUrl = `/#file=${encodeURIComponent(targetFile)}`;
 
-            this.send({
-                id: randomUUID(),
-                type: "DEV_SERVER_READY",
-                artifact_id: null,
-                timestamp: new Date().toISOString(),
-                source: "vhl_workspace",
-                payload: {
-                    url: reloadUrl,
-                    project_id: this.currentProjectId,
-                    project_dir: this.projectDir,
-                    current_circuit_name: this.currentCircuitName
-                }
-            });
 
             setProjectState({
                 projectDir: this.projectDir,
-                currentCircuitName: this.currentCircuitName
+                currentCircuitName: this.circuitName
             });
 
             // Trigger snapshot capture
@@ -512,7 +428,8 @@ export class WorkspaceClient implements WorkspaceSender {
                 console.log(`[WorkspaceClient] Dev server already running for ${projectPath} with ${entryFile}`);
                 return;
             }
-
+            
+            // Stop any existing dev server before starting a new one
             if (this.devServerProcess) {
                 console.log("[WorkspaceClient] Stopping existing dev server...");
                 const processToKill = this.devServerProcess;
@@ -553,21 +470,38 @@ export class WorkspaceClient implements WorkspaceSender {
                 stdio: ['ignore', 'pipe', 'pipe']
             });
 
-            this.devServerProcess.stdout?.on('data', (data) => {
-                const output = data.toString();
-                console.log(`[tsci dev] ${output}`);
+            await new Promise<void>((resolve, reject) => {
+                let outputBuffer = "";
+                let isReady = false;
 
-                // Detection logic: wait for "Local:..."
-                if (output.includes("Local:") && output.includes(this.TSC_DEV_PORT.toString())) {
-                    console.log("[WorkspaceClient] Dev server ready event detected: ", projectPath);
+                const checkReady = (chunk: string) => {
+                    if (isReady) return;
+                    console.log(`[WorkspaceClient.startDevServer] Dev server process output: ${chunk}`);
+                    outputBuffer += chunk;
+                    // Log each chunk as it arrives
+                    process.stdout.write(`[tsci dev] ${chunk}`);
+
+                    // Use regex to detect the multi-line ready pattern
+                    // Pattern: @tscircuit/cli@... ready in ... and Local: ... :3021
+                    const readyPattern = /@tscircuit\/cli@.*ready in.*Local:.*http:\/\/localhost:(\d+)/s;
+                    const match = outputBuffer.match(readyPattern);
                     
-                    // Boot the gateway now that the target dev HTTP server is listening on 3021
-                    this.setupGatewayServer();
+                    // Also check for the "Watching ... for changes..." message which indicates the server is fully up
+                    const isWatching = outputBuffer.includes("Watching") && outputBuffer.includes("for changes");
                     
-                    // Only send generic ready message if we are at the workspace root.
-                    // Specific project ready messages (with hashes) are handled by the callers 
-                    // of startDevServer or specialized sync handlers.
-                    if (projectPath === this.workspaceDir) {
+                    if (match && match[1] === this.TSC_DEV_PORT.toString() && isWatching) {
+                        isReady = true;
+                        console.log("\n[WorkspaceClient.startDevServer.devServerProcess] Dev server ready event detected: ", projectPath," with pattern match: ", match);
+                        
+                        // Boot the gateway now that the target dev HTTP server is listening on 3021
+                        this.setupGatewayServer();
+                        
+                        const fullPath = path.isAbsolute(projectPath) ? projectPath : path.join(this.workspaceDir, projectPath);
+                        const relativePath = path.relative(this.workspaceDir, fullPath);
+                        const entryFile = this.circuitName ? `${this.circuitName}.tsx` : "index.circuit.tsx";
+                        const targetFile = relativePath === "" ? "" : path.join(relativePath, entryFile);
+                        const reloadUrl = `/${targetFile ? `#file=${encodeURIComponent(targetFile)}` : ""}`;
+
                         this.send({
                             id: randomUUID(),
                             type: "DEV_SERVER_READY",
@@ -575,36 +509,52 @@ export class WorkspaceClient implements WorkspaceSender {
                             timestamp: new Date().toISOString(),
                             source: "vhl_workspace",
                             payload: {
-                                url: "/",
-                                project_path: projectPath
+                                url: reloadUrl,
+                                project_path: projectPath,
+                                circuit_name: this.circuitName
                             }
                         });
+                        resolve();
                     }
-                }
-            });
+                };
 
-            this.devServerProcess.stderr?.on('data', (data) => {
-                console.error(`[tsci dev error] ${data.toString()}`);
-            });
+                this.devServerProcess!.stdout?.on('data', (data) => checkReady(data.toString()));
+                
+                this.devServerProcess!.stderr?.on('data', (data) => {
+                    const errorMsg = data.toString();
+                    process.stderr.write(`[tsci dev error] ${errorMsg}`);
+                });
 
-            this.devServerProcess.on('exit', (code) => {
-                console.log(`[tsci dev] Exited with code ${code}`);
-                if (this.currentDevServerPath === projectPath) {
-                    this.devServerProcess = null;
-                }
-            });
+                this.devServerProcess!.on('exit', (code) => {
+                    if (this.currentDevServerPath === projectPath) {
+                        this.devServerProcess = null;
+                    }
+                    if (!isReady) {
+                        reject(new Error(`Dev server exited with code ${code} before becoming ready`));
+                    }
+                });
 
-            this.devServerProcess.on('error', (err) => {
-                console.error(`[tsci dev] Failed to start: ${err.message}`);
-                this.sendError("DEV_SERVER_FAILED", err.message);
-                if (this.currentDevServerPath === projectPath) {
-                    this.devServerProcess = null;
-                }
+                this.devServerProcess!.on('error', (err) => {
+                    if (this.currentDevServerPath === projectPath) {
+                        this.devServerProcess = null;
+                    }
+                    if (!isReady) {
+                        reject(err);
+                    }
+                });
+
+                // Safety timeout: 60 seconds (some projects might be slow to start)
+                setTimeout(() => {
+                    if (!isReady) {
+                        reject(new Error("Dev server timed out waiting for readiness (60s)"));
+                    }
+                }, 60000);
             });
 
         } catch (error: any) {
-            console.error(`[WorkspaceClient] Error spawning tsci: ${error.message}`);
+            console.error(`[WorkspaceClient] Error starting tsci dev: ${error.message}`);
             this.sendError("DEV_SERVER_FAILED", error.message);
+            throw error; // Re-throw to prevent caller from sending ready message
         } finally {
             resolveLock!();
         }

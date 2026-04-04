@@ -38,9 +38,7 @@ export type EventType =
     | "SYNTHESIZE_CIRCUIT"
     | "CLOSE_PROJECT"
     | "PROJECT_CLOSED"
-    | "VHL_WORKSPACE_READY"
     // Dev Server Management
-    | "START_DEV_SERVER"
     | "DEV_SERVER_READY"
     // System State
     | "GET_SYSTEM_STATE"
