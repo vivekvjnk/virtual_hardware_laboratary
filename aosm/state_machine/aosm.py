@@ -448,7 +448,7 @@ class AOSM:
                 scud_path = await self._run_archy(image_id, image_path)
                 if scud_path:
                     self.current_message["scud_path"] = str(scud_path)
-                    await self.transition_to(AOSMState.TRIGGER_LIBRARIAN, "Archy completed. Moving to Librarian.")
+                    await self.transition_to(AOSMState.WAIT_FOR_ARCHY_HIL, "Archy completed. Waiting for HIL review.", payload={"scud_path": str(scud_path)})
                 else:
                     raise ValueError("SCUD path not returned from Archy")
             except Exception as e:
@@ -648,6 +648,88 @@ class AOSM:
                     payload={
                         "reason": "LIBRARIAN_REVIEW",
                         "message": "Librarian has finished retrying component resolution. Please review the updated SCUD.",
+                        "scud_content": scud_content
+                    }
+                ))
+
+    async def _handle_wait_for_archy_hil(self, event: BaseEvent):
+        logger.info(f"[AOSM._handle_wait_for_archy_hil] In WAIT_FOR_ARCHY_HIL state...")
+        
+        if event.type == EventType.STATE_TRANSITION:
+            # On entering state, notify user for review
+            scud_path = event.payload.get("scud_path")
+            scud_content = ""
+            if scud_path and os.path.exists(scud_path):
+                with open(scud_path, "r") as f:
+                    scud_content = f.read()
+            
+            await self.web_socket_client.emit_event(BaseEvent(
+                type=EventType.HIL_REQUEST,
+                source=EventSource.BACKEND,
+                payload={
+                    "reason": "ARCHY_REVIEW",
+                    "message": "Archy has finished schematic generation. Please review the generated SCUD.",
+                    "scud_content": scud_content
+                }
+            ))
+            
+        elif event.type == EventType.HUMAN_INPUT:
+            payload = event.payload or {}
+            action = payload.get("action")
+            
+            if action == "continue":
+                instructions = payload.get("instructions", "")
+                if instructions:
+                    self.current_message.setdefault("observations", []).append(f"User instructions from Archy HIL review: {instructions}")
+                logger.info("[AOSM._handle_wait_for_archy_hil] User chose CONTINUE. Transitioning to TRIGGER_LIBRARIAN")
+                await self.transition_to(AOSMState.TRIGGER_LIBRARIAN, "User accepted archy results")
+                
+            elif action == "retry":
+                instructions = payload.get("instructions", "")
+                logger.info(f"[AOSM._handle_wait_for_archy_hil] User chose RETRY with instructions: {instructions}")
+                
+                # Re-run archy
+                # We need image_id and image_path for archy
+                image_id = self.current_message.get("circuit_id")
+                image_path_str = self.current_message.get("image_path")
+                
+                if not image_id or not image_path_str:
+                    logger.error("[AOSM._handle_wait_for_archy_hil] Missing session data for Archy retry")
+                    await self.transition_to(AOSMState.ERROR_PRESENTED, "Missing session data for Archy retry")
+                    return
+                
+                image_path = Path(str(image_path_str))
+                
+                # wait self._run_archy with instructions - Wait, _run_archy currently doesn't take instructions?
+                # We'll just run it. If Archy is supposed to read from current observations, it might do that.
+                # Let's add the instructions to observations so Archy can conceptually pick it up if it reads them.
+                if instructions:
+                    self.current_message.setdefault("observations", []).append(f"User revision request for Archy: {instructions}")
+                
+                try:
+                     scud_path_res = await self._run_archy(str(image_id), image_path)
+                     if scud_path_res:
+                         self.current_message["scud_path"] = str(scud_path_res)
+                     else:
+                         raise ValueError("SCUD path not returned from Archy")
+                except Exception as e:
+                     logger.error(f"[AOSM._handle_wait_for_archy_hil] Archy retry failed: {e}")
+                     await self.transition_to(AOSMState.ERROR_PRESENTED, f"Archy retry failed: {e}")
+                     return
+                
+                # Re-emit HIL_REQUEST with updated content
+                scud_content = ""
+                sp_res = self.current_message.get("scud_path")
+                if sp_res and os.path.exists(str(sp_res)):
+                    with open(str(sp_res), "r") as f:
+                        scud_content = f.read()
+                
+                await self.web_socket_client.emit_event(BaseEvent(
+                    type=EventType.HIL_REQUEST,
+                    source=EventSource.BACKEND,
+                    payload={
+                        "reason": "ARCHY_REVIEW",
+                        "message": "Archy has finished retrying generation. Please review the updated SCUD.",
                         "scud_content": scud_content
                     }
                 ))

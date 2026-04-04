@@ -13,6 +13,7 @@ class AOSMState(Enum):
     ERROR_PRESENTED = auto()
     WAIT_FOR_USER = auto()
     WAIT_FOR_LIBRARIAN_HIL = auto()
+    WAIT_FOR_ARCHY_HIL = auto()
     TRIGGER_ARCHY = auto()
     TRIGGER_LIBRARIAN = auto()
     TRIGGER_CPA = auto()

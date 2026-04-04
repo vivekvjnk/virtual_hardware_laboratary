@@ -159,6 +159,7 @@ class ProjectsListPayload(BaseModel):
 class HILRequestPayload(BaseModel):
     reason: str
     message: Optional[str] = None
+    scud_content: Optional[str] = None
 
 class SyncPayload(BaseModel):
     sync_id: str
