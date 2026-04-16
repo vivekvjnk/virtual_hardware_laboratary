@@ -1,10 +1,12 @@
 import os
-from typing import List, Optional
+from typing import List
 from pydantic import SecretStr
 from openhands.sdk import (
     LLM,
     Agent,
     LLMSummarizingCondenser,
+    LargeFileSurgicalCondenser,
+    PipelineCondenser,
     AgentContext,
     Conversation,
     Event,
@@ -38,12 +40,25 @@ llm = LLM(
     api_key=SecretStr(api_key),
 )
 
-llm_condenser = LLM(
-    usage_id="ana_condenser",
-    model=model,
-    base_url=base_url,
-    api_key=SecretStr(api_key),
+# llm_condenser = LLM(
+#     usage_id="ana_condenser",
+#     model=model,
+#     base_url=base_url,
+#     api_key=SecretStr(api_key),
+# )
+surgical_condenser = LargeFileSurgicalCondenser(
+    threshold_bytes=10240, # 1KB
+    target_tool="file_editor"
 )
+pipeline = PipelineCondenser(condensers=[
+    surgical_condenser,
+    # Standard summarizer for general windowing after 50 events
+    LLMSummarizingCondenser(
+        llm=llm.model_copy(update={"usage_id": "condenser"}),
+        max_size=80
+    )
+])
+
 
 # Configure paths
 cwd = os.getcwd()
@@ -58,8 +73,6 @@ tools = [
     # *GEMINI_FILE_TOOLS,
 ]
 
-
-condenser = LLMSummarizingCondenser(llm=llm_condenser, max_size=70, keep_first=8)
 
 
 # Conversation Callback
@@ -171,7 +184,7 @@ def run_ana_w1_agent(workspace:str,scud_path: str, schematic_images_path: str = 
         llm=llm,
         tools=tools,
         system_prompt_filename=sys_prompt_file_path,
-        condenser=condenser,
+        condenser=pipeline,
         agent_context=agent_context,
     )    
     # Initialize Conversation

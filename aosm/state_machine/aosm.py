@@ -926,7 +926,6 @@ class AOSM:
                 logger.error(f"[AOSM._run_librarian] Librarian Agent failed: {e}", exc_info=True)
                 # We proceed even if Librarian fails, but log the error
                 
-
     async def _handle_close_project(self, event: BaseEvent):
         """Global handler for closing the current project."""
         logger.info(f"[AOSM._handle_close_project] Closing project {self.project_id}")

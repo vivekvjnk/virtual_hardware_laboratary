@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from typing import Optional
 
 from pydantic import SecretStr
 
@@ -8,6 +9,7 @@ from openhands.sdk import (
     Agent,
     Conversation,
     Event,
+    AgentContext,
     get_logger,
     LargeFileSurgicalCondenser,
     LLMSummarizingCondenser,
@@ -15,6 +17,9 @@ from openhands.sdk import (
     Tool,
     Message,
     TextContent,
+)
+from openhands.sdk.context import (
+    Skill,
 )
 from openhands.sdk.tool.spec import Tool
 from openhands.tools.file_editor import FileEditorTool
@@ -31,6 +36,9 @@ if not api_key:
 model = os.getenv("LLM_MODEL", "anthropic/claude-sonnet-4-5-20250929")
 base_url = os.getenv("LLM_BASE_URL")
 
+# find the directory path where this script is located, store it to a variable
+submodule_root = Path(__file__).resolve().parent
+
 llm_condenser = LLM(
     usage_id="archy_condenser",
     model=model,
@@ -39,66 +47,87 @@ llm_condenser = LLM(
 )
 
 def archy_build_scud(
-    image_id: str,
+    module_name: str,
     workspace: Path,
-    image_path: Path = None,
+    image_path: Path,
+    image_segment_paths: Optional[Path] = None,
+    system_boundary_path: Optional[Path] = None,
+    module_boundary_path: Optional[Path] = None,
+    datasheet_path: Optional[Path] = None,
+    eval_design_path: Optional[Path] = None,
 ):
     """
-    Agent 1: Incrementally builds the SCUD (Shared Circuit Understanding Document)
-    from schematic image crops.
+    Agent 1: Synthesizes a SCUD (Shared Circuit Understanding Document) 
+    by adapting a baseline reference design to meet strict system boundaries.
     """
     submodule_root = Path(__file__).resolve().parent
-    sys_prompt_path = os.path.join(submodule_root,"archy_sys_prompt.j2")
+    sys_prompt_path = os.path.join(submodule_root,"sys_prompt_gemini.j2")
 
     model = os.getenv("LLM_MODEL", "vertex_ai/gemini-3-flash-preview")
 
     llm = LLM(
-        usage_id="agent-1-llm",
+        usage_id="archy-scud-architect",
         model=model,
         api_key=SecretStr(os.getenv("LLM_API_KEY")),
     )
     surgical_condenser = LargeFileSurgicalCondenser(
-        threshold_bytes=10240, # 1KB
+        threshold_bytes=10240, # 10KB
         target_tool="file_editor"
     )
     pipeline = PipelineCondenser(condensers=[
         surgical_condenser,
-        # Standard summarizer for general windowing after 50 events
         LLMSummarizingCondenser(
             llm=llm.model_copy(update={"usage_id": "condenser"}),
             max_size=80
         )
     ])
+    # read the content of strategic_document_reader.md and store it in a variable
+    with open(submodule_root / "skills" / "strategic_document_reader.md", "r") as f:
+        strategic_doc_reader_content = f.read()
 
+    agent_context = AgentContext(
+    skills=[
+        Skill(
+            name="strategic_document_reader.md",
+            content= strategic_doc_reader_content,
+            trigger=None,
+        ),
+    ],
+    )    
     agent = Agent(
         llm=llm,
+        agent_context=agent_context,
         condenser=pipeline,
         system_prompt_filename=sys_prompt_path,
         tools=[
             Tool(name=FileEditorTool.name),
-            # *GEMINI_FILE_TOOLS
         ],
     )
-    # persistence_dir = "./.conversations"
+
     conversation = Conversation(
         agent=agent,
         workspace=str(workspace),
-        # persistence_dir = persistence_dir,
     )
 
-    # Use the provided image_path or default to original
-    final_image_path = image_path if image_path else workspace / "UserArtefacts" / f"{image_id}.png"
-    image_segment_paths = str(workspace / "schematic_images" / image_id)
     
     user_msg = (
-        f"The original schematic image is located in '{final_image_path}'.\n"
-        f"Following set of segmented crops are available in the given path\n"
-        f"'{image_segment_paths}'\n"
-        f"Refer these focused crops to clarify details in the original image and incrementally build the SCUD document.\n"
-        f"Once viewed images will be automatically condensed in the conversation history to preserve context window space. You can always refer back to the original and cropped images in the given paths if needed.\n You can use the condensed observations as reference to make sure if you have viewed the images properly and extracted the relevant details from them before making inferences."
-        f"Use the FileEditorTool to read the image files."
-        f"Please construct the SCUD file and save it as '{workspace}/{image_id}.scud'.\n"
-        f"NOTE: While incrementally constructing the SCUD document, use file_editor tool with short string replacements. Do not attempt to rewrite the entire document with each change, as this will lead to token overflow issues. Instead, identify specific sections to update and only modify those parts using the tool.\n"
+        f"You are tasked with generating the Shared Circuit Understanding Document (SCUD) for the module: '{module_name}'.\n\n"
+        f"### INPUT SPACE:\n"
+        f"1. **System Boundary Document:** {system_boundary_path if system_boundary_path else 'Not provided'}\n"
+        f"2. **Module Boundary Document:** {module_boundary_path if module_boundary_path else 'Not provided'}\n"
+        f"3. **ASIC Datasheet:** {datasheet_path if datasheet_path else 'Not provided'}\n"
+        f"4. **ASIC Evaluation Design Document:** {eval_design_path if eval_design_path else 'Not provided'}\n"
+        f"5. **ASIC Reference Schematic (Images):**\n"
+        f"   - Main Image: '{image_path}'\n"
+        f"   - Focused Crops (Segments): '{image_segment_paths}'\n\n"
+        f"### GUIDELINES:\n"
+        f"- Analyze the Boundary documents first to establish requirements.\n"
+        f"- Use the Datasheet and Eval Design to understand core ASIC requirements.\n"
+        f"- Use the Reference Schematic images (Main and Crops) as your baseline.\n"
+        f"- Synthesize the final design by adapting the baseline to the boundaries (Remove/Add/Modify).\n"
+        f"- Follow the 'Hierarchy of Truth' (Boundary > Datasheet > Reference).\n"
+        f"- Construct the SCUD file and save it as '{workspace}/{module_name}.scud' using the FileEditorTool.\n\n"
+        f"NOTE: Use FileEditorTool with short string replacements/appends when updating the SCUD. "
         f"Always use absolute paths with FileEditorTool."
     )
     
@@ -118,6 +147,7 @@ def archy_build_scud(
 
 if __name__ == "__main__":
     archy_build_scud(
-        image_id="bq79616",
+        module_name="bq79616",
         workspace=Path("./image_to_schematic/agent_1/workspace"),
+        image_path=Path("./image_to_schematic/agent_1/workspace/UserArtefacts/bq79616.png"),
     )

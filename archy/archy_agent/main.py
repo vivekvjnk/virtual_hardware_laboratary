@@ -1,8 +1,8 @@
 import os
 import sys
 import logging
+from typing import Union, Optional
 from pathlib import Path
-from typing import Union
 from PIL import Image, ImageEnhance, ImageOps, ImageDraw
 
 # Configure logging
@@ -179,31 +179,43 @@ def _archy_build_scud_stub(image_id: str, workspace_path: Path):
     logger.info(f"[_archy_build_scud_stub] [STUB] Dummy SCUD document generated: {scud_file}")
     return scud_file
 
-def orchestrate_archy(workspace_path: Union[str, Path], image_id: str, image_path: Path):
+def orchestrate_archy(
+    workspace_path: Union[str, Path], 
+    module_name: str, 
+    image_path: Path,
+    image_segments_path: Path,
+    system_boundary_path: Optional[Path] = None,
+    module_boundary_path: Optional[Path] = None,
+    datasheet_path: Optional[Path] = None,
+    eval_design_path: Optional[Path] = None,
+):
     """
     Main orchestration function for the Archy module.
     
-    Purpose: Generate a Shared Circuit Understanding Document (SCUD) from a schematic image.
-    
-    Sole Responsibility: Triggering LLM agent in fail-safe mode with proper error handling.
-    Deterministic workspace preparation should be handled by the caller.
+    Purpose: Generate a Shared Circuit Understanding Document (SCUD) from a schematic image 
+    and supporting technical documentation.
     """
     workspace = Path(workspace_path).resolve()
     
     # Step 1: Trigger Archy Agent (Scud Generation)
     logger.info("[orchestrate_archy] Triggering Archy agent for SCUD generation...")
     if os.environ.get("ARCHY_STUB") == "true":
-        _archy_build_scud_stub(image_id=image_id, workspace_path=workspace)
+        _archy_build_scud_stub(image_id=module_name, workspace_path=workspace)
     else:
         from archy_agent.scud_gen_agent import archy_build_scud 
         archy_build_scud(
-            image_id=image_id,
+            module_name=module_name,
             workspace=workspace,
-            image_path=image_path
+            image_path=image_path,
+            image_segment_paths=image_segments_path,
+            system_boundary_path=system_boundary_path,
+            module_boundary_path=module_boundary_path,
+            datasheet_path=datasheet_path,
+            eval_design_path=eval_design_path,
         )
     
     # Final Verification: Check if scud document is created in workspace
-    scud_file = workspace / f"{image_id}.scud"
+    scud_file = workspace / f"{module_name}.scud"
     if not scud_file.exists():
         raise RuntimeError(f"Final verification failed: SCUD document not found at {scud_file}")
     
@@ -212,29 +224,51 @@ def orchestrate_archy(workspace_path: Union[str, Path], image_id: str, image_pat
 
 if __name__ == "__main__":
     if len(sys.argv) < 3:
-        print("Usage: python main.py <workspace_path> <image_id>")
+        print("Usage: python main.py <workspace_path> <module_name>")
         sys.exit(1)
         
     ws_v_path = Path(sys.argv[1]).resolve()
-    img_v_id = sys.argv[2]
+    module_name = sys.argv[2]
     
     try:
         # Local preparation for standalone run
-        source_image_path = ws_v_path / "UserArtefacts" / f"{img_v_id}.png"
-        processed_image_path = ws_v_path / "UserArtefacts" / f"{img_v_id}_preprocessed.png"
-        output_dir = ws_v_path / "schematic_images" / img_v_id
+        docs_dir = ws_v_path / "docs"
+        # source_image_path = "schematic_images" / f"{module_name}.png"
+        image_segments_path = ws_v_path / "schematic_images"
+        processed_image_path = image_segments_path / f"{module_name}_preprocessed.png"
 
-        if not source_image_path.exists():
-            logger.error(f"Source image not found at {source_image_path}")
-            sys.exit(1)
-
-        if not processed_image_path.exists():
-            _preprocess_image(source_image_path, processed_image_path)
         
-        if not output_dir.exists() or not any(output_dir.iterdir()):
-            crop_image_into_segments(processed_image_path, output_dir)
+        # if not processed_image_path.exists():
+        #     _preprocess_image(source_image_path, processed_image_path)
+        
+        # if not image_segments_path.exists() or not any(image_segments_path.iterdir()):
+        crop_image_into_segments(processed_image_path, image_segments_path)
 
-        orchestrate_archy(ws_v_path, img_v_id, processed_image_path)
+        # Auto-locate other required documents
+        sys_boundary = next(docs_dir.glob("system-boundary.md"), None)
+        mod_boundary = next(docs_dir.glob(f"*{module_name}*boundary*.md"), None)
+             
+        datasheet = next(docs_dir.glob("*datasheet*.md"), None)
+            
+        eval_design = next(docs_dir.glob("*eval*board*.md"), None)
+
+        logger.info(f"Located System Boundary: {sys_boundary}")
+        logger.info(f"Located Module Boundary: {mod_boundary}")
+        logger.info(f"Located Datasheet: {datasheet}")
+        logger.info(f"Located Eval Design: {eval_design}")
+
+        orchestrate_archy(
+            workspace_path=ws_v_path,
+            module_name=module_name,
+            image_path=processed_image_path,
+            image_segments_path=image_segments_path,
+            system_boundary_path=sys_boundary,
+            module_boundary_path=mod_boundary,
+            datasheet_path=datasheet,
+            eval_design_path=eval_design
+        )
     except Exception as e:
         logger.error(f"[main] Orchestration failed: {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
