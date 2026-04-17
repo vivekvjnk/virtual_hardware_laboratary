@@ -133,6 +133,7 @@ vhl_workspace/bms-project
 ├──bms-monitor-module
 |   ├── resources/
 |   ├── bms-monitor-module.scud
+|   ├── bms-monitor-module.tsx (symbolic link to Stable/bms-monitor-module.tsx)
 |   ├── Stable
 |   |    ├── eval_results
 |   |    ├── bms-monitor-module.tsx
