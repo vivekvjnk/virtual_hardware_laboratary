@@ -30,6 +30,24 @@ steps:
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', 'gcr.io/$PROJECT_ID/vhl-agent-backend-sidecar']
 
+  # 4.5. Initialize GCS bucket (if using GCS storage backend)
+  - name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        BUCKET_NAME=${_GCS_BUCKET_NAME:-vhl-storage}
+        REGION=${_GCS_REGION:-us-central1}
+        
+        echo "Checking if GCS bucket '$$BUCKET_NAME' exists..."
+        if ! gsutil ls -b gs://$$BUCKET_NAME &>/dev/null; then
+          echo "Creating GCS bucket '$$BUCKET_NAME' in region $$REGION..."
+          gsutil mb -b on -l $$REGION gs://$$BUCKET_NAME
+          echo "✓ Created GCS bucket '$$BUCKET_NAME'"
+        else
+          echo "✓ GCS bucket '$$BUCKET_NAME' already exists"
+        fi
+
   # 5. Deploy to Cloud Run as a Sidecar Service
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
@@ -42,7 +60,7 @@ steps:
       - '--container=vhl-runtime-container' 
       - '--image=gcr.io/$PROJECT_ID/vhl-runtime'
       - '--port=3020'
-      - '--set-env-vars=VHL_AGENT_WS_URL=/ws-agent,STORAGE_BACKEND=gcs,GCS_BUCKET_NAME=vhl-storage'
+      - '--set-env-vars=VHL_AGENT_WS_URL=/ws-agent,STORAGE_BACKEND=gcs,OBJECT_STORE_BUCKET=vhl-storage'
       
       # Container 2: Backend Sidecar
       - '--container=backend-container'
@@ -52,7 +70,7 @@ steps:
       - '--set-env-vars=VERTEXAI_PROJECT=$PROJECT_ID,VERTEXAI_LOCATION=us-central1'
       - '--set-env-vars=PYTHONUNBUFFERED=1,LOG_LEVEL=INFO,STORAGE_BACKEND=gcs,GCP_LOCATION=global' # Force logs out
       - '--set-env-vars=LLM_MODEL=vertex_ai/gemini-2.5-flash, GEMINI_2_5_FLASH=vertex_ai/gemini-2.5-flash'
-      - '--set-env-vars=LLM_API_KEY=abc, LLM_REVIEW_MODEL=vertex_ai/gemini-3-flash-preview, GCS_BUCKET_NAME=vhl-storage,GCP_PROJECT=$PROJECT_ID'
+      - '--set-env-vars=LLM_API_KEY=abc, LLM_REVIEW_MODEL=vertex_ai/gemini-3-flash-preview, OBJECT_STORE_BUCKET=vhl-storage,GCP_PROJECT=$PROJECT_ID'
       
       - '--region=europe-west1'
 

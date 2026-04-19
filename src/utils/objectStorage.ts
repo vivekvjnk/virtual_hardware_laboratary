@@ -22,7 +22,7 @@ export class MinioClient implements ObjectStorageClient {
             accessKey: process.env.MINIO_ACCESS_KEY || "minioadmin",
             secretKey: process.env.MINIO_SECRET_KEY || "supersecretpassword",
         });
-        this.bucketName = process.env.MINIO_BUCKET || "vhl";
+        this.bucketName = process.env.OBJECT_STORE_BUCKET || "vhl";
     }
 
     async ensureBucketExists(): Promise<void> {
@@ -72,7 +72,7 @@ export class GCSClient implements ObjectStorageClient {
 
     constructor() {
         this.storage = new Storage();
-        this.bucketName = process.env.GCS_BUCKET_NAME || "vhl-storage";
+        this.bucketName = process.env.OBJECT_STORE_BUCKET || "vhl-storage";
     }
 
     async ensureBucketExists(): Promise<void> {
@@ -121,10 +121,10 @@ export function getStorageClient(): ObjectStorageClient {
         const backend = (process.env.STORAGE_BACKEND || "minio").toLowerCase();
         if (backend === "gcs") {
             _client = new GCSClient();
-            console.log(`[ObjectStorage] Using Google Cloud Storage backend (bucket: ${process.env.GCS_BUCKET_NAME || "vhl-storage"})`);
+            console.log(`[ObjectStorage] Using Google Cloud Storage backend (bucket: ${process.env.OBJECT_STORE_BUCKET || "vhl-storage"})`);
         } else {
             _client = new MinioClient();
-            console.log(`[ObjectStorage] Using MinIO backend (bucket: ${process.env.MINIO_BUCKET || "vhl"}, endpoint: ${process.env.MINIO_ENDPOINT || "127.0.0.1"})`);
+            console.log(`[ObjectStorage] Using MinIO backend (bucket: ${process.env.OBJECT_STORE_BUCKET || "vhl"}, endpoint: ${process.env.MINIO_ENDPOINT || "127.0.0.1"})`);
         }
     }
     return _client;
