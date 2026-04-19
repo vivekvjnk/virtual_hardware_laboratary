@@ -7,5 +7,23 @@ steps:
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', 'gcr.io/$PROJECT_ID/vhl-backend']
 
+  # Initialize GCS bucket (if using GCS storage backend)
+  - name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        BUCKET_NAME=${_GCS_BUCKET_NAME:-vhl-storage}
+        REGION=${_GCS_REGION:-us-central1}
+        
+        echo "Checking if GCS bucket '$$BUCKET_NAME' exists..."
+        if ! gsutil ls -b gs://$$BUCKET_NAME &>/dev/null; then
+          echo "Creating GCS bucket '$$BUCKET_NAME' in region $$REGION..."
+          gsutil mb -b on -l $$REGION gs://$$BUCKET_NAME
+          echo "✓ Created GCS bucket '$$BUCKET_NAME'"
+        else
+          echo "✓ GCS bucket '$$BUCKET_NAME' already exists"
+        fi
+
 images:
   - 'gcr.io/$PROJECT_ID/vhl-backend'

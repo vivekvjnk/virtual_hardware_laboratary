@@ -5,6 +5,9 @@ from typing import Union, Optional
 from pathlib import Path
 from PIL import Image, ImageEnhance, ImageOps, ImageDraw
 
+from dotenv import load_dotenv
+load_dotenv()  # Load environment variables from .env file
+
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("archy_orchestrator")

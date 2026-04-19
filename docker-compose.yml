@@ -7,6 +7,8 @@ services:
     container_name: vhl-backend
     restart: always
     env_file: .env
+    networks:
+      - vhl-network
     environment:
       - MINIO_ENDPOINT_URL=${MINIO_ENDPOINT_URL:-http://host.docker.internal:9000}
       - MINIO_ENDPOINT=${MINIO_ENDPOINT:-http://host.docker.internal:9000}
@@ -14,7 +16,6 @@ services:
       - MCP_ENDPOINT=${MCP_ENDPOINT:-http://host.docker.internal:8081/mcp/vap}
       - LIBRARIAN_MCP_URL=${LIBRARIAN_MCP_URL:-http://host.docker.internal:8082/sse}
       - STORAGE_BACKEND=${STORAGE_BACKEND:-minio}
-      - GCS_BUCKET_NAME=${GCS_BUCKET_NAME:-vhl-storage}
 
       - GOOGLE_APPLICATION_CREDENTIALS=/root/.config/gcloud/application_default_credentials.json
       - GOOGLE_CLOUD_PROJECT=virtual-hardware-laboratary
@@ -33,4 +34,8 @@ services:
       - "host.docker.internal:host-gateway"
 
 volumes:
-  vhl_data:  
+  vhl_data:
+
+networks:
+  vhl-network:
+    driver: bridge  

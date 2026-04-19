@@ -165,6 +165,7 @@ vhl_workspace/bms-project
 |       |   └── <Content of Iterations 2>
 |       └── ...
 |
+├── system-boundary.md
 └── lib/imports/
 ```
 ### Workspace manager dependency 

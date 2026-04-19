@@ -22,7 +22,7 @@ class MinioClient(ObjectStorageClient):
         self.endpoint_url = os.environ.get("MINIO_ENDPOINT_URL", "http://127.0.0.1:9000")
         self.access_key = os.environ.get("MINIO_ACCESS_KEY", "minioadmin")
         self.secret_key = os.environ.get("MINIO_SECRET_KEY", "supersecretpassword")
-        self.bucket_name = os.environ.get("MINIO_BUCKET", "vhl")
+        self.bucket_name = os.environ.get("OBJECT_STORE_BUCKET", "vhl")
         
         self.s3 = boto3.client(
             's3',
@@ -72,7 +72,7 @@ class MinioClient(ObjectStorageClient):
 class GCSClient(ObjectStorageClient):
     """Google Cloud Storage implementation using native google-cloud-storage library."""
     def __init__(self):
-        self.bucket_name = os.environ.get("GCS_BUCKET_NAME", "vhl-storage")
+        self.bucket_name = os.environ.get("OBJECT_STORE_BUCKET", "vhl-storage")
         self.storage_client = storage.Client()
         self.bucket = self.storage_client.bucket(self.bucket_name)
         # Ensure bucket exists (optional, usually created beforehand in production)
