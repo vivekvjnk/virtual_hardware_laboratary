@@ -108,7 +108,7 @@ export class VAPRuntime {
             this.metadata = result.metadata || null;
             console.log(`[VAP] Metadata stored`);
 
-            // NOTE: File operations (ACCEPT/REJECT cleanup) are now handled by WorkspaceClient
+            // NOTE: File operations (ACCEPT/REJECT cleanup) are now handled by VHLRuntime
             // after observing the state transition to 'Default' and checking the decision.
 
         } catch (err: any) {

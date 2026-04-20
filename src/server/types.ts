@@ -57,7 +57,7 @@ export interface AgentMessage {
     type: EventType
     artifact_id: string | null
     timestamp: string // ISO-8601
-    source: "runtime" | "backend" | "vhl_workspace"
+    source: "runtime" | "backend" | "vhl_workspace" | "vhl_runtime"
     payload: any
 }
 

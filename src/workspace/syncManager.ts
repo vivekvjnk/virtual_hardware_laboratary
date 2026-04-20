@@ -6,14 +6,14 @@ import { pushObject, pullObject, ensureBucket, objectExists } from "../utils/min
 import { computeFileHash, computeDirectoryHash } from "../utils/hashing.js";
 import { compressDirectory, decompressZip } from "./fileOperations.js";
 import { AgentMessage } from "../server/types.js";
-import { WorkspaceSender } from "./types.js";
+import { RuntimeSender } from "./types.js";
 import { SyncPayload, ResourceType, SyncIntent } from "./syncTypes.js";
 
 export class SyncManager {
     private workspaceDir: string;
-    private sender: WorkspaceSender;
+    private sender: RuntimeSender;
 
-    constructor(workspaceDir: string, sender: WorkspaceSender) {
+    constructor(workspaceDir: string, sender: RuntimeSender) {
         this.workspaceDir = workspaceDir;
         this.sender = sender;
     }
@@ -108,7 +108,7 @@ export class SyncManager {
                 this.sender.send({
                     id: randomUUID(),
                     type: "SYNC_COMPLETE",
-                    source: "vhl_workspace",
+                    source: "vhl_runtime",
                     timestamp: new Date().toISOString(),
                     artifact_id: null,
                     payload: { sync_id, project_id, iteration_id, resource_type }
@@ -138,7 +138,7 @@ export class SyncManager {
             await this.sender.send({
                 id: randomUUID(),
                 type: "DOWNLOAD_REQUEST",
-                source: "vhl_workspace",
+                source: "vhl_runtime",
                 timestamp: new Date().toISOString(),
                 artifact_id: null,
                 payload: {
@@ -213,7 +213,7 @@ export class SyncManager {
             this.sender.send({
                 id: randomUUID(),
                 type: "SYNC_COMPLETE",
-                source: "vhl_workspace",
+                source: "vhl_runtime",
                 timestamp: new Date().toISOString(),
                 artifact_id: null,
                 payload: { sync_id, project_id, iteration_id, resource_type }
@@ -231,7 +231,7 @@ export class SyncManager {
         this.sender.send({
             id: randomUUID(),
             type: "SYNC_ERROR",
-            source: "vhl_workspace",
+            source: "vhl_runtime",
             timestamp: new Date().toISOString(),
             artifact_id: null,
             payload: { sync_id: syncId, project_id: projectId, resource_type: resourceType, reason }

@@ -164,4 +164,21 @@ export class COWWorkspaceManager {
             console.warn("Warning: Failed during global COW workspace cleanup:", error);
         }
     }
+
+    /**
+     * Initializes a new project directory with lib folder and tsci init.
+     */
+    static async initializeProject(projectDir: string): Promise<void> {
+        console.log(`[COW] Initializing project directory: ${projectDir}`);
+        await fs.mkdir(projectDir, { recursive: true });
+        await fs.mkdir(path.join(projectDir, "lib"), { recursive: true });
+
+        try {
+            console.log(`[COW] Running tsci init in ${projectDir}`);
+            execSync("tsci init -y --no-install", { cwd: projectDir, stdio: 'inherit' });
+        } catch (error: any) {
+            console.error(`[COW] Failed to initialize tsci: ${error.message}`);
+            throw new Error(`TSCI_INIT_FAILED: ${error.message}`);
+        }
+    }
 }

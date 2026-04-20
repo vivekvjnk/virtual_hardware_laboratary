@@ -11,7 +11,7 @@ export interface SyncPayload {
     blob_id?: string | null;
     reason?: string | null;
     data?: Record<string, any>;
-    source: "runtime" | "backend" | "vhl_workspace";
+    source: "runtime" | "backend" | "vhl_workspace" | "vhl_runtime";
 }
 
 export enum SyncState {

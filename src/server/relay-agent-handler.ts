@@ -15,7 +15,7 @@ export class RelayAgentHandler implements AgentHandler {
     private static workspaceClient: ((msg: WebSocketMessage) => void) | null = null
 
     private currentSend: ((msg: WebSocketMessage) => void) | null = null
-    private role: "ui" | "agent" | "vhl_workspace" | null = null
+    private role: "ui" | "agent" | "vhl_workspace" | "vhl_runtime" | null = null
 
     onConnect(send: (msg: WebSocketMessage) => void) {
         this.currentSend = send
@@ -48,7 +48,7 @@ export class RelayAgentHandler implements AgentHandler {
             else if (!RelayAgentHandler.agentClient) {
                 send({ type: "ERROR", payload: { message: "No agent client connected", scope: "runtime", severity: "error" } } as any)
             }
-        } else if (this.role === "vhl_workspace") {
+        } else if (this.role === "vhl_workspace" || this.role === "vhl_runtime") {
             // Workspace Client -> Agent (Backend)
             // Some events also go to UI (Runtime)
             if (msg.type === "DEV_SERVER_READY" || msg.type === "SYSTEM_STATE" || msg.type === "PROJECT_STATE") {
@@ -60,7 +60,7 @@ export class RelayAgentHandler implements AgentHandler {
                 console.debug("[Websocket Relay] Runtime Workspace Client -> Agent backend", msg.type)
                 RelayAgentHandler.agentClient(msg)
             } else {
-                send({ type: "ERROR", payload: { message: "No agent client connected", scope: "vhl_workspace", severity: "error" } } as any)
+                send({ type: "ERROR", payload: { message: "No agent client connected", scope: this.role as string, severity: "error" } } as any)
             }
         } else if ((this.role === "agent") || (this.role === "vap_mcp_agent")) {
             // Intercept Heartbeat directly
@@ -131,10 +131,10 @@ export class RelayAgentHandler implements AgentHandler {
                 send({ id: randomUUID(), type: "WORKSPACE_DISCONNECTED", source: "backend", timestamp: new Date().toISOString() })
             }
 
-        } else if (role === "vhl_workspace") {
-            this.role = "vhl_workspace"
+        } else if (role === "vhl_workspace" || role === "vhl_runtime") {
+            this.role = role as any
             RelayAgentHandler.workspaceClient = send
-            console.log("RelayAgentHandler: Workspace client identified")
+            console.log(`RelayAgentHandler: Workspace client identified (${role})`)
 
             // Notify agent and all UIs that workspace client is connected
             if (RelayAgentHandler.agentClient) {
@@ -152,9 +152,9 @@ export class RelayAgentHandler implements AgentHandler {
             console.log("RelayAgentHandler: Agent client disconnected")
             // Notify all UIs that agent is gone
             RelayAgentHandler.uiClients.forEach(uiSend => uiSend({ type: "AGENT_DISCONNECTED" }))
-        } else if (this.role === "vhl_workspace") {
+        } else if (this.role === "vhl_workspace" || this.role === "vhl_runtime") {
             RelayAgentHandler.workspaceClient = null
-            console.log("RelayAgentHandler: Workspace client disconnected")
+            console.log(`RelayAgentHandler: Workspace client disconnected (${this.role})`)
             // TODO Notify agent and UIs that workspace is gone
             RelayAgentHandler.uiClients.forEach(uiSend => uiSend({ type: "WORKSPACE_DISCONNECTED" }))
         }

@@ -5,12 +5,12 @@ import { TEMP_DIR } from "../config/paths.js";
 import { pushObject, pullObject, ensureBucket } from "../utils/minio.js";
 import { compressDirectory, decompressZip, runPredefinedOperations } from "./fileOperations.js";
 import { AgentMessage } from "../server/types.js";
-import { WorkspaceSender } from "./types.js";
+import { RuntimeSender } from "./types.js";
 
 export async function handleWorkspaceUpload(
     msg: AgentMessage,
     workspaceDir: string,
-    sender: WorkspaceSender
+    sender: RuntimeSender
 ) {
     try {
         console.log("[Runtime Workspace] Processing WORKSPACE_UPLOAD");
@@ -33,7 +33,7 @@ export async function handleWorkspaceUpload(
             artifact_id: zipName,
             type: "WORKSPACE_SYNC_COMPLETE",
             timestamp: new Date().toISOString(),
-            source: "vhl_workspace",
+            source: "vhl_runtime",
             payload: {
                 original_request_id: requestId,
                 status: "success"
@@ -52,7 +52,7 @@ export async function handleWorkspaceUpload(
 export async function handleWorkspaceDownload(
     msg: AgentMessage,
     workspaceDir: string,
-    sender: WorkspaceSender
+    sender: RuntimeSender
 ) {
     try {
         console.log("[Runtime Workspace] Processing WORKSPACE_DOWNLOAD");
@@ -76,7 +76,7 @@ export async function handleWorkspaceDownload(
             type: "WORKSPACE_SYNC_COMPLETE",
             artifact_id: artifactId,
             timestamp: new Date().toISOString(),
-            source: "vhl_workspace",
+            source: "vhl_runtime",
             payload: {
                 status: "success",
                 operation: "download"

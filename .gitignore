@@ -1,7 +1,7 @@
 dist/
 node_modules/
 tests/*.js
-.db/
+.object_store/
 docs/
 eval_results/
 workspace/index.tsx

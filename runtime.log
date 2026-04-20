@@ -1,0 +1,535 @@
+time="2026-04-19T16:21:18+05:30" level=warning msg="/home/vivekv/Documents/VHL-System/vhl-runtime/docker-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+ Image quay.io/minio/minio:latest Pulling 
+ Image minio/mc:latest Pulling 
+ b83ce1c86227 Pulling fs layer 0B
+ c1bc68842c41 Pulling fs layer 0B
+ f9c0805c25ee Pulling fs layer 0B
+ 0288b5a0d7e7 Pulling fs layer 0B
+ 34013573f278 Pulling fs layer 0B
+ 71e9fc939447 Pulling fs layer 0B
+ f94d28849fa3 Pulling fs layer 0B
+ 1008deaf6ec4 Pulling fs layer 0B
+ 81260b173076 Pulling fs layer 0B
+ 34013573f278 Downloading 496B
+ 34013573f278 Download complete 0B
+ b7c1efd1d2b4 Pulling fs layer 0B
+ b268f447c871 Pulling fs layer 0B
+ 4a93952ab9ce Pulling fs layer 0B
+ 9404e0df6bd3 Pulling fs layer 0B
+ b83ce1c86227 Pulling fs layer 0B
+ f29310fc4a8a Pulling fs layer 0B
+ 71e9fc939447 Downloading 1.049MB
+ 71e9fc939447 Download complete 0B
+ f9c0805c25ee Downloading 1.049MB
+ b7c1efd1d2b4 Downloading 1.049MB
+ 0288b5a0d7e7 Download complete 0B
+ f9c0805c25ee Downloading 2.097MB
+ b7c1efd1d2b4 Downloading 1.049MB
+ c1bc68842c41 Download complete 0B
+ f9c0805c25ee Downloading 2.097MB
+ b7c1efd1d2b4 Downloading 1.049MB
+ 81260b173076 Download complete 0B
+ f9c0805c25ee Downloading 3.146MB
+ b7c1efd1d2b4 Downloading 1.049MB
+ f9c0805c25ee Downloading 4.194MB
+ b7c1efd1d2b4 Downloading 1.049MB
+ 4a93952ab9ce Download complete 0B
+ f29310fc4a8a Download complete 0B
+ f9c0805c25ee Downloading 4.194MB
+ 1008deaf6ec4 Downloading 1.049MB
+ b7c1efd1d2b4 Downloading 1.049MB
+ 1008deaf6ec4 Downloading 1.049MB
+ f9c0805c25ee Downloading 5.243MB
+ b7c1efd1d2b4 Downloading 2.097MB
+ f9c0805c25ee Downloading 5.243MB
+ 1008deaf6ec4 Downloading 1.049MB
+ b7c1efd1d2b4 Downloading 2.097MB
+ 1008deaf6ec4 Downloading 1.049MB
+ f9c0805c25ee Downloading 6.291MB
+ b7c1efd1d2b4 Downloading 2.097MB
+ b268f447c871 Download complete 0B
+ f9c0805c25ee Downloading 6.291MB
+ 1008deaf6ec4 Downloading 1.049MB
+ 9404e0df6bd3 Downloading 1.049MB
+ b7c1efd1d2b4 Downloading 2.097MB
+ f9c0805c25ee Downloading 7.34MB
+ 1008deaf6ec4 Downloading 1.049MB
+ b7c1efd1d2b4 Downloading 2.097MB
+ 9404e0df6bd3 Downloading 1.049MB
+ f9c0805c25ee Downloading 8.389MB
+ 1008deaf6ec4 Downloading 1.049MB
+ 9404e0df6bd3 Downloading 1.049MB
+ b7c1efd1d2b4 Downloading 2.097MB
+ 1008deaf6ec4 Downloading 2.097MB
+ f9c0805c25ee Downloading 8.389MB
+ 9404e0df6bd3 Downloading 1.049MB
+ b7c1efd1d2b4 Downloading 2.097MB
+ 1008deaf6ec4 Downloading 2.097MB
+ f9c0805c25ee Downloading 9.437MB
+ b7c1efd1d2b4 Downloading 2.097MB
+ 9404e0df6bd3 Downloading 1.049MB
+ 1008deaf6ec4 Downloading 2.097MB
+ f9c0805c25ee Downloading 9.437MB
+ b7c1efd1d2b4 Downloading 2.097MB
+ 9404e0df6bd3 Downloading 1.049MB
+ f94d28849fa3 Downloading 1.049MB
+ 1008deaf6ec4 Downloading 2.097MB
+ f9c0805c25ee Downloading 9.437MB
+ 9404e0df6bd3 Downloading 1.049MB
+ b7c1efd1d2b4 Downloading 2.097MB
+ f9c0805c25ee Downloading 10.49MB
+ f94d28849fa3 Downloading 1.049MB
+ 1008deaf6ec4 Downloading 2.097MB
+ 9404e0df6bd3 Downloading 1.049MB
+ b7c1efd1d2b4 Downloading 2.097MB
+ f9c0805c25ee Downloading 10.49MB
+ f94d28849fa3 Downloading 1.049MB
+ 1008deaf6ec4 Downloading 2.097MB
+ b7c1efd1d2b4 Downloading 2.097MB
+ 9404e0df6bd3 Downloading 1.049MB
+ f9c0805c25ee Downloading 10.49MB
+ f94d28849fa3 Downloading 1.049MB
+ 1008deaf6ec4 Downloading 2.097MB
+ 9404e0df6bd3 Downloading 1.049MB
+ b7c1efd1d2b4 Downloading 3.146MB
+ f9c0805c25ee Downloading 10.49MB
+ f94d28849fa3 Downloading 1.049MB
+ 1008deaf6ec4 Downloading 2.097MB
+ b7c1efd1d2b4 Downloading 3.146MB
+ 9404e0df6bd3 Downloading 1.049MB
+ f9c0805c25ee Downloading 10.49MB
+ f94d28849fa3 Downloading 1.049MB
+ 1008deaf6ec4 Downloading 2.097MB
+ 9404e0df6bd3 Downloading 1.049MB
+ b7c1efd1d2b4 Downloading 3.146MB
+ f94d28849fa3 Downloading 1.049MB
+ 1008deaf6ec4 Downloading 2.097MB
+ f9c0805c25ee Downloading 10.49MB
+ 9404e0df6bd3 Downloading 2.097MB
+ b7c1efd1d2b4 Downloading 3.146MB
+ f9c0805c25ee Downloading 10.49MB
+ f94d28849fa3 Downloading 1.049MB
+ 1008deaf6ec4 Downloading 2.097MB
+ b7c1efd1d2b4 Downloading 3.146MB
+ 9404e0df6bd3 Downloading 2.097MB
+ f9c0805c25ee Downloading 10.49MB
+ f94d28849fa3 Downloading 1.049MB
+ 1008deaf6ec4 Downloading 2.097MB
+ b7c1efd1d2b4 Downloading 3.146MB
+ 9404e0df6bd3 Downloading 2.097MB
+ f9c0805c25ee Downloading 11.53MB
+ f94d28849fa3 Downloading 1.049MB
+ 1008deaf6ec4 Downloading 2.097MB
+ b7c1efd1d2b4 Downloading 3.146MB
+ 9404e0df6bd3 Downloading 2.097MB
+ f9c0805c25ee Downloading 11.53MB
+ f94d28849fa3 Downloading 1.049MB
+ 1008deaf6ec4 Downloading 2.097MB
+ 9404e0df6bd3 Downloading 2.097MB
+ b7c1efd1d2b4 Downloading 3.146MB
+ f94d28849fa3 Downloading 1.049MB
+ 1008deaf6ec4 Downloading 2.097MB
+ f9c0805c25ee Downloading 11.53MB
+ 9404e0df6bd3 Downloading 2.097MB
+ b7c1efd1d2b4 Downloading 3.146MB
+ f9c0805c25ee Downloading 11.53MB
+ f94d28849fa3 Downloading 1.049MB
+ 1008deaf6ec4 Downloading 2.097MB
+ 9404e0df6bd3 Downloading 3.146MB
+ b7c1efd1d2b4 Downloading 3.146MB
+ f94d28849fa3 Downloading 1.049MB
+ 1008deaf6ec4 Downloading 2.097MB
+ f9c0805c25ee Downloading 11.53MB
+ 9404e0df6bd3 Downloading 3.146MB
+ b7c1efd1d2b4 Downloading 3.146MB
+ f94d28849fa3 Downloading 1.049MB
+ 1008deaf6ec4 Downloading 2.097MB
+ f9c0805c25ee Downloading 11.53MB
+ 9404e0df6bd3 Downloading 3.146MB
+ b7c1efd1d2b4 Downloading 3.146MB
+ f9c0805c25ee Downloading 12.58MB
+ f94d28849fa3 Downloading 1.049MB
+ 1008deaf6ec4 Downloading 3.146MB
+ 9404e0df6bd3 Downloading 3.146MB
+ b7c1efd1d2b4 Downloading 3.146MB
+ f94d28849fa3 Downloading 1.049MB
+ 1008deaf6ec4 Downloading 3.146MB
+ f9c0805c25ee Downloading 12.58MB
+ 9404e0df6bd3 Downloading 4.194MB
+ b7c1efd1d2b4 Downloading 4.194MB
+ f94d28849fa3 Downloading 1.049MB
+ 1008deaf6ec4 Downloading 3.146MB
+ f9c0805c25ee Downloading 12.58MB
+ 9404e0df6bd3 Downloading 4.194MB
+ b7c1efd1d2b4 Downloading 4.194MB
+ f94d28849fa3 Download complete 0B
+ 1008deaf6ec4 Downloading 3.146MB
+ f9c0805c25ee Downloading 12.58MB
+ 9404e0df6bd3 Downloading 5.243MB
+ b7c1efd1d2b4 Downloading 4.194MB
+ f9c0805c25ee Downloading 12.58MB
+ 1008deaf6ec4 Downloading 3.146MB
+ 9404e0df6bd3 Downloading 5.243MB
+ b7c1efd1d2b4 Downloading 4.194MB
+ f9c0805c25ee Downloading 12.58MB
+ 1008deaf6ec4 Downloading 3.146MB
+ b7c1efd1d2b4 Downloading 4.194MB
+ 9404e0df6bd3 Downloading 6.291MB
+ f9c0805c25ee Downloading 12.58MB
+ 1008deaf6ec4 Downloading 3.146MB
+ b7c1efd1d2b4 Downloading 5.243MB
+ 9404e0df6bd3 Downloading 6.291MB
+ f9c0805c25ee Downloading 12.58MB
+ 1008deaf6ec4 Downloading 3.146MB
+ 9404e0df6bd3 Downloading 7.34MB
+ b7c1efd1d2b4 Downloading 5.243MB
+ f9c0805c25ee Downloading 13.63MB
+ 1008deaf6ec4 Downloading 3.146MB
+ 9404e0df6bd3 Downloading 7.34MB
+ b7c1efd1d2b4 Downloading 5.243MB
+ 1008deaf6ec4 Downloading 3.146MB
+ f9c0805c25ee Downloading 13.63MB
+ 9404e0df6bd3 Downloading 8.389MB
+ b7c1efd1d2b4 Downloading 5.243MB
+ 1008deaf6ec4 Downloading 3.146MB
+ f9c0805c25ee Downloading 13.63MB
+ 9404e0df6bd3 Downloading 8.389MB
+ b7c1efd1d2b4 Downloading 6.291MB
+ f9c0805c25ee Downloading 13.63MB
+ 1008deaf6ec4 Downloading 3.146MB
+ b7c1efd1d2b4 Downloading 6.291MB
+ 9404e0df6bd3 Downloading 9.437MB
+ f9c0805c25ee Downloading 13.63MB
+ 1008deaf6ec4 Downloading 3.146MB
+ 9404e0df6bd3 Downloading 9.437MB
+ b7c1efd1d2b4 Downloading 6.291MB
+ f9c0805c25ee Downloading 13.63MB
+ 1008deaf6ec4 Downloading 3.146MB
+ 9404e0df6bd3 Downloading 10.49MB
+ b7c1efd1d2b4 Downloading 6.291MB
+ b83ce1c86227 Downloading 1.049MB
+ b83ce1c86227 Downloading 1.049MB
+ f9c0805c25ee Downloading 14.68MB
+ 1008deaf6ec4 Downloading 3.146MB
+ 9404e0df6bd3 Download complete 0B
+ b7c1efd1d2b4 Downloading 7.34MB
+ b83ce1c86227 Downloading 1.049MB
+ 1008deaf6ec4 Downloading 4.194MB
+ b83ce1c86227 Downloading 1.049MB
+ f9c0805c25ee Downloading 14.68MB
+ b7c1efd1d2b4 Downloading 7.34MB
+ b83ce1c86227 Downloading 1.049MB
+ 1008deaf6ec4 Downloading 4.194MB
+ b83ce1c86227 Downloading 1.049MB
+ f9c0805c25ee Downloading 14.68MB
+ b7c1efd1d2b4 Downloading 8.389MB
+ b83ce1c86227 Downloading 1.049MB
+ 1008deaf6ec4 Downloading 4.194MB
+ b83ce1c86227 Downloading 1.049MB
+ f9c0805c25ee Downloading 14.68MB
+ b7c1efd1d2b4 Downloading 8.389MB
+ b83ce1c86227 Downloading 1.049MB
+ f9c0805c25ee Downloading 15.73MB
+ 1008deaf6ec4 Downloading 4.194MB
+ b83ce1c86227 Downloading 1.049MB
+ b7c1efd1d2b4 Downloading 9.437MB
+ b83ce1c86227 Downloading 1.049MB
+ b83ce1c86227 Downloading 1.049MB
+ f9c0805c25ee Downloading 15.73MB
+ 1008deaf6ec4 Downloading 4.194MB
+ b7c1efd1d2b4 Downloading 10.49MB
+ b83ce1c86227 Downloading 1.049MB
+ 1008deaf6ec4 Downloading 4.194MB
+ b83ce1c86227 Downloading 1.049MB
+ f9c0805c25ee Downloading 15.73MB
+ b7c1efd1d2b4 Download complete 0B
+ b83ce1c86227 Downloading 1.049MB
+ 1008deaf6ec4 Downloading 4.194MB
+ b83ce1c86227 Downloading 1.049MB
+ f9c0805c25ee Downloading 16.78MB
+ b83ce1c86227 Downloading 1.049MB
+ b83ce1c86227 Downloading 1.049MB
+ f9c0805c25ee Downloading 17.83MB
+ 1008deaf6ec4 Downloading 4.194MB
+ b83ce1c86227 Downloading 1.049MB
+ b83ce1c86227 Downloading 1.049MB
+ f9c0805c25ee Downloading 17.83MB
+ 1008deaf6ec4 Downloading 4.194MB
+ b83ce1c86227 Downloading 1.049MB
+ 1008deaf6ec4 Downloading 4.194MB
+ b83ce1c86227 Downloading 1.049MB
+ f9c0805c25ee Downloading 18.87MB
+ b83ce1c86227 Downloading 1.049MB
+ 1008deaf6ec4 Downloading 5.243MB
+ b83ce1c86227 Downloading 1.049MB
+ f9c0805c25ee Downloading 19.92MB
+ b83ce1c86227 Downloading 1.049MB
+ f9c0805c25ee Downloading 20.97MB
+ 1008deaf6ec4 Downloading 5.243MB
+ b83ce1c86227 Downloading 1.049MB
+ b83ce1c86227 Downloading 1.049MB
+ b83ce1c86227 Downloading 1.049MB
+ f9c0805c25ee Downloading 22.02MB
+ 1008deaf6ec4 Downloading 5.243MB
+ b83ce1c86227 Downloading 1.049MB
+ b83ce1c86227 Downloading 1.049MB
+ f9c0805c25ee Downloading 23.07MB
+ 1008deaf6ec4 Downloading 5.243MB
+ b83ce1c86227 Downloading 1.049MB
+ b83ce1c86227 Downloading 1.049MB
+ f9c0805c25ee Downloading 23.07MB
+ 1008deaf6ec4 Downloading 5.243MB
+ b83ce1c86227 Downloading 1.049MB
+ 1008deaf6ec4 Downloading 5.243MB
+ b83ce1c86227 Downloading 1.049MB
+ f9c0805c25ee Downloading 24.12MB
+ b83ce1c86227 Downloading 2.097MB
+ b83ce1c86227 Downloading 2.097MB
+ f9c0805c25ee Downloading 25.17MB
+ 1008deaf6ec4 Downloading 6.291MB
+ b83ce1c86227 Downloading 2.097MB
+ b83ce1c86227 Downloading 2.097MB
+ f9c0805c25ee Downloading 26.21MB
+ 1008deaf6ec4 Downloading 6.291MB
+ b83ce1c86227 Downloading 2.097MB
+ b83ce1c86227 Downloading 2.097MB
+ f9c0805c25ee Downloading 27.26MB
+ 1008deaf6ec4 Downloading 6.291MB
+ b83ce1c86227 Downloading 2.097MB
+ b83ce1c86227 Downloading 2.097MB
+ f9c0805c25ee Downloading 28.31MB
+ 1008deaf6ec4 Downloading 6.291MB
+ b83ce1c86227 Downloading 2.097MB
+ 1008deaf6ec4 Downloading 6.291MB
+ b83ce1c86227 Downloading 2.097MB
+ f9c0805c25ee Downloading 28.31MB
+ b83ce1c86227 Downloading 2.097MB
+ 1008deaf6ec4 Downloading 6.291MB
+ b83ce1c86227 Downloading 2.097MB
+ f9c0805c25ee Downloading 29.36MB
+ b83ce1c86227 Downloading 2.097MB
+ 1008deaf6ec4 Downloading 7.34MB
+ b83ce1c86227 Downloading 2.097MB
+ f9c0805c25ee Downloading 30.41MB
+ b83ce1c86227 Downloading 2.097MB
+ f9c0805c25ee Downloading 31.46MB
+ 1008deaf6ec4 Downloading 7.34MB
+ b83ce1c86227 Downloading 2.097MB
+ b83ce1c86227 Downloading 2.097MB
+ 1008deaf6ec4 Downloading 7.34MB
+ b83ce1c86227 Downloading 2.097MB
+ f9c0805c25ee Downloading 32.51MB
+ b83ce1c86227 Downloading 2.097MB
+ 1008deaf6ec4 Downloading 7.34MB
+ b83ce1c86227 Downloading 2.097MB
+ f9c0805c25ee Downloading 32.51MB
+ b83ce1c86227 Downloading 2.097MB
+ b83ce1c86227 Downloading 2.097MB
+ f9c0805c25ee Downloading 33.55MB
+ 1008deaf6ec4 Downloading 7.34MB
+ b83ce1c86227 Downloading 3.146MB
+ b83ce1c86227 Downloading 3.146MB
+ f9c0805c25ee Downloading 34.6MB
+ 1008deaf6ec4 Downloading 8.389MB
+ b83ce1c86227 Downloading 3.146MB
+ b83ce1c86227 Downloading 3.146MB
+ f9c0805c25ee Downloading 35.65MB
+ 1008deaf6ec4 Downloading 8.389MB
+ b83ce1c86227 Downloading 3.146MB
+ 1008deaf6ec4 Downloading 8.389MB
+ b83ce1c86227 Downloading 3.146MB
+ f9c0805c25ee Downloading 36.7MB
+ b83ce1c86227 Downloading 3.146MB
+ b83ce1c86227 Downloading 3.146MB
+ f9c0805c25ee Downloading 37.75MB
+ 1008deaf6ec4 Downloading 8.389MB
+ b83ce1c86227 Downloading 3.146MB
+ 1008deaf6ec4 Downloading 8.389MB
+ b83ce1c86227 Downloading 3.146MB
+ f9c0805c25ee Downloading 37.75MB
+ b83ce1c86227 Downloading 3.146MB
+ b83ce1c86227 Downloading 3.146MB
+ f9c0805c25ee Downloading 38.8MB
+ 1008deaf6ec4 Downloading 9.437MB
+ b83ce1c86227 Downloading 3.146MB
+ b83ce1c86227 Downloading 3.146MB
+ f9c0805c25ee Download complete 0B
+ 1008deaf6ec4 Downloading 9.437MB
+ b83ce1c86227 Downloading 4.194MB
+ b83ce1c86227 Downloading 4.194MB
+ 1008deaf6ec4 Downloading 9.437MB
+ b83ce1c86227 Downloading 4.194MB
+ 1008deaf6ec4 Downloading 10.49MB
+ b83ce1c86227 Downloading 4.194MB
+ b83ce1c86227 Downloading 5.243MB
+ b83ce1c86227 Downloading 5.243MB
+ 1008deaf6ec4 Download complete 0B
+ b83ce1c86227 Downloading 5.243MB
+ b83ce1c86227 Downloading 5.243MB
+ b83ce1c86227 Downloading 6.291MB
+ b83ce1c86227 Downloading 6.291MB
+ b83ce1c86227 Download complete 0B
+ b83ce1c86227 Extracting 1B
+ b83ce1c86227 Download complete 0B
+ b83ce1c86227 Extracting 1B
+ b83ce1c86227 Extracting 1B
+ b83ce1c86227 Pull complete 0B
+ b83ce1c86227 Extracting 1B
+ 81260b173076 Pull complete 0B
+ f94d28849fa3 Pull complete 0B
+ b83ce1c86227 Extracting 1B
+ f9c0805c25ee Extracting 1B
+ b83ce1c86227 Extracting 1B
+ f9c0805c25ee Extracting 1B
+ b83ce1c86227 Extracting 1B
+ f9c0805c25ee Pull complete 0B
+ 1008deaf6ec4 Extracting 1B
+ b83ce1c86227 Extracting 1B
+ 1008deaf6ec4 Pull complete 0B
+ b83ce1c86227 Extracting 1B
+ 71e9fc939447 Pull complete 0B
+ c1bc68842c41 Extracting 1B
+ b83ce1c86227 Extracting 1B
+ 0288b5a0d7e7 Pull complete 0B
+ c1bc68842c41 Pull complete 0B
+ 34013573f278 Pull complete 0B
+ Image quay.io/minio/minio:latest Pulled 
+ 4a93952ab9ce Pull complete 0B
+ b268f447c871 Pull complete 0B
+ f29310fc4a8a Pull complete 0B
+ 9404e0df6bd3 Extracting 1B
+ 9404e0df6bd3 Pull complete 0B
+ b7c1efd1d2b4 Extracting 1B
+ b7c1efd1d2b4 Pull complete 0B
+ Image minio/mc:latest Pulled 
+time="2026-04-19T16:21:32+05:30" level=warning msg="Found orphan containers ([store-init]) for this project. If you removed or renamed this service in your compose file, you can run this command with the --remove-orphans flag to clean it up."
+ Container minio Creating 
+ Container minio Created 
+ Container minio-init Creating 
+ Container minio-init Created 
+Attaching to minio, minio-init, vhl-runtime
+ Container minio Starting 
+ Container vhl-runtime Starting 
+ Container minio Started 
+ Container minio Waiting 
+vhl-runtime  | Starting Agent WebSocket Server...
+vhl-runtime  | Starting Workspace WebSocket Client...
+vhl-runtime  | Starting ANA Commit MCP Server...
+vhl-runtime  | Starting Terminal MCP Server...
+vhl-runtime  | Starting UI Snapshot MCP Server...
+ Container vhl-runtime Started 
+vhl-runtime  | -----------------------------------------
+vhl-runtime  | INITIALIZING VHL AGENT WEBSOCKET SERVER...
+vhl-runtime  | -----------------------------------------
+vhl-runtime  | Agent WebSocket Server starting on ws://0.0.0.0:1080
+vhl-runtime  | ✅ Agent WebSocket Server is LISTENING on 0.0.0.0:1080
+minio        | INFO: Formatting 1st pool, 1 set(s), 1 drives per set.
+minio        | INFO: WARNING: Host local has more than 0 drives of set. A host failure will result in data becoming unavailable.
+minio        | MinIO Object Storage Server
+minio        | Copyright: 2015-2026 MinIO, Inc.
+minio        | License: GNU AGPLv3 - https://www.gnu.org/licenses/agpl-3.0.html
+minio        | Version: RELEASE.2025-09-07T16-13-09Z (go1.24.6 linux/amd64)
+minio        | 
+minio        | API: http://172.20.0.2:9000  http://127.0.0.1:9000 
+minio        | WebUI: http://172.20.0.2:9001 http://127.0.0.1:9001  
+minio        | 
+minio        | Docs: https://docs.min.io
+vhl-runtime  | ANA Commit MCP Server running on HTTP port 8081
+vhl-runtime  | UI Snapshot MCP Server running on HTTP port 8083
+vhl-runtime  | [Runtime Workspace] Starting workspace client...
+vhl-runtime  | [Runtime Workspace] Server URL: ws://0.0.0.0:1080
+vhl-runtime  | [Runtime Workspace] Workspace Path: /app/workspace
+vhl-runtime  | [WorkspaceClient] Connecting to ws://0.0.0.0:1080...
+vhl-runtime  | [WorkspaceClient] Starting tsci dev in /app/workspace with entry .
+vhl-runtime  | [Websocket Relay]: New client connected
+vhl-runtime  | [WorkspaceClient] Connected to relay server
+vhl-runtime  | [Websocket Relay] Received raw message: {"type":"IDENTIFY","payload":{"role":"vhl_workspace"}}
+vhl-runtime  | [Websocket Relay] Handling message of type: IDENTIFY
+vhl-runtime  | RelayAgentHandler: Workspace client identified
+vhl-runtime  | [WorkspaceClient.startDevServer] Dev server process output: Selected file: index.tsx
+vhl-runtime  | 
+vhl-runtime  | [tsci dev] Selected file: index.tsx
+vhl-runtime  | [WorkspaceClient.startDevServer] Dev server process output: Analyzing node_modules dependencies...
+vhl-runtime  | 
+vhl-runtime  | [tsci dev] Analyzing node_modules dependencies...
+vhl-runtime  | [WorkspaceClient.startDevServer] Dev server process output: Found 0 node_modules files to upload
+vhl-runtime  | Node modules uploaded successfully
+vhl-runtime  | 
+vhl-runtime  | [tsci dev] Found 0 node_modules files to upload
+vhl-runtime  | Node modules uploaded successfully
+vhl-runtime  | [WorkspaceClient.startDevServer] Dev server process output: 
+vhl-runtime  | 
+vhl-runtime  |   @tscircuit/cli@0.1.934 ready in 68ms
+vhl-runtime  | 
+vhl-runtime  | [tsci dev] 
+vhl-runtime  | 
+vhl-runtime  |   @tscircuit/cli@0.1.934 ready in 68ms
+vhl-runtime  | [WorkspaceClient.startDevServer] Dev server process output: 
+vhl-runtime  |   ➜ Local:   http://localhost:3021/#file=index.tsx
+vhl-runtime  | 
+vhl-runtime  | 
+vhl-runtime  | Watching app/workspace for changes...
+vhl-runtime  | 
+vhl-runtime  | [tsci dev] 
+vhl-runtime  |   ➜ Local:   http://localhost:3021/#file=index.tsx
+vhl-runtime  | 
+vhl-runtime  | 
+vhl-runtime  | Watching app/workspace for changes...
+vhl-runtime  | 
+vhl-runtime  | [WorkspaceClient.startDevServer.devServerProcess] Dev server ready event detected:  /app/workspace  with pattern match:  [
+vhl-runtime  |   '@tscircuit/cli@0.1.934 ready in 68ms\n\n  ➜ Local:   http://localhost:3021',
+vhl-runtime  |   '3021',
+vhl-runtime  |   index: 140,
+vhl-runtime  |   input: 'Selected file: index.tsx\n' +
+vhl-runtime  |     'Analyzing node_modules dependencies...\n' +
+vhl-runtime  |     'Found 0 node_modules files to upload\n' +
+vhl-runtime  |     'Node modules uploaded successfully\n' +
+vhl-runtime  |     '\n' +
+vhl-runtime  |     '\n' +
+vhl-runtime  |     '  @tscircuit/cli@0.1.934 ready in 68ms\n' +
+vhl-runtime  |     '\n' +
+vhl-runtime  |     '  ➜ Local:   http://localhost:3021/#file=index.tsx\n' +
+vhl-runtime  |     '\n' +
+vhl-runtime  |     '\n' +
+vhl-runtime  |     'Watching app/workspace for changes...\n',
+vhl-runtime  |   groups: undefined
+vhl-runtime  | ]
+vhl-runtime  | [Websocket Relay] Received raw message: {"id":"86201a7f-8cb2-46ed-87c2-ba1303b3fe4a","type":"DEV_SERVER_READY","artifact_id":null,"timestamp":"2026-04-19T10:51:34.547Z","source":"vhl_workspace","payload":{"url":"/","project_path":"/app/workspace","circuit_name":null}}
+vhl-runtime  | [Websocket Relay] Handling message of type: DEV_SERVER_READY
+vhl-runtime  | [Gateway Proxy] Listening on 0.0.0.0:3020, routing to tsci dev on 3021
+vhl-runtime  | [Websocket Relay] Runtime Workspace Client -> UI Runframe DEV_SERVER_READY
+vhl-runtime  | [WorkspaceClient] Received event: ERROR
+vhl-runtime  | 
+vhl-runtime  | 
+vhl-runtime  | ╭──────────────────────────────────────────────────────────────────────────────╮
+vhl-runtime  | │                                                                              │
+vhl-runtime  | │                                                                              │
+vhl-runtime  | │                         ▄▀▀ ▄▀█ █▀▀ ▀█▀ █▀▄▀█ █▀▀ █▀█                        │
+vhl-runtime  | │                         █▀  █▀█ ▄▄█  █  █ ▀ █ █▄▄ █▀▀                        │
+vhl-runtime  | │                                                                              │
+vhl-runtime  | │                                                                              │
+vhl-runtime  | │                                FastMCP 3.2.4                                 │
+vhl-runtime  | │                            https://gofastmcp.com                             │
+vhl-runtime  | │                                                                              │
+vhl-runtime  | │                 🖥  Server:      VHL-Library-Terminal, 3.2.4                  │
+vhl-runtime  | │                 🚀 Deploy free: https://horizon.prefect.io                   │
+vhl-runtime  | │                                                                              │
+vhl-runtime  | ╰──────────────────────────────────────────────────────────────────────────────╯
+vhl-runtime  | 
+vhl-runtime  | 
+vhl-runtime  | [04/19/26 10:51:35] INFO     Starting MCP server                transport.py:301
+vhl-runtime  |                              'VHL-Library-Terminal' with                        
+vhl-runtime  |                              transport 'sse' on                                 
+vhl-runtime  |                              http://0.0.0.0:8082/sse                            
+vhl-runtime  | INFO:     Started server process [10]
+vhl-runtime  | INFO:     Waiting for application startup.
+vhl-runtime  | INFO:     Application startup complete.
+vhl-runtime  | INFO:     Uvicorn running on http://0.0.0.0:8082 (Press CTRL+C to quit)
+ Container minio Healthy 
+ Container minio-init Starting 
+ Container minio-init Started 
+minio-init   | Added `myminio` successfully.
+minio-init   | Bucket created successfully `myminio/vhl`.
+minio-init   | mc: Please use 'mc anonymous'
+minio-init   | MinIO bucket initialization complete
+[Kminio-init exited with code 0
