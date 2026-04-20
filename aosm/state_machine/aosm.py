@@ -200,7 +200,7 @@ class AOSM:
         # or immediate next steps in the state machine loop.
         await self.event_queue.put(BaseEvent(
             type=EventType.STATE_TRANSITION,
-            source=EventSource.BACKEND,
+            source=EventSource.VHL_AGENT_BACKEND,
             payload=payload
         ))
         
@@ -242,7 +242,7 @@ class AOSM:
             # Send back PROJECT_CREATED event to the runtime
             await self.web_socket_client.emit_event(BaseEvent(
                 type=EventType.PROJECT_CREATED,
-                source=EventSource.BACKEND,
+                source=EventSource.VHL_AGENT_BACKEND,
                 payload={
                     "project_id": project_id,
                     "project_root": str(project_root),
@@ -272,7 +272,7 @@ class AOSM:
                 # Send back PROJECT_LOADED event to the runtime
                 await self.web_socket_client.emit_event(BaseEvent(
                     type=EventType.PROJECT_LOADED,
-                    source=EventSource.BACKEND,
+                    source=EventSource.VHL_AGENT_BACKEND,
                     payload={
                         "project_id": project_id,
                         "project_root": str(project_root),
@@ -309,7 +309,7 @@ class AOSM:
                 logger.error(f"[AOSM._handle_startup] Failed to load project {project_id}: {e}")
                 await self.web_socket_client.emit_event(BaseEvent(
                     type=EventType.ERROR,
-                    source=EventSource.BACKEND,
+                    source=EventSource.VHL_AGENT_BACKEND,
                     payload={
                         "message": f"Failed to load project: {str(e)}"
                     }
@@ -347,7 +347,7 @@ class AOSM:
                 logger.warning("[AOSM._handle_idle] SYNTHESIZE_CIRCUIT received but project not synthesizable")
                 await self.web_socket_client.emit_event(BaseEvent(
                     type=EventType.ERROR,
-                    source=EventSource.BACKEND,
+                    source=EventSource.VHL_AGENT_BACKEND,
                     payload={"message": "Project not ready for synthesis. Please upload schematic first."}
                 ))
     
@@ -597,7 +597,7 @@ class AOSM:
             
             await self.web_socket_client.emit_event(BaseEvent(
                 type=EventType.HIL_REQUEST,
-                source=EventSource.BACKEND,
+                source=EventSource.VHL_AGENT_BACKEND,
                 payload={
                     "reason": "LIBRARIAN_REVIEW",
                     "message": "Librarian has finished component resolution. Please review the updated SCUD.",
@@ -644,7 +644,7 @@ class AOSM:
                 
                 await self.web_socket_client.emit_event(BaseEvent(
                     type=EventType.HIL_REQUEST,
-                    source=EventSource.BACKEND,
+                    source=EventSource.VHL_AGENT_BACKEND,
                     payload={
                         "reason": "LIBRARIAN_REVIEW",
                         "message": "Librarian has finished retrying component resolution. Please review the updated SCUD.",
@@ -665,7 +665,7 @@ class AOSM:
             
             await self.web_socket_client.emit_event(BaseEvent(
                 type=EventType.HIL_REQUEST,
-                source=EventSource.BACKEND,
+                source=EventSource.VHL_AGENT_BACKEND,
                 payload={
                     "reason": "ARCHY_REVIEW",
                     "message": "Archy has finished schematic generation. Please review the generated SCUD.",
@@ -726,7 +726,7 @@ class AOSM:
                 
                 await self.web_socket_client.emit_event(BaseEvent(
                     type=EventType.HIL_REQUEST,
-                    source=EventSource.BACKEND,
+                    source=EventSource.VHL_AGENT_BACKEND,
                     payload={
                         "reason": "ARCHY_REVIEW",
                         "message": "Archy has finished retrying generation. Please review the updated SCUD.",
@@ -954,7 +954,7 @@ class AOSM:
         # 4. Notify Runtime/UI
         await self.web_socket_client.emit_event(BaseEvent(
             type=EventType.PROJECT_CLOSED,
-            source=EventSource.BACKEND,
+            source=EventSource.VHL_AGENT_BACKEND,
             payload={}
         ))
         
