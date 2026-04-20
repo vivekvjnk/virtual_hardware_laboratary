@@ -11,7 +11,7 @@ from openhands.sdk import get_logger
 from vhl_protocol.sync.client import SyncClient
 from vhl_protocol.client.client import VHLWebSocketClient
 
-from vhl_protocol.models import EventType, SyncPayload
+from vhl_protocol.models import EventType, SyncPayload, EventSource
 
 # Configure logger
 logger = get_logger(__name__)
@@ -51,7 +51,7 @@ class ANA_validation_agent:
                 resource_type="Circuit",
                 iteration_id=iteration_id,
                 intent="EVALUATION",
-                source = "backend"
+                source = EventSource.VHL_AGENT_BACKEND
             ))
         else:
             raise ValueError(f"[ANA_validation_agent.validate_circuit] SyncClient or ProjectID not available. SyncClient: {self.sync_client}, ProjectID: {self.project_id}")

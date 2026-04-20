@@ -37,7 +37,7 @@ async def handle_event(event: BaseEvent):
 async def main():
     client = VHLWebSocketClient(
         url="ws://localhost:8080/ws",
-        role="agent",
+        role="vhl_agent_backend",
         on_event_received=handle_event
     )
     

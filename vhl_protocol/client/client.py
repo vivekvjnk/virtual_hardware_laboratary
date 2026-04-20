@@ -27,7 +27,7 @@ class VHLWebSocketClient:
     def __init__(
         self,
         url: str,
-        role: str = "agent",  # "agent" or "ui"
+        role: str = "vhl_agent_backend",  # "vhl_agent_backend", "vhl_webui", "vhl_runtime"
         on_event_received: Optional[Callable[[BaseEvent], Awaitable[None]]] = None,
         workspace_dir: Optional[str] = None
     ):
@@ -105,7 +105,7 @@ class VHLWebSocketClient:
         """Sends the INITIAL identify message to the relay."""
         identify_event = BaseEvent(
             type=EventType.IDENTIFY,
-            source=EventSource.BACKEND if self.role == "agent" else EventSource.RUNTIME,
+            source=EventSource.VHL_AGENT_BACKEND if self.role == "agent" or self.role == "vhl_agent_backend" else EventSource.VHL_RUNTIME,
             payload={"role": self.role}
         )
         await self._ws.send(identify_event.model_dump_json(by_alias=True))
@@ -165,7 +165,7 @@ class VHLWebSocketClient:
 
     async def emit(self, event_type: EventType, payload: BaseModel, artifact_id: Optional[str] = None):
         """Creates and enqueues an event for delivery."""
-        source = EventSource.BACKEND if self.role == "agent" else EventSource.RUNTIME
+        source = EventSource.VHL_AGENT_BACKEND if self.role == "agent" or self.role == "vhl_agent_backend" else EventSource.VHL_RUNTIME
         event = BaseEvent(
             type=event_type,
             source=source,

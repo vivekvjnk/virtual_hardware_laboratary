@@ -32,14 +32,14 @@ class AOSM:
         self.state = AOSMState.STARTUP
         self.web_socket_client = VHLWebSocketClient(
             url=ws_url,
-            role="agent"
+            role="vhl_agent_backend"
         )
         self.current_message: Dict[str, Any] = {
             "state_id": self.state,
             "observations": []
         }
         self.event_queue = asyncio.Queue()
-        self.workspace_manager = WorkspaceManager("vhl_workspace")
+        self.workspace_manager = WorkspaceManager("vhl_runtime")
         self.project_root_info: Optional[Dict[str, Any]] = None
         self.active_ana_sm: Optional[ANADStateMachine] = None
         self.ana_inbox: Optional[asyncio.Queue] = None

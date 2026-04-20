@@ -2,7 +2,7 @@ import os
 import logging
 from typing import Optional, Dict, Any
 from ..client.client import VHLWebSocketClient
-from ..models import BaseEvent, EventType, SyncPayload
+from ..models import BaseEvent, EventType, SyncPayload, EventSource
 from ..utils.hashing import compute_file_hash, compute_directory_hash
 from ..utils.object_storage import get_storage_client
 from ..utils.zip import compress_directory, decompress_zip, atomic_replace_directory, atomic_replace_file
@@ -34,7 +34,7 @@ class SyncClient:
             payload = SyncPayload.model_validate(event.payload)
 
             # Ignore events from self
-            if payload.source == "backend":
+            if payload.source in ["backend", EventSource.VHL_AGENT_BACKEND]:
                 return    
             if event.type == EventType.UPLOAD_REQUEST:
                 await self.handle_upload_request(payload)
@@ -55,7 +55,7 @@ class SyncClient:
             project_id=project_id,
             resource_type="Unknown",
             reason=reason,
-            source="backend"
+            source=EventSource.VHL_AGENT_BACKEND
         )
         await self.web_socket_client.emit(EventType.SYNC_ERROR, error_payload)
 
@@ -130,7 +130,7 @@ class SyncClient:
                 hash=hash_val,   # Our local hash — receiver uses this for integrity check
                 blob_id=blob_id,
                 data={"circuit_name": self.workspace_manager.circuit_name},
-                source="backend",
+                source=EventSource.VHL_AGENT_BACKEND,
             )
             await self.web_socket_client.emit(EventType.DOWNLOAD_REQUEST, download_payload)
             logger.info(f"[SyncClient.handle_upload_request] Emitted DOWNLOAD_REQUEST (sync_id={sync_id})")
@@ -195,7 +195,7 @@ class SyncClient:
                 project_id=payload.project_id,
                 iteration_id=payload.iteration_id,
                 resource_type=payload.resource_type,
-                source="backend"
+                source=EventSource.VHL_AGENT_BACKEND
             )
             await self.web_socket_client.emit(EventType.SYNC_COMPLETE, complete_payload)
 
@@ -230,7 +230,7 @@ class SyncClient:
             resource_type="EvaluationOutput",
             intent="RESULT",
             hash=local_hash,
-            source="backend",
+            source=EventSource.VHL_AGENT_BACKEND,
         )
 
         await self.web_socket_client.emit(EventType.UPLOAD_REQUEST, payload)
@@ -268,7 +268,7 @@ class SyncClient:
             resource_type="Evaluation",
             intent="RESULT",
             hash=local_hash,  # Let runtime skip upload if hashes already match
-            source="backend",
+            source=EventSource.VHL_AGENT_BACKEND,
         )
         await self.web_socket_client.emit(EventType.UPLOAD_REQUEST, payload)
 
@@ -302,7 +302,7 @@ class SyncClient:
             project_id=project_id,
             resource_type="Library",
             hash=local_hash,  # Let runtime skip upload if hashes already match
-            source="backend",
+            source=EventSource.VHL_AGENT_BACKEND,
         )
         await self.web_socket_client.emit(EventType.UPLOAD_REQUEST, payload)
 
@@ -335,7 +335,7 @@ class SyncClient:
             resource_type="StableCircuit",
             hash=local_hash,  # Let runtime skip upload if hashes already match
             data={"circuit_name": self.workspace_manager.circuit_name},
-            source="backend",
+            source=EventSource.VHL_AGENT_BACKEND,
         )
         await self.web_socket_client.emit(EventType.UPLOAD_REQUEST, payload)
 

@@ -7,9 +7,9 @@ import uuid
 VHL_PROTOCOL_VERSION = "0.1"
 
 class EventSource(str, Enum):
-    RUNTIME = "runtime"
-    BACKEND = "backend"
-    WORKSPACE = "vhl_workspace"
+    VHL_WEBUI = "vhl_webui"
+    VHL_AGENT_BACKEND = "vhl_agent_backend"
+    VHL_RUNTIME = "vhl_runtime"
     ANA = "ana"
 
 class EventType(str, Enum):
@@ -128,7 +128,7 @@ class ErrorPayload(BaseModel):
     message: str
 
 class IdentifyPayload(BaseModel):
-    role: str # ui | agent
+    role: str # vhl_webui | vhl_agent_backend | vhl_runtime
 
 class WorkspacePayload(BaseModel):
     reference_id: Optional[str] = None
