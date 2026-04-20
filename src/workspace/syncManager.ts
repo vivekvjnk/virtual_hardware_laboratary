@@ -8,6 +8,7 @@ import { compressDirectory, decompressZip } from "./fileOperations.js";
 import { AgentMessage } from "../server/types.js";
 import { RuntimeSender } from "./types.js";
 import { SyncPayload, ResourceType, SyncIntent } from "./syncTypes.js";
+import { ROLE_RUNTIME } from "../server/roles.js";
 
 export class SyncManager {
     private workspaceDir: string;
@@ -108,7 +109,7 @@ export class SyncManager {
                 this.sender.send({
                     id: randomUUID(),
                     type: "SYNC_COMPLETE",
-                    source: "vhl_runtime",
+                    source: ROLE_RUNTIME,
                     timestamp: new Date().toISOString(),
                     artifact_id: null,
                     payload: { sync_id, project_id, iteration_id, resource_type }
@@ -138,7 +139,7 @@ export class SyncManager {
             await this.sender.send({
                 id: randomUUID(),
                 type: "DOWNLOAD_REQUEST",
-                source: "vhl_runtime",
+                source: ROLE_RUNTIME,
                 timestamp: new Date().toISOString(),
                 artifact_id: null,
                 payload: {
@@ -213,7 +214,7 @@ export class SyncManager {
             this.sender.send({
                 id: randomUUID(),
                 type: "SYNC_COMPLETE",
-                source: "vhl_runtime",
+                source: ROLE_RUNTIME,
                 timestamp: new Date().toISOString(),
                 artifact_id: null,
                 payload: { sync_id, project_id, iteration_id, resource_type }
@@ -231,7 +232,7 @@ export class SyncManager {
         this.sender.send({
             id: randomUUID(),
             type: "SYNC_ERROR",
-            source: "vhl_runtime",
+            source: ROLE_RUNTIME,
             timestamp: new Date().toISOString(),
             artifact_id: null,
             payload: { sync_id: syncId, project_id: projectId, resource_type: resourceType, reason }

@@ -11,6 +11,7 @@ import { setProjectDir, getProjectDir, setProjectState as setGlobalProjectState 
 import { SyncManager } from "./syncManager.js";
 import { VHLWebUI } from "./vhlWebUI.js";
 import { COWWorkspaceManager } from "../utils/cowWorkspace.js";
+import { ROLE_RUNTIME } from "../server/roles.js";
 
 export interface ProjectState {
     project_id: string | null;
@@ -98,7 +99,7 @@ export class VHLRuntime implements RuntimeSender {
     private identify() {
         this.send({
             type: "IDENTIFY",
-            payload: { role: "vhl_runtime" }
+            payload: { role: ROLE_RUNTIME }
         } as any);
     }
 
@@ -116,7 +117,7 @@ export class VHLRuntime implements RuntimeSender {
             type: "ERROR",
             artifact_id: null,
             timestamp: new Date().toISOString(),
-            source: "vhl_runtime",
+            source: ROLE_RUNTIME,
             payload: {
                 error_type: type,
                 message: message
@@ -130,7 +131,7 @@ export class VHLRuntime implements RuntimeSender {
             type: "PROJECT_STATE",
             artifact_id: null,
             timestamp: new Date().toISOString(),
-            source: "vhl_runtime",
+            source: ROLE_RUNTIME,
             payload: this.projectState
         } as any);
     }
@@ -220,7 +221,7 @@ export class VHLRuntime implements RuntimeSender {
                     type: "SYSTEM_STATE",
                     artifact_id: null,
                     timestamp: new Date().toISOString(),
-                    source: "vhl_runtime",
+                    source: ROLE_RUNTIME,
                     payload: {
                         state,
                         project_id: this.projectState.project_id,
@@ -263,7 +264,7 @@ export class VHLRuntime implements RuntimeSender {
             case "UPLOAD_REQUEST":
             case "SYNC_COMPLETE":
             case "SYNC_ERROR":
-                if ((msg as AgentMessage).payload.source === "vhl_runtime") {
+                if ((msg as AgentMessage).payload.source === ROLE_RUNTIME) {
                     break;
                 }
                 await this.syncManager.handleMessage(msg as AgentMessage);
@@ -301,7 +302,7 @@ export class VHLRuntime implements RuntimeSender {
             type: "PROJECT_CLOSED",
             artifact_id: null,
             timestamp: new Date().toISOString(),
-            source: "vhl_runtime",
+            source: ROLE_RUNTIME,
             payload: {}
         } as any);
     }

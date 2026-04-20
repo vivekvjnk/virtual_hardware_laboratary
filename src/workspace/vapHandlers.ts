@@ -10,6 +10,7 @@ import { runtime, VAPStatus } from "../vap/runtime.js";
 import { RuntimeSender, VapContext } from "./types.js";
 import { COWWorkspaceManager } from "../utils/cowWorkspace.js";
 import { TEMP_DIR } from "../config/paths.js";
+import { ROLE_RUNTIME } from "../server/roles.js";
 
 export async function handleVapExecute(
     msg: AgentMessage,
@@ -88,7 +89,7 @@ export async function handleVapExecute(
                 type: "VAP_COMPLETE",
                 artifact_id: null,
                 timestamp: new Date().toISOString(),
-                source: "vhl_runtime",
+                source: ROLE_RUNTIME,
                 payload: status
             });
             console.log(`[VHLRuntime] Task ${taskId} results reported and uploaded.`);

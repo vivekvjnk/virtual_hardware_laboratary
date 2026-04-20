@@ -6,6 +6,7 @@ import { pushObject, pullObject, ensureBucket } from "../utils/minio.js";
 import { compressDirectory, decompressZip, runPredefinedOperations } from "./fileOperations.js";
 import { AgentMessage } from "../server/types.js";
 import { RuntimeSender } from "./types.js";
+import { ROLE_RUNTIME } from "../server/roles.js";
 
 export async function handleWorkspaceUpload(
     msg: AgentMessage,
@@ -33,7 +34,7 @@ export async function handleWorkspaceUpload(
             artifact_id: zipName,
             type: "WORKSPACE_SYNC_COMPLETE",
             timestamp: new Date().toISOString(),
-            source: "vhl_runtime",
+            source: ROLE_RUNTIME,
             payload: {
                 original_request_id: requestId,
                 status: "success"
@@ -76,7 +77,7 @@ export async function handleWorkspaceDownload(
             type: "WORKSPACE_SYNC_COMPLETE",
             artifact_id: artifactId,
             timestamp: new Date().toISOString(),
-            source: "vhl_runtime",
+            source: ROLE_RUNTIME,
             payload: {
                 status: "success",
                 operation: "download"

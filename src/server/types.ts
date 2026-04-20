@@ -52,12 +52,14 @@ export type EventType =
     | "SYNC_ERROR"
     | "AGENT_HEALTH"
 
+import { ROLE_WEBUI, ROLE_AGENT_BACKEND, ROLE_RUNTIME } from "./roles.js";
+
 export interface AgentMessage {
     id: string
     type: EventType
     artifact_id: string | null
     timestamp: string // ISO-8601
-    source: "runtime" | "backend" | "vhl_workspace" | "vhl_runtime"
+    source: typeof ROLE_WEBUI | typeof ROLE_AGENT_BACKEND | typeof ROLE_RUNTIME
     payload: any
 }
 
