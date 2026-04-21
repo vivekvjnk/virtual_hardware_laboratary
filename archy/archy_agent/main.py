@@ -191,6 +191,7 @@ def orchestrate_archy(
     module_boundary_path: Optional[Path] = None,
     datasheet_path: Optional[Path] = None,
     eval_design_path: Optional[Path] = None,
+    conversation: Optional[Conversation] = None,
 ):
     """
     Main orchestration function for the Archy module.
@@ -206,7 +207,7 @@ def orchestrate_archy(
         _archy_build_scud_stub(image_id=module_name, workspace_path=workspace)
     else:
         from archy_agent.scud_gen_agent import archy_build_scud 
-        archy_build_scud(
+        conversation = archy_build_scud(
             module_name=module_name,
             workspace=workspace,
             image_path=image_path,
@@ -215,6 +216,7 @@ def orchestrate_archy(
             module_boundary_path=module_boundary_path,
             datasheet_path=datasheet_path,
             eval_design_path=eval_design_path,
+            conversation=conversation,
         )
     
     # Final Verification: Check if scud document is created in workspace
@@ -223,7 +225,7 @@ def orchestrate_archy(
         raise RuntimeError(f"Final verification failed: SCUD document not found at {scud_file}")
     
     logger.info(f"[orchestrate_archy] Workflow completed successfully. SCUD document generated: {scud_file}")
-    return scud_file
+    return scud_file, conversation
 
 if __name__ == "__main__":
     if len(sys.argv) < 3:

@@ -54,6 +54,7 @@ class AOSM:
             "ana": AgentStatus.IDLE,
             "aosm": AgentStatus.RUNNING
         }
+        self.agent_conversations: Dict[str, Any] = {}
         
         # Enable following configuration for VAP over MCP server
         # mcp_default = "http://localhost:8081/mcp/vap"
@@ -881,12 +882,16 @@ class AOSM:
         
         try:
             self.update_agent_status("archy", AgentStatus.RUNNING)
-            scud_path = await asyncio.to_thread(
+            existing_conv = self.agent_conversations.get("archy")
+            scud_path, conversation = await asyncio.to_thread(
                 orchestrate_archy, 
                 workspace_path=project_root, 
-                image_id=image_id,
-                image_path=image_path
+                module_name=image_id,
+                image_path=image_path,
+                image_segments_path=project_root / "schematic_images" / image_id,
+                conversation=existing_conv
             )
+            self.agent_conversations["archy"] = conversation
             self.update_agent_status("archy", AgentStatus.IDLE)
             logger.info(f"[AOSM._run_archy] Archy completed successfully. SCUD generated at: {scud_path}")
             return scud_path
@@ -919,7 +924,9 @@ class AOSM:
                 librarian = LibrarianAgent(mcp_url=self.librarian_mcp_url, working_dir=self.workspace_manager.project_root)
                 # process_scud involves network/LLM, run in thread
                 self.update_agent_status("librarian", AgentStatus.RUNNING)
-                await asyncio.to_thread(librarian.process_scud, str(scud_path), instructions=instructions)
+                existing_conv = self.agent_conversations.get("librarian")
+                conversation = await asyncio.to_thread(librarian.process_scud, str(scud_path), instructions=instructions, conversation=existing_conv)
+                self.agent_conversations["librarian"] = conversation
                 self.update_agent_status("librarian", AgentStatus.IDLE)
                 logger.info(f"[AOSM._run_librarian] Librarian Agent completed successfully")
             except Exception as e:

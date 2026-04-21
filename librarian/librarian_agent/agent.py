@@ -1,4 +1,5 @@
 import os
+from typing import Optional, Any
 
 from pydantic import SecretStr
 
@@ -76,20 +77,21 @@ class LibrarianAgent:
         if isinstance(event, LLMConvertibleEvent):
             self.llm_messages.append(event.to_llm_message())
 
-    def process_scud(self, scud_path: str, instructions: str = None) -> None:
+    def process_scud(self, scud_path: str, instructions: str = None, conversation: Optional[Conversation] = None) -> Conversation:
         """
         Process the SCUD file: read it, check components, and update it.
         """
         if not os.path.exists(scud_path):
             raise FileNotFoundError(f"SCUD file not found at: {scud_path}")
 
-        library_path = os.path.join(self.working_dir,"lib/imports/")
-        agent = self._setup_agent(sys_prompt_kwargs={"scud_path": scud_path, "library_path": library_path})
-        conversation = Conversation(
-            agent=agent,
-            callbacks=[self._conversation_callback],
-            workspace=self.working_dir,
-        )
+        if conversation is None:
+            library_path = os.path.join(self.working_dir,"lib/imports/")
+            agent = self._setup_agent(sys_prompt_kwargs={"scud_path": scud_path, "library_path": library_path})
+            conversation = Conversation(
+                agent=agent,
+                callbacks=[self._conversation_callback],
+                workspace=self.working_dir,
+            )
 
         logger.info(f"[LibrarianAgent.process_scud] Starting Librarian Agent for SCUD: {scud_path}")
         
@@ -106,6 +108,7 @@ class LibrarianAgent:
         conversation.run()
         
         logger.info("[LibrarianAgent.process_scud] Librarian Agent finished processing.")
+        return conversation
 
 
 if __name__ == "__main__":

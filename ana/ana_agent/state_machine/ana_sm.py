@@ -358,6 +358,7 @@ class ANADStateMachine:
             current_iter_dir:Path = self.workspace_manager.current_iteration_path
             schematic_images_path = os.path.join(current_iter_dir, "schematic_images")
             observations = result_msg.get("observations", [])
+            existing_conversation = result_msg.get("conversation")
 
 
 
@@ -383,7 +384,7 @@ class ANADStateMachine:
                 )
             elif len(observations)>0 and previous_iter_dir:
                 logger.info("[ANADStateMachine._handle_trigger_w1] ANA-W1 in error correction mode (triggered from PREPARE_FIX).")
-                await asyncio.to_thread(
+                conversation = await asyncio.to_thread(
                     run_ana_w1_agent,
                     workspace=str(current_iter_dir),
                     schematic_images_path=schematic_images_path,
@@ -392,10 +393,11 @@ class ANADStateMachine:
                     observations=observations,
                     previous_iteration_dir=str(previous_iter_dir),
                     library_path = library_path,
+                    conversation = existing_conversation
                 )
             else:
                 logger.info("[ANADStateMachine._handle_trigger_w1] ANA-W1 in synthesis mode (not triggered from PREPARE_FIX).")
-                await asyncio.to_thread(
+                conversation = await asyncio.to_thread(
                     run_ana_w1_agent,
                     workspace=str(current_iter_dir),
                     schematic_images_path=schematic_images_path,
@@ -403,7 +405,11 @@ class ANADStateMachine:
                     circuit_name=self.circuit_name,
                     observations=observations,
                     library_path = library_path,
+                    conversation = existing_conversation
                 )
+            
+            # Store conversation in result_msg for potential future use
+            result_msg["conversation"] = conversation
             
             if not os.path.exists(self.workspace_manager.get_circuit_tsx_path()):
                 logger.error(f"[ANADStateMachine._handle_trigger_w1] ANA-W1 did not produce circuit file")
