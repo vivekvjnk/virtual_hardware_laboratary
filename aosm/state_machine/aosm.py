@@ -45,12 +45,8 @@ class AOSM:
         self.ana_inbox: Optional[asyncio.Queue] = None
         self._main_loop_task: Optional[asyncio.Task] = None
         self.project_id: Optional[str] = None
-        self.sync_client = SyncClient(self.web_socket_client, self.workspace_manager)
-        mcp_default = "http://localhost:8081/mcp/vap"
-        mcp_endpoint = os.getenv("MCP_ENDPOINT", mcp_default)
         lib_default = "http://localhost:8082/sse"
         self.librarian_mcp_url = os.getenv("LIBRARIAN_MCP_URL", lib_default)
-        # self.mcp_manager = MCPManager(endpoint=mcp_endpoint)
         self.mcp_manager = None
         self.agent_state = {
             "archy": AgentStatus.IDLE,
@@ -59,8 +55,13 @@ class AOSM:
             "aosm": AgentStatus.RUNNING
         }
         
-        # Storage client is managed by SyncClient
-
+        # Enable following configuration for VAP over MCP server
+        # mcp_default = "http://localhost:8081/mcp/vap"
+        # self.sync_client = SyncClient(self.web_socket_client, self.workspace_manager)
+        # mcp_endpoint = os.getenv("MCP_ENDPOINT", mcp_default)
+        # self.mcp_manager = MCPManager(endpoint=mcp_endpoint)
+        
+        
     async def start(self):
         """Starts AOSM and the WebSocket client."""
         logger.info("[AOSM.start] Starting AOSM...")

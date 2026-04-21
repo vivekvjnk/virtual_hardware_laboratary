@@ -55,6 +55,7 @@ def archy_build_scud(
     module_boundary_path: Optional[Path] = None,
     datasheet_path: Optional[Path] = None,
     eval_design_path: Optional[Path] = None,
+    conversation: Optional[Conversation] = None,
 ):
     """
     Agent 1: Synthesizes a SCUD (Shared Circuit Understanding Document) 
@@ -63,53 +64,53 @@ def archy_build_scud(
     submodule_root = Path(__file__).resolve().parent
     sys_prompt_path = os.path.join(submodule_root,"sys_prompt_gemini.j2")
 
-    model = os.getenv("LLM_MODEL", "vertex_ai/gemini-3-flash-preview")
+    if conversation is None:
+        model = os.getenv("LLM_MODEL", "vertex_ai/gemini-3-flash-preview")
 
-    llm = LLM(
-        usage_id="archy-scud-architect",
-        model=model,
-        api_key=SecretStr(os.getenv("LLM_API_KEY")),
-    )
-    surgical_condenser = LargeFileSurgicalCondenser(
-        threshold_bytes=10240, # 10KB
-        target_tool="file_editor"
-    )
-    pipeline = PipelineCondenser(condensers=[
-        surgical_condenser,
-        LLMSummarizingCondenser(
-            llm=llm.model_copy(update={"usage_id": "condenser"}),
-            max_size=80
+        llm = LLM(
+            usage_id="archy-scud-architect",
+            model=model,
+            api_key=SecretStr(os.getenv("LLM_API_KEY")),
         )
-    ])
-    # read the content of strategic_document_reader.md and store it in a variable
-    with open(submodule_root / "skills" / "strategic_document_reader.md", "r") as f:
-        strategic_doc_reader_content = f.read()
+        surgical_condenser = LargeFileSurgicalCondenser(
+            threshold_bytes=10240, # 10KB
+            target_tool="file_editor"
+        )
+        pipeline = PipelineCondenser(condensers=[
+            surgical_condenser,
+            LLMSummarizingCondenser(
+                llm=llm.model_copy(update={"usage_id": "condenser"}),
+                max_size=80
+            )
+        ])
+        # read the content of strategic_document_reader.md and store it in a variable
+        with open(submodule_root / "skills" / "strategic_document_reader.md", "r") as f:
+            strategic_doc_reader_content = f.read()
 
-    agent_context = AgentContext(
-    skills=[
-        Skill(
-            name="strategic_document_reader.md",
-            content= strategic_doc_reader_content,
-            trigger=None,
-        ),
-    ],
-    )    
-    agent = Agent(
-        llm=llm,
-        agent_context=agent_context,
-        condenser=pipeline,
-        system_prompt_filename=sys_prompt_path,
-        tools=[
-            Tool(name=FileEditorTool.name),
+        agent_context = AgentContext(
+        skills=[
+            Skill(
+                name="strategic_document_reader.md",
+                content= strategic_doc_reader_content,
+                trigger=None,
+            ),
         ],
-    )
+        )    
+        agent = Agent(
+            llm=llm,
+            agent_context=agent_context,
+            condenser=pipeline,
+            system_prompt_filename=sys_prompt_path,
+            tools=[
+                Tool(name=FileEditorTool.name),
+            ],
+        )
 
-    conversation = Conversation(
-        agent=agent,
-        workspace=str(workspace),
-    )
+        conversation = Conversation(
+            agent=agent,
+            workspace=str(workspace),
+        )
 
-    
     user_msg = (
         f"You are tasked with generating the Shared Circuit Understanding Document (SCUD) for the module: '{module_name}'.\n\n"
         f"### INPUT SPACE:\n"
@@ -143,7 +144,8 @@ def archy_build_scud(
 
     logger.info("[archy_build_scud] Agent 1 completed SCUD construction")
     logger.info(f"[archy_build_scud] Total cost: {llm.metrics.accumulated_cost}")
-
+    # return the conversation object to caller. This will allow the caller to continue conversation with the agent if needed, or to inspect the conversation history and messages.
+    return conversation
 
 if __name__ == "__main__":
     archy_build_scud(
