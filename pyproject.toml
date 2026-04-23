@@ -18,6 +18,8 @@ dependencies = [
     "archy",
     "librarian",
     "litellm",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
 ]
 
 [project.optional-dependencies]
@@ -53,3 +55,8 @@ librarian = { workspace = true }
 override-dependencies = [
     "litellm @ git+https://github.com/vivekvjnk/litellm.git@fix/vertex-gemini-multimodal-drop"
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+asyncio_mode = "auto"
