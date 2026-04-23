@@ -9,7 +9,7 @@ import type { AgentHandler, WebSocketMessage } from "./types.js"
  * - Runtime -> Backend (Observation Events): HUMAN_INPUT, REFERENCE_UPLOADED, INTERRUPT_REQUEST
  * - Backend -> Runtime (System Events): STATE_TRANSITION, EVALUATION_UPDATE, ARTIFACT_UPDATED, AUTHORITY_REQUIRED, ERROR
  */
-import { ROLE_WEBUI, ROLE_AGENT_BACKEND, ROLE_RUNTIME, VHLRole } from "./roles.js"
+import { ROLE_WEBUI, ROLE_AGENT_BACKEND, ROLE_RUNTIME, ROLE_TEST_OBSERVER, VHLRole } from "./roles.js"
 
 /**
  * A handler that relays messages between UI clients and the Agent client.
@@ -19,6 +19,7 @@ export class RelayAgentHandler implements AgentHandler {
     private static uiClients: Set<(msg: WebSocketMessage) => void> = new Set()
     private static agentClient: ((msg: WebSocketMessage) => void) | null = null
     private static runtimeClient: ((msg: WebSocketMessage) => void) | null = null
+    private static observerClients: Set<(msg: WebSocketMessage) => void> = new Set()
 
     private currentSend: ((msg: WebSocketMessage) => void) | null = null
     private role: VHLRole | "vap_mcp_agent" | null = null
@@ -28,6 +29,17 @@ export class RelayAgentHandler implements AgentHandler {
     }
 
     async onMessage(msg: WebSocketMessage, send: (msg: WebSocketMessage) => void) {
+        // Broadcast all incoming messages to observers for testing/debugging
+        if (RelayAgentHandler.observerClients.size > 0) {
+            const observation = {
+                ...msg,
+                _direction: "incoming",
+                _observed_at: new Date().toISOString(),
+                _observed_role: this.role
+            };
+            RelayAgentHandler.observerClients.forEach(obsSend => obsSend(observation as any));
+        }
+
         if (msg.type === "IDENTIFY") {
             this.handleIdentify(msg.payload?.role, send)
             return
@@ -137,6 +149,11 @@ export class RelayAgentHandler implements AgentHandler {
                 RelayAgentHandler.agentClient({ type: "WORKSPACE_CONNECTED" })
             }
             RelayAgentHandler.uiClients.forEach(uiSend => uiSend({ type: "WORKSPACE_CONNECTED" }))
+        } else if (role === ROLE_TEST_OBSERVER) {
+            this.role = ROLE_TEST_OBSERVER
+            RelayAgentHandler.observerClients.add(send)
+            console.log("RelayAgentHandler: Test Observer client identified")
+            send({ type: "OBSERVER_READY", payload: { message: "Test observation active" } } as any)
         }
     }
 
@@ -151,6 +168,9 @@ export class RelayAgentHandler implements AgentHandler {
             RelayAgentHandler.runtimeClient = null
             console.log("RelayAgentHandler: Runtime client disconnected")
             RelayAgentHandler.uiClients.forEach(uiSend => uiSend({ type: "WORKSPACE_DISCONNECTED" }))
+        } else if (this.role === ROLE_TEST_OBSERVER && this.currentSend) {
+            RelayAgentHandler.observerClients.delete(this.currentSend)
+            console.log("RelayAgentHandler: Test Observer client disconnected")
         }
     }
 }
