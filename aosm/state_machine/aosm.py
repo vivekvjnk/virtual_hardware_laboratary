@@ -17,7 +17,6 @@ from workspace.manager import WorkspaceManager
 from archy_agent.main import orchestrate_archy, prepare_archy_workspace
 from librarian_agent.agent import LibrarianAgent
 from librarian_agent.stub import process_scud_stub
-# from component_placement_agent.state_machine.cpa_sm import CPASm
 
 logger = logging.getLogger(__name__)
 
@@ -150,14 +149,6 @@ class AOSM:
             logger.info(f"👉 [AOSM] Handling CLOSE_PROJECT")
             await self._handle_close_project(event)
             return
-
-        if event.type == EventType.TRIGGER_CPA_AGENT:
-            if self.state == AOSMState.IDLE:
-                logger.info(f"👉 [AOSM] Handling TRIGGER_CPA_AGENT in IDLE")
-                await self.transition_to(AOSMState.TRIGGER_CPA, "Direct user trigger for CPA")
-                return
-            else:
-                logger.warning(f"⚠️ [AOSM] TRIGGER_CPA_AGENT received but AOSM is in {self.state} (not IDLE)")
 
         # Dispatch to handler based on current state and event
         handler_name = f"_handle_{self.state.name.lower()}"
@@ -326,7 +317,6 @@ class AOSM:
         Default state of the system. Handles following events:
         - REFERENCE_UPLOADED: Transition to BOOTSTRAP_PIPELINE to prepare assets for Archy.
         - HUMAN_INPUT: Transition to INTENT_CLASSIFY to classify user intent (modification vs synthesis)
-        - TRIGGER_CPA_AGENT: Direct user trigger to start CPA workflow, transition to TRIGGER_CPA
         - SYNTHESIZE_CIRCUIT: User trigger to start circuit synthesis. Check if project is synthesizable and transition to TRIGGER_ANA if yes, otherwise emit error.
         """
         logger.info(f"[AOSM._handle_idle] In IDLE state...")
@@ -334,9 +324,6 @@ class AOSM:
             await self.transition_to(AOSMState.BOOTSTRAP_PIPELINE, "New schematic uploaded", payload=event.payload)
         elif event.type == EventType.HUMAN_INPUT:
             await self.transition_to(AOSMState.INTENT_CLASSIFY, "User message received", payload=event.payload)
-        
-        elif event.type == EventType.TRIGGER_CPA_AGENT:
-             await self.transition_to(AOSMState.TRIGGER_CPA, "User triggered CPA")
         
         elif event.type == EventType.SYNTHESIZE_CIRCUIT:
             info = self.workspace_manager.get_workspace_info()
@@ -419,17 +406,6 @@ class AOSM:
             # After presenting/handling, transition back to IDLE
             await self.transition_to(AOSMState.IDLE, f"Finished processing ANA result: {decision}")
 
-    # TODO: Unncessary node. Remove in later iteration.
-    async def _handle_intent_classify(self, event: BaseEvent):
-        # In a real scenario, an agent would classify the intent here.
-        # For the wireframe, we assume valid modification request.
-        logger.info(f"[AOSM._handle_intent_classify] Classifying intent...")
-        # Add user message to the current message observations
-        self.current_message["observations"].append(event.payload.get("content", "No message provided"))
-        logger.info(f"[AOSM._handle_intent_classify] Current message: {self.current_message}")
-        
-        # Transition to TRIGGER_ANA
-        await self.transition_to(AOSMState.TRIGGER_ANA, "Intent classified as modification", payload=event.payload)
     
     # Agent: Archy
     async def _handle_trigger_archy(self, event: BaseEvent):
@@ -459,7 +435,7 @@ class AOSM:
     # Agent: Librarian
     async def _handle_trigger_librarian(self, event: BaseEvent):
         logger.info(f"[AOSM._handle_trigger_librarian] In TRIGGER_LIBRARIAN state...")
-        if event.type == EventType.STATE_TRANSITION:
+        try:
             scud_path_str = self.current_message.get("scud_path")
             if not scud_path_str:
                 logger.error("[AOSM._handle_trigger_librarian] Missing scud_path in current_message")
@@ -471,20 +447,20 @@ class AOSM:
             # Trigger Librarian Agent
             await self._run_librarian(scud_path)
             
-            try:
-                # Workflow 1.1: Sync lib/imports from VHL runtime to Agent backend
-                if self.project_id:
-                    # Sync Library using centralized client
-                    await self.sync_client.sync_library(self.project_id)
-                    logger.info(f"[AOSM._handle_trigger_librarian] Librarian and Sync completed. Transitioning to WAIT_FOR_LIBRARIAN_HIL")
+            # Workflow 1.1: Sync lib/imports from VHL runtime to Agent backend
+            if self.project_id:
+                # Sync Library using centralized client
+                await self.sync_client.sync_library(self.project_id)
+                logger.info(f"[AOSM._handle_trigger_librarian] Librarian and Sync completed. Transitioning to WAIT_FOR_LIBRARIAN_HIL")
 
-                    # Transition to WAIT_FOR_LIBRARIAN_HIL to let human review librarian results
-                    await self.transition_to(AOSMState.WAIT_FOR_LIBRARIAN_HIL, "Component resolution completed. Waiting for HIL review.", payload={"scud_path": str(scud_path)})
-                else:
-                    raise ValueError(f"Project id is null : {self.project_id}")
-            except Exception as e:
-                logger.error(f"[AOSM._handle_trigger_librarian] Librarian failed: {e}")
-                await self.transition_to(AOSMState.ERROR_PRESENTED, f"Librarian failed sync: {e}")
+                # Transition to WAIT_FOR_LIBRARIAN_HIL to let human review librarian results
+                await self.transition_to(AOSMState.WAIT_FOR_LIBRARIAN_HIL, "Component resolution completed. Waiting for HIL review.", payload={"scud_path": str(scud_path)})
+            else:
+                raise ValueError(f"Project id is null : {self.project_id}")
+        
+        except Exception as e:
+            logger.error(f"[AOSM._handle_trigger_librarian] Librarian failed: {e}")
+            await self.transition_to(AOSMState.ERROR_PRESENTED, f"Librarian failed sync: {e}")
     
     # Agent: ANA
     async def _handle_trigger_ana(self, event: BaseEvent):
@@ -583,7 +559,7 @@ class AOSM:
     async def _handle_wait_for_user(self, event: BaseEvent):
         logger.info(f"[AOSM._handle_wait_for_user] In WAIT_FOR_USER state... ")
         if event.type == EventType.HUMAN_INPUT:
-             await self.transition_to(AOSMState.INTENT_CLASSIFY, "Clarification received")
+             await self.transition_to(AOSMState.TRIGGER_ANA, "Clarification received")
 
     async def _handle_wait_for_librarian_hil(self, event: BaseEvent):
         logger.info(f"[AOSM._handle_wait_for_librarian_hil] In WAIT_FOR_LIBRARIAN_HIL state...")
@@ -735,50 +711,8 @@ class AOSM:
                     }
                 ))
 
-    async def _handle_trigger_cpa(self, event: BaseEvent):
-        logger.info(f"[AOSM._handle_trigger_cpa] In TRIGGER_CPA state...")
-        if event.type == EventType.STATE_TRANSITION:
-            logger.info(f"[AOSM._handle_trigger_cpa] Triggering CPA State Machine.")
-            
-            project_id = self.project_id
-            circuit_id = self.current_message.get("circuit_id") or (self.project_root_info.get("circuit_name") if self.project_root_info else None)
-            
-            if not circuit_id:
-                logger.error("[AOSM._handle_trigger_cpa] No circuit_id found. Cannot trigger CPA.")
-                await self.transition_to(AOSMState.IDLE, "CPA trigger failed: No circuit ID")
-                return
-
-            # cpa_sm = CPASm(
-            #     workspace_manager=self.workspace_manager,
-            #     circuit_name=circuit_id,
-            #     web_socket_client=self.web_socket_client,
-            #     sync_client=self.sync_client,
-            #     project_id=project_id,
-            #     parent_notify=self._parent_notify
-            # )
-            
-            # Update status to running
-            # self.update_agent_status("ana", AgentStatus.RUNNING) # Maybe use a 'cpa' status?
-            # For now AOSM status is RUNNING
-            logger.warning("[AOSM._handle_trigger_cpa] CPA is not implemented yet. This is a placeholder for where CPA would be triggered.")
-            # asyncio.create_task(cpa_sm.run())
-            await self.transition_to(AOSMState.WAIT_FOR_CPA, "CPA-SM started")
-
-    async def _handle_wait_for_cpa(self, event: BaseEvent):
-        logger.info(f"[AOSM._handle_wait_for_cpa] In WAIT_FOR_CPA state...")
-        if event.type == EventType.ANA_NOTIFY: # CPASm uses the same notification pattern
-            logger.info(f"[AOSM._handle_wait_for_cpa] Notification from CPA: {event.payload}")
-            
-            reason = event.payload.get("reason")
-            if reason == "EXIT":
-                decision = event.payload.get("decision", "REJECT")
-                # For CPA, if it's SUCCESS, we might want to PRESENT_RESULT
-                # If it's ERROR, we might want to IDLE or ERROR_PRESENTED
-                await self.transition_to(AOSMState.PRESENT_RESULT, payload=event.payload)
-            elif reason == "ERROR":
-                 await self.transition_to(AOSMState.ERROR_PRESENTED, payload=event.payload)
-
     # --- State Handlers --- END
+
 
     async def _wait_and_transition(self, event, task_id, decision):
         # This runs independently of the main loop
@@ -805,23 +739,6 @@ class AOSM:
             await self.transition_to(AOSMState.PRESENT_RESULT, payload=event.payload)
         except Exception as e:
             logger.error(f"Background wait failed: {e}")
-
-    # --- High-level Orchestration Logic ---
-
-
-    # ----ARCHY-----
-    #TODO(V0.1): 
-    # 1. Support for Design document based bootstrapping 
-    #   - Parse detailed design document provided by user
-    #   - Design document may include image + textual description + component preferences
-    #   - Output of this stage is still a SCUD, but with richer information for the downstream modules to work with
-    
-    #TODO(V0.01)
-    # 1. Simplify method by splitting into smaller functions
-    # 2. Archy orchestration: Thread management for Archy
-    # 3. Move image preprocessing out of Archy; orchestrate_archy should only focus on archy orchestration
-    # 4. Isolate Archy LLM agent to a dedicated thread; This would simplify our transition to A2A architecture 
-
 
     async def _prepare_bootstrap_assets(self, event: BaseEvent) -> Tuple[str, Path]:
         """Logic for BOOTSTRAP_PIPELINE: Validation, asset saving, and workspace prep."""
@@ -865,6 +782,12 @@ class AOSM:
         
         return image_id, processed_image_path
 
+    # ----ARCHY-----
+    #TODO(V0.2): 
+    # 1. Support for Design document based bootstrapping 
+    #   - Parse detailed design document provided by user
+    #   - Design document may include image + textual description + component preferences
+    #   - Output of this stage is still a SCUD, but with richer information for the downstream modules to work with
     async def _run_archy(self, image_id: str, image_path: Path):
         """Logic for TRIGGER_ARCHY: Invocating Archy agent."""
         logger.info(f"[AOSM._run_archy] Triggering Archy agent invocation for image: {image_id}")
