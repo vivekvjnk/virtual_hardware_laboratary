@@ -20,6 +20,7 @@ dependencies = [
     "litellm",
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
+    "vhl-common",
 ]
 
 [project.optional-dependencies]
@@ -37,6 +38,7 @@ members = [
     "aosm",
     "archy",
     "librarian",
+    "vhl_common",
 ]
 
 [tool.uv.sources]
@@ -50,6 +52,7 @@ vhl-workspace = { workspace = true }
 aosm = { workspace = true }
 archy = { workspace = true }
 librarian = { workspace = true }
+vhl-common = { workspace = true }
 
 [tool.uv]
 override-dependencies = [

@@ -17,6 +17,7 @@ from workspace.manager import WorkspaceManager
 from archy_agent.main import orchestrate_archy, prepare_archy_workspace
 from librarian_agent.agent import LibrarianAgent
 from librarian_agent.stub import process_scud_stub
+from vhl_common import handle_errors
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,7 @@ class AOSM:
             "observations": []
         }
         self.event_queue = asyncio.Queue()
-        self.workspace_manager = WorkspaceManager("vhl_runtime")
+        self.workspace_manager = WorkspaceManager("vhl_workspace")
         self.project_root_info: Optional[Dict[str, Any]] = None
         self.active_ana_sm: Optional[ANADStateMachine] = None
         self.ana_inbox: Optional[asyncio.Queue] = None
@@ -195,7 +196,13 @@ class AOSM:
             source=EventSource.VHL_AGENT_BACKEND,
             payload=payload
         ))
-        
+    
+    async def _aosm_error_transition(self, event: BaseEvent, **kwargs):
+        """Common error handler for aosm."""
+        error = kwargs.get("error")
+        logger.error(f"[AOSM._aosm_error_transition] Agent failure: {error}")
+        await self.transition_to(AOSMState.ERROR_PRESENTED, f"Agent execution failed: {error}")
+    
 
     async def _parent_notify(self, payload: Dict[str, Any]):
         """
@@ -406,63 +413,57 @@ class AOSM:
             # After presenting/handling, transition back to IDLE
             await self.transition_to(AOSMState.IDLE, f"Finished processing ANA result: {decision}")
 
-    
-    # Agent: Archy
+
+    # --- Agent nodes begin--- #    
+    # Archy
+    @handle_errors(on_error="_aosm_error_transition")
     async def _handle_trigger_archy(self, event: BaseEvent):
         logger.info(f"[AOSM._handle_trigger_archy] In TRIGGER_ARCHY state...")
-        if event.type == EventType.STATE_TRANSITION:
-            image_id = self.current_message.get("circuit_id")
-            image_path_str = self.current_message.get("image_path")
-            
-            if not image_id or not image_path_str:
-                logger.error(f"[AOSM._handle_trigger_archy] Missing circuit_id ({image_id}) or image_path ({image_path_str})")
-                await self.transition_to(AOSMState.ERROR_PRESENTED, "Missing session data for Archy")
-                return
+        image_id = self.current_message.get("circuit_id")
+        image_path_str = self.current_message.get("image_path")
+        
+        if not image_id or not image_path_str:
+            logger.error(f"[AOSM._handle_trigger_archy] Missing circuit_id ({image_id}) or image_path ({image_path_str})")
+            await self.transition_to(AOSMState.ERROR_PRESENTED, "Missing session data for Archy")
+            return
 
-            image_path = Path(str(image_path_str))
-            
-            try:
-                scud_path = await self._run_archy(image_id, image_path)
-                if scud_path:
-                    self.current_message["scud_path"] = str(scud_path)
-                    await self.transition_to(AOSMState.WAIT_FOR_ARCHY_HIL, "Archy completed. Waiting for HIL review.", payload={"scud_path": str(scud_path)})
-                else:
-                    raise ValueError("SCUD path not returned from Archy")
-            except Exception as e:
-                logger.error(f"[AOSM._handle_trigger_archy] Archy failed: {e}")
-                await self.transition_to(AOSMState.ERROR_PRESENTED, f"Archy failed: {e}")
+        image_path = Path(str(image_path_str))
+        
+        scud_path = await self._run_archy(image_id, image_path)
+        if scud_path:
+            self.current_message["scud_path"] = str(scud_path)
+            await self.transition_to(AOSMState.WAIT_FOR_ARCHY_HIL, "Archy completed. Waiting for HIL review.", payload={"scud_path": str(scud_path)})
+        else:
+            raise ValueError("SCUD path not returned from Archy")
 
-    # Agent: Librarian
+    # Librarian
+    @handle_errors(on_error="_aosm_error_transition")
     async def _handle_trigger_librarian(self, event: BaseEvent):
         logger.info(f"[AOSM._handle_trigger_librarian] In TRIGGER_LIBRARIAN state...")
-        try:
-            scud_path_str = self.current_message.get("scud_path")
-            if not scud_path_str:
-                logger.error("[AOSM._handle_trigger_librarian] Missing scud_path in current_message")
-                await self.transition_to(AOSMState.ERROR_PRESENTED, "Missing session data for Librarian")
-                return
+        scud_path_str = self.current_message.get("scud_path")
+        if not scud_path_str:
+            logger.error("[AOSM._handle_trigger_librarian] Missing scud_path in current_message")
+            await self.transition_to(AOSMState.ERROR_PRESENTED, "Missing session data for Librarian")
+            return
 
-            scud_path = Path(str(scud_path_str))
-            
-            # Trigger Librarian Agent
-            await self._run_librarian(scud_path)
-            
-            # Workflow 1.1: Sync lib/imports from VHL runtime to Agent backend
-            if self.project_id:
-                # Sync Library using centralized client
-                await self.sync_client.sync_library(self.project_id)
-                logger.info(f"[AOSM._handle_trigger_librarian] Librarian and Sync completed. Transitioning to WAIT_FOR_LIBRARIAN_HIL")
-
-                # Transition to WAIT_FOR_LIBRARIAN_HIL to let human review librarian results
-                await self.transition_to(AOSMState.WAIT_FOR_LIBRARIAN_HIL, "Component resolution completed. Waiting for HIL review.", payload={"scud_path": str(scud_path)})
-            else:
-                raise ValueError(f"Project id is null : {self.project_id}")
+        scud_path = Path(str(scud_path_str))
         
-        except Exception as e:
-            logger.error(f"[AOSM._handle_trigger_librarian] Librarian failed: {e}")
-            await self.transition_to(AOSMState.ERROR_PRESENTED, f"Librarian failed sync: {e}")
+        # Trigger Librarian Agent
+        await self._run_librarian(scud_path)
+        
+        # Workflow 1.1: Sync lib/imports from VHL runtime to Agent backend
+        if self.project_id:
+            # Sync Library using centralized client
+            await self.sync_client.sync_library(self.project_id)
+            logger.info(f"[AOSM._handle_trigger_librarian] Librarian and Sync completed. Transitioning to WAIT_FOR_LIBRARIAN_HIL")
+
+            # Transition to WAIT_FOR_LIBRARIAN_HIL to let human review librarian results
+            await self.transition_to(AOSMState.WAIT_FOR_LIBRARIAN_HIL, "Component resolution completed. Waiting for HIL review.", payload={"scud_path": str(scud_path)})
+        else:
+            raise ValueError(f"Project id is null : {self.project_id}")
     
-    # Agent: ANA
+    # ANA
+    @handle_errors(on_error="_aosm_error_transition")
     async def _handle_trigger_ana(self, event: BaseEvent):
 
         if event.type == EventType.STATE_TRANSITION:
@@ -497,7 +498,9 @@ class AOSM:
             await self.transition_to(AOSMState.WAIT_FOR_ANA, "ANA-D started")
         else:
             logger.info(f"[AOSM._handle_trigger_ana] Received event: {event.type}")
-        
+    
+    # --- Agent nodes end--- #
+
     async def _handle_wait_for_ana(self, event: BaseEvent):
 
         if event.type == EventType.ANA_NOTIFY:
@@ -522,7 +525,7 @@ class AOSM:
                 # Start the wait in the background so the main loop can continue 
                 # to process incoming events (like DEV_SERVER_READY)
                 ana_decision = event.payload.get("decision")
-                asyncio.create_task(self._wait_and_transition(event, ana_task_id, ana_decision))
+                asyncio.create_task(self._ana_deicsion_wait_and_transition(event, ana_task_id, ana_decision))
 
             else:
                 raise ValueError(f"Unknown ANA notification reason: {ana_event}")
@@ -713,8 +716,7 @@ class AOSM:
 
     # --- State Handlers --- END
 
-
-    async def _wait_and_transition(self, event, task_id, decision):
+    async def _ana_deicsion_wait_and_transition(self, event, task_id, decision):
         # This runs independently of the main loop
         if self.mcp_manager:
             logger.info(f"[AOSM._wait_and_transition] Applying VAP decision via MCP: {decision} for task {task_id}")

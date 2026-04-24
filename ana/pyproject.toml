@@ -6,6 +6,7 @@ dependencies = [
     "pydantic",
     "mcp",
     "httpx",
+    "vhl-common",
 ]
 
 [build-system]

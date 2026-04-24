@@ -1,0 +1,13 @@
+[project]
+name = "vhl-common"
+version = "0.1.0"
+description = "Common utilities for VHL Agent Backend"
+dependencies = []
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["vhl_common"]
+package-dir = {"vhl_common" = "."}

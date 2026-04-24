@@ -8,6 +8,7 @@ dependencies = [
     "ana",
     "boto3",
     "librarian",
+    "vhl-common",
 ]
 
 [build-system]

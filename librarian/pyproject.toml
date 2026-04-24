@@ -5,7 +5,8 @@ description = "Librarian for Virtual Hardware Laboratory"
 dependencies = [
     "pydantic",
     "mcp",
-    "httpx"
+    "httpx",
+    "vhl-common",
 ]
 
 [build-system]
