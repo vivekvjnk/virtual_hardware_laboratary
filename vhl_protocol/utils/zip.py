@@ -20,10 +20,9 @@ def decompress_zip(zip_path: str, target_dir: str):
 def atomic_replace_directory(temp_dir: str, target_dir: str):
     """Replace target_dir with temp_dir atomically using rename."""
     if os.path.exists(target_dir):
-        # We need a temp name to move target_dir to before deleting
         old_dir = target_dir + ".old"
         if os.path.exists(old_dir):
-            shutil.rmtree(old_dir)
+            raise FileExistsError(f"Directory {old_dir} already exists. This indicates a concurrent modification or an incomplete previous atomic replacement.")
         os.rename(target_dir, old_dir)
         os.rename(temp_dir, target_dir)
         shutil.rmtree(old_dir)

@@ -1,6 +1,6 @@
 import os
 import logging
-from typing import Optional
+from typing import Optional, Dict, Tuple
 from ..client.client import VHLWebSocketClient
 from ..models import BaseEvent, EventType, SyncPayload, EventSource
 from ..utils.hashing import compute_file_hash, compute_directory_hash
@@ -20,22 +20,45 @@ class SyncClient:
         self.workspace_manager = workspace_manager
         self.base_dir = str(workspace_manager.workspace_root)
         self.storage_client = get_storage_client()
+        
+        # Concurrency management
+        self._locks: Dict[Tuple[str, str], asyncio.Lock] = {}
+        self._active_tasks: set[asyncio.Task] = set()
+        
         self.web_socket_client.add_subscriber(self.handle_runtime_message)
+
+    def _get_lock(self, project_id: str, resource_type: str) -> asyncio.Lock:
+        """Get or create a lock for a specific project/resource pair."""
+        key = (project_id, resource_type)
+        if key not in self._locks:
+            self._locks[key] = asyncio.Lock()
+        return self._locks[key]
 
     def get_resource_path(self, project_id: str, resource_type: str, iteration_id: Optional[str] = None) -> str:
         """Resolve the local filesystem path for a resource using standard workspace conventions."""
         return str(self.workspace_manager.resolve_resource_path(project_id, resource_type, iteration_id))
 
     async def handle_runtime_message(self, event: BaseEvent):
-        if event.type not in [EventType.UPLOAD_REQUEST, EventType.DOWNLOAD_REQUEST]:
+        """
+        Non-blocking dispatcher for runtime messages.
+        Spawns a background task to prevent deadlocking the WebSocket receive loop.
+        """
+        if event.type not in [EventType.UPLOAD_REQUEST, EventType.DOWNLOAD_REQUEST, EventType.SYNC_ERROR, EventType.SYNC_COMPLETE]:
             return
         
+        task = asyncio.create_task(self._safe_handle_runtime_message(event))
+        self._active_tasks.add(task)
+        task.add_done_callback(self._active_tasks.discard)
+
+    async def _safe_handle_runtime_message(self, event: BaseEvent):
+        """Internal task runner for sync messages with proper error handling."""
         try:
             payload = SyncPayload.model_validate(event.payload)
 
             # Ignore events from self
             if payload.source in ["backend", EventSource.VHL_AGENT_BACKEND]:
                 return    
+            
             if event.type == EventType.UPLOAD_REQUEST:
                 await self.handle_upload_request(payload)
             elif event.type == EventType.DOWNLOAD_REQUEST:
@@ -45,9 +68,12 @@ class SyncClient:
             elif event.type == EventType.SYNC_COMPLETE:
                 logger.info(f"[SyncClient] Received SYNC_COMPLETE for {payload.resource_type} (sync_id={payload.sync_id})")
         except Exception as e:
-            logger.error(f"[SyncClient.handle_runtime_message] Error handling sync message {event.type}: {e}", exc_info=True)
+            logger.error(f"[SyncClient._safe_handle_runtime_message] Error handling sync message {event.type}: {e}", exc_info=True)
             if isinstance(event.payload, dict) and "sync_id" in event.payload:
-                await self.send_sync_error(event.payload["sync_id"], event.payload["project_id"], str(e))
+                try:
+                    await self.send_sync_error(event.payload["sync_id"], event.payload["project_id"], str(e))
+                except Exception as send_err:
+                    logger.error(f"[SyncClient] Failed to send error response: {send_err}")
 
     async def send_sync_error(self, sync_id: str, project_id: str, reason: str):
         error_payload = SyncPayload(
@@ -63,7 +89,7 @@ class SyncClient:
 
     async def handle_upload_request(self, payload: SyncPayload):
         """
-        Handle an UPLOAD_REQUEST: the sender wants us to upload our local artefact
+        Handle an UPLOAD_REQUEST with resource-level locking: the sender wants us to upload our local artefact
         to the object store, then notify them with a DOWNLOAD_REQUEST so they can fetch it.
 
         Flow: local hash → [hash check] → compress (if dir) → [storage existence check] → upload → DOWNLOAD_REQUEST → await SYNC_COMPLETE 
@@ -78,7 +104,8 @@ class SyncClient:
         directly (e.g. from sync_evaluation_output) to initiate a proactive push.
         """
         sync_id = payload.sync_id
-        logger.info(f"[SyncClient.handle_upload_request] Handling UPLOAD_REQUEST for {payload.resource_type} (sync_id={sync_id})")
+        async with self._get_lock(payload.project_id, payload.resource_type):
+            logger.info(f"[SyncClient.handle_upload_request] Handling UPLOAD_REQUEST for {payload.resource_type} (sync_id={sync_id})")
 
         path = Path(self.get_resource_path(payload.project_id, payload.resource_type, payload.iteration_id))
         if not path.exists():
@@ -153,7 +180,7 @@ class SyncClient:
 
     async def handle_download_request(self, payload: SyncPayload):
         """
-        Handle a DOWNLOAD_REQUEST: the sender wants us to download a previously uploaded
+        Handle a DOWNLOAD_REQUEST with resource-level locking: the sender wants us to download a previously uploaded
         artefact from the object store and apply it locally, then confirm with SYNC_COMPLETE.
 
         The payload carries the sender's local hash (set during upload) which we use
@@ -162,7 +189,8 @@ class SyncClient:
         Flow: storage download → hash verify → decompress (if needed) → atomic apply → SYNC_COMPLETE
         """
         sync_id = payload.sync_id
-        logger.info(f"[SyncClient.handle_download_request] Handling DOWNLOAD_REQUEST for {payload.resource_type} (sync_id={sync_id})")
+        async with self._get_lock(payload.project_id, payload.resource_type):
+            logger.info(f"[SyncClient.handle_download_request] Handling DOWNLOAD_REQUEST for {payload.resource_type} (sync_id={sync_id})")
 
         target_path = self.get_resource_path(payload.project_id, payload.resource_type, payload.iteration_id)
         os.makedirs(os.path.dirname(target_path), exist_ok=True)
