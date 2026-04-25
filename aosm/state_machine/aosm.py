@@ -228,6 +228,12 @@ class AOSM:
         if event.type == EventType.CREATE_PROJECT:
             payload = event.payload or {}
             project_name = payload.get("project_name", "untitled")
+            project_zip_blob_id = payload.get("zip_blob_id",None)
+
+            #TODO Collect the zip file from object store using blob_id and unzip it to a temp location
+            
+
+
             # Generate project_id with <project_name>_<UID>
             project_id = f"{project_name}_{uuid.uuid4().hex[:8]}"
             self.project_id = project_id

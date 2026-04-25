@@ -1,6 +1,6 @@
 import os
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional
 from ..client.client import VHLWebSocketClient
 from ..models import BaseEvent, EventType, SyncPayload, EventSource
 from ..utils.hashing import compute_file_hash, compute_directory_hash
@@ -66,7 +66,7 @@ class SyncClient:
         Handle an UPLOAD_REQUEST: the sender wants us to upload our local artefact
         to the object store, then notify them with a DOWNLOAD_REQUEST so they can fetch it.
 
-        Flow: local hash → [hash check] → compress (if dir) → [storage existence check] → upload → DOWNLOAD_REQUEST
+        Flow: local hash → [hash check] → compress (if dir) → [storage existence check] → upload → DOWNLOAD_REQUEST → await SYNC_COMPLETE 
 
         If payload.hash (the sender's local hash) is provided and matches our local hash,
         both sides already have the same content — emit SYNC_COMPLETE and skip the upload.
@@ -135,6 +135,12 @@ class SyncClient:
             await self.web_socket_client.emit(EventType.DOWNLOAD_REQUEST, download_payload)
             logger.info(f"[SyncClient.handle_upload_request] Emitted DOWNLOAD_REQUEST (sync_id={sync_id})")
 
+            # Await SYNC_COMPLETE here and log success/failure of the overall sync operation
+            response = await self.web_socket_client.wait_for_event(
+                EventType.SYNC_COMPLETE,
+                filter_func=lambda e: (e.payload.get("sync_id") == sync_id)
+            )
+            logger.info(f"[SyncClient.handle_upload_request] Received SYNC_COMPLETE for sync_id={sync_id}")
         except Exception as e:
             logger.error(f"[SyncClient.handle_upload_request] Failed to upload {payload.resource_type}: {e}")
             await self.send_sync_error(sync_id, payload.project_id, str(e))

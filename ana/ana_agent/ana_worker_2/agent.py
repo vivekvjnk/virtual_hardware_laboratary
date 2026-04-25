@@ -7,7 +7,6 @@ import asyncio
 from typing import Dict, Any, Optional, Union
 
 from openhands.sdk import get_logger
-# from ana_agent.ana_worker_2.utils.object_store import MinioObjectStore
 from vhl_protocol.sync.client import SyncClient
 from vhl_protocol.client.client import VHLWebSocketClient
 
