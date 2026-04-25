@@ -17,7 +17,8 @@ from workspace.manager import WorkspaceManager
 from archy_agent.main import orchestrate_archy, prepare_archy_workspace
 from librarian_agent.agent import LibrarianAgent
 from librarian_agent.stub import process_scud_stub
-from vhl_common import handle_errors
+from vhl_common.utils import handle_errors
+
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +58,7 @@ class AOSM:
         
         # Enable following configuration for VAP over MCP server
         # mcp_default = "http://localhost:8081/mcp/vap"
-        # self.sync_client = SyncClient(self.web_socket_client, self.workspace_manager)
+        self.sync_client = SyncClient(self.web_socket_client, self.workspace_manager)
         # mcp_endpoint = os.getenv("MCP_ENDPOINT", mcp_default)
         # self.mcp_manager = MCPManager(endpoint=mcp_endpoint)
         
@@ -228,11 +229,7 @@ class AOSM:
         if event.type == EventType.CREATE_PROJECT:
             payload = event.payload or {}
             project_name = payload.get("project_name", "untitled")
-            project_zip_blob_id = payload.get("zip_blob_id",None)
-
-            #TODO Collect the zip file from object store using blob_id and unzip it to a temp location
-            
-
+            project_zip_blob_id = payload.get("zip_blob_id")
 
             # Generate project_id with <project_name>_<UID>
             project_id = f"{project_name}_{uuid.uuid4().hex[:8]}"
@@ -240,6 +237,20 @@ class AOSM:
             
             logger.info(f"[AOSM._handle_startup] Creating new project: {project_id}")
             project_root = self.workspace_manager.create_project(project_id)
+
+            if project_zip_blob_id:
+                logger.info(f"[AOSM._handle_startup] Downloading project zip: {project_zip_blob_id}")
+                sync_payload = SyncPayload(
+                    sync_id=str(uuid.uuid4()),
+                    project_id="",
+                    resource_type="ProjectZip",
+                    blob_id=f"uploads/{project_zip_blob_id}",
+                    source=EventSource.VHL_AGENT_BACKEND,
+                )
+                await self.sync_client.handle_download_request(sync_payload)
+
+                # Workspace manager method to create project from unzipped files in the workspace
+                self.workspace_manager.create_project_from_zip(project_id)
             
             # Store project root information in class variable
             self.project_root_info = self.workspace_manager.get_workspace_info()

@@ -1,7 +1,6 @@
 import functools
 import logging
 import inspect
-import asyncio
 
 def handle_errors(func=None, *, on_error=None):
     """

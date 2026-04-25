@@ -1,6 +1,7 @@
 import zipfile
 import os
 import shutil
+from pathlib import Path
 
 def compress_directory(source_dir: str, output_path: str):
     """Compress a directory into a zip file, similar to TypeScript's compressDirectory."""
@@ -11,11 +12,19 @@ def compress_directory(source_dir: str, output_path: str):
                 rel_path = os.path.relpath(abs_path, source_dir)
                 zipf.write(abs_path, rel_path)
 
-def decompress_zip(zip_path: str, target_dir: str):
-    """Decompress a zip file into a directory, similar to TypeScript's decompressZip."""
-    os.makedirs(target_dir, exist_ok=True)
+def decompress_zip(zip_path: Path, target_dir: Path):
+    """Decompress a zip file into a directory safely."""
+    # Ensure target directory exists
+    target_dir.mkdir(parents=True, exist_ok=True)
+    
     with zipfile.ZipFile(zip_path, 'r') as zipf:
-        zipf.extractall(target_dir)
+        # 'data' filter is available in Python 3.12+ to prevent path traversal
+        # For older versions, you'd just use zipf.extractall(target_dir)
+        try:
+            zipf.extractall(target_dir, filter='data')
+        except TypeError:
+            # Fallback for Python versions < 3.12
+            zipf.extractall(target_dir)
 
 def atomic_replace_directory(temp_dir: str, target_dir: str):
     """Replace target_dir with temp_dir atomically using rename."""

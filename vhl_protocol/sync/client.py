@@ -34,9 +34,9 @@ class SyncClient:
             self._locks[key] = asyncio.Lock()
         return self._locks[key]
 
-    def get_resource_path(self, project_id: str, resource_type: str, iteration_id: Optional[str] = None) -> str:
+    def get_resource_path(self, project_id: str, resource_type: Optional[str], iteration_id: Optional[str] = None) -> str:
         """Resolve the local filesystem path for a resource using standard workspace conventions."""
-        return str(self.workspace_manager.resolve_resource_path(project_id, resource_type, iteration_id))
+        return str(self.workspace_manager.resolve_resource_path(resource_type=resource_type, project_id=project_id,  iteration_id=iteration_id))
 
     async def handle_runtime_message(self, event: BaseEvent):
         """
@@ -187,55 +187,65 @@ class SyncClient:
         to verify integrity after downloading.
 
         Flow: storage download → hash verify → decompress (if needed) → atomic apply → SYNC_COMPLETE
+        
+        NOTE: Necessary items in payload:
+            - payload.blob_id       : the storage blob to download
+            - payload.project_id    : project name; used as the project directory name in vhl-agent-backend; 
+            - payload.resource_type : type of the resource being synced;  
+            - payload.iteration_id  : optional iteration_id for Evaluation/EvaluationOutput in ANA process; can be None for Library/Circuit/Project
         """
-        sync_id = payload.sync_id
-        async with self._get_lock(payload.project_id, payload.resource_type):
-            logger.info(f"[SyncClient.handle_download_request] Handling DOWNLOAD_REQUEST for {payload.resource_type} (sync_id={sync_id})")
-
-        target_path = self.get_resource_path(payload.project_id, payload.resource_type, payload.iteration_id)
-        os.makedirs(os.path.dirname(target_path), exist_ok=True)
-
-        scratch_dir = Path(self.base_dir) / ".sync_scratch" / str(uuid.uuid4())
-        scratch_dir.mkdir(parents=True, exist_ok=True)
-
         try:
+            async with self._get_lock(payload.project_id, payload.resource_type):
+                logger.info(f"[SyncClient.handle_download_request] Handling DOWNLOAD_REQUEST for {payload.resource_type} (sync_id={payload.sync_id})")
+
+            
+            scratch_dir = Path(self.base_dir) / ".sync_scratch" / str(uuid.uuid4())
+            scratch_dir.mkdir(parents=True, exist_ok=True)
+
             tmp_file = scratch_dir / "downloaded_blob"
             logger.info(f"[SyncClient.handle_download_request] Downloading blob {payload.blob_id} from storage to {tmp_file}...")
             await asyncio.to_thread(self.storage_client.download_file, payload.blob_id, str(tmp_file))
             logger.debug(f"[SyncClient.handle_download_request] Download completed for blob {payload.blob_id}")
 
-            if payload.resource_type in ["Library", "Evaluation", "EvaluationOutput"]:
+
+            target_path = self.get_resource_path(project_id=payload.project_id, resource_type=payload.resource_type, iteration_id=payload.iteration_id)
+            os.makedirs(os.path.dirname(target_path), exist_ok=True)
+
+            if payload.blob_id and payload.blob_id.endswith(".zip"):                                
                 extract_dir = scratch_dir / "extracted"
                 extract_dir.mkdir(parents=True, exist_ok=True)
                 logger.debug(f"[SyncClient.handle_download_request] Decompressing {tmp_file} to {extract_dir}")
-                decompress_zip(str(tmp_file), str(extract_dir))
+                decompress_zip(tmp_file, extract_dir)
                 computed_hash = compute_directory_hash(str(extract_dir))
                 logger.debug(f"[SyncClient.handle_download_request] Computed directory hash: {computed_hash}, expected: {payload.hash}")
-                if computed_hash != payload.hash:
+                if payload.hash and computed_hash != payload.hash:
                     raise ValueError(f"Hash mismatch! Expected {payload.hash}, got {computed_hash}")
                 logger.debug(f"[SyncClient.handle_download_request] Applying atomic directory replace: {extract_dir} -> {target_path}")
                 atomic_replace_directory(str(extract_dir), str(target_path))
             else:
                 computed_hash = compute_file_hash(str(tmp_file))
                 logger.debug(f"[SyncClient.handle_download_request] Computed file hash: {computed_hash}, expected: {payload.hash}")
-                if computed_hash != payload.hash:
+                if payload.hash and computed_hash != payload.hash:
                     raise ValueError(f"Hash mismatch! Expected {payload.hash}, got {computed_hash}")
                 logger.debug(f"[SyncClient.handle_download_request] Applying atomic file replace: {tmp_file} -> {target_path}")
                 atomic_replace_file(str(tmp_file), str(target_path))
-
+            
             logger.info(f"[SyncClient.handle_download_request] Successfully applied {payload.resource_type}")
-            complete_payload = SyncPayload(
-                sync_id=sync_id,
-                project_id=payload.project_id,
-                iteration_id=payload.iteration_id,
-                resource_type=payload.resource_type,
-                source=EventSource.VHL_AGENT_BACKEND
-            )
-            await self.web_socket_client.emit(EventType.SYNC_COMPLETE, complete_payload)
+            # Check if the input payload source is vhl-agent-backend before emitting SYNC_COMPLETE to avoid potential loops
+            if not (payload.source == EventSource.VHL_AGENT_BACKEND):
+                logger.info(f"[SyncClient.handle_download_request] Emitting SYNC_COMPLETE for {payload.resource_type} (sync_id={payload.sync_id})")
+                complete_payload = SyncPayload(
+                    sync_id=payload.sync_id,
+                    project_id=payload.project_id,
+                    iteration_id=payload.iteration_id,
+                    resource_type=payload.resource_type,
+                    source=EventSource.VHL_AGENT_BACKEND
+                )
+                await self.web_socket_client.emit(EventType.SYNC_COMPLETE, complete_payload)
 
         except Exception as e:
             logger.error(f"[SyncClient.handle_download_request] Error applying resource {payload.resource_type}: {e}", exc_info=True)
-            await self.send_sync_error(sync_id, payload.project_id, str(e))
+            await self.send_sync_error(payload.sync_id, payload.project_id, str(e))
         finally:
             if scratch_dir.exists():
                 shutil.rmtree(str(scratch_dir))

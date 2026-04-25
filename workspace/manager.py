@@ -3,6 +3,9 @@ import logging
 from pathlib import Path
 from datetime import datetime
 from typing import List, Optional, Dict, Any
+from .zip_restore import restore_project_from_manifest
+
+ZIP_TEMP_DIR = ".zip_temp"
 
 logger = logging.getLogger(__name__)
 
@@ -129,6 +132,30 @@ class WorkspaceManager:
         
         logger.info(f"[WorkspaceManager.create_project] Project created at: {self.project_root}")
         return self.project_root
+
+    def create_project_from_zip(self, project_id: str):
+        """Restores project structure from the temporary zip directory."""
+        temp_dir = self.workspace_root / ZIP_TEMP_DIR
+        
+        project_dir = self.workspace_root / project_id
+        
+        if not temp_dir.exists():
+            logger.error(f"[WorkspaceManager.create_project_from_zip] Zip temp directory not found at {temp_dir}")
+            return
+            
+        success = restore_project_from_manifest(temp_dir, project_dir)
+        
+        if success:
+            logger.info(f"[WorkspaceManager.create_project_from_zip] Project successfully restored to {project_dir}")
+        else:
+            logger.error(f"[WorkspaceManager.create_project_from_zip] Errors occurred during project restoration.")
+            
+        # Clean up temp directory
+        try:
+            shutil.rmtree(temp_dir)
+            logger.info(f"[WorkspaceManager.create_project_from_zip] Cleaned up temp directory: {temp_dir}")
+        except Exception as e:
+            logger.error(f"[WorkspaceManager.create_project_from_zip] Failed to clean up temp directory: {e}")
 
     def register_project_root(self, path: str) -> Path:
         """Registers an existing project root and ensures its existence."""
@@ -269,6 +296,7 @@ class WorkspaceManager:
         if not self.circuit_name:
             raise RuntimeError("Circuit name not set")
         return self.project_root / "Stable" / f"{self.circuit_name}.tsx"    
+    
     def get_scud_path(self) -> Path:
         """Finds and returns the .scud file path in the current iteration."""
         if not self.current_iteration_path:
@@ -285,7 +313,6 @@ class WorkspaceManager:
             logger.warning(f"[WorkspaceManager.get_scud_path] Multiple .scud files found in {self.current_iteration_path}, returning first one: {scud_files[0]}")
         return scud_files[0]
 
-    
     def get_library_path(self)->Path:
         current_lib_path = self.current_iteration_path/ "lib/imports"
         return current_lib_path
@@ -479,10 +506,18 @@ class WorkspaceManager:
     def get_current_iteration_id(self):
         return self.current_iteration_id
 
-    def resolve_resource_path(self, project_id: str, resource_type: str, iteration_id: Optional[str] = None) -> Path:
+    def resolve_resource_path(self,resource_type: str, project_id: Optional[str]=None,  iteration_id: Optional[str] = None) -> Path:
         """Resolve the local filesystem path for a resource using workspace conventions."""
+        if (not project_id) and (resource_type == "ProjectZip"):
+            # for ProjectZip resource type, project_id will not be provided(as it's not yet created)
+            # In that case, create a temporary directory under workspace root and return that path for zip extraction. 
+            # The temp directory will be deleted after use.
+            temp_dir = self.workspace_root / ZIP_TEMP_DIR
+            temp_dir.mkdir(parents=True, exist_ok=True)
+            logger.info(f"[WorkspaceManager.resolve_resource_path] No project_id provided. Returning temporary directory for zip extraction: {temp_dir}")
+            return temp_dir
+
         project_root = self.workspace_root / project_id
-        
         # Determine circuit name for path resolution
         res_circuit_name = self.circuit_name
         resolved_path = None

@@ -162,8 +162,8 @@ class HILRequestPayload(BaseModel):
     scud_content: Optional[str] = None
 
 class SyncPayload(BaseModel):
-    sync_id: str
     project_id: str
+    sync_id: str = None
     iteration_id: Optional[str] = None
     resource_type: str # Library | Circuit | Evaluation | StableCircuit
     intent: Optional[str] = None # EVALUATION | ALIGNMENT | RESULT
