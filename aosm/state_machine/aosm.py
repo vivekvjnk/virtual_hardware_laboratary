@@ -231,13 +231,7 @@ class AOSM:
             project_name = payload.get("project_name", "untitled")
             project_zip_blob_id = payload.get("zip_blob_id")
 
-            # Generate project_id with <project_name>_<UID>
-            project_id = f"{project_name}_{uuid.uuid4().hex[:8]}"
-            self.project_id = project_id
-            
-            logger.info(f"[AOSM._handle_startup] Creating new project: {project_id}")
-            project_root = self.workspace_manager.create_project(project_id)
-
+            zip_present = False
             if project_zip_blob_id:
                 logger.info(f"[AOSM._handle_startup] Downloading project zip: {project_zip_blob_id}")
                 sync_payload = SyncPayload(
@@ -248,10 +242,15 @@ class AOSM:
                     source=EventSource.VHL_AGENT_BACKEND,
                 )
                 await self.sync_client.handle_download_request(sync_payload)
-
-                # Workspace manager method to create project from unzipped files in the workspace
-                self.workspace_manager.create_project_from_zip(project_id)
+                zip_present = True
             
+
+            # Generate project_id with <project_name>_<UID>
+            project_id = f"{project_name}_{uuid.uuid4().hex[:8]}"
+            self.project_id = project_id
+            
+            logger.info(f"[AOSM._handle_startup] Creating new project: {project_id}")
+            project_root = self.workspace_manager.create_project(project_id, zip_present=zip_present)
             # Store project root information in class variable
             self.project_root_info = self.workspace_manager.get_workspace_info()
             

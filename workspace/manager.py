@@ -1,3 +1,5 @@
+import hashlib
+import json
 import os, shutil
 import logging
 from pathlib import Path
@@ -27,6 +29,8 @@ class WorkspaceManager:
         self.previous_iteration_path: Optional[Path] = None
         self._session_iteration_count: int = 0
         self.current_iteration_id = None
+        self.project_manifest = None
+
         logger.info(f"[WorkspaceManager.__init__] WorkspaceManager initialized with root: {self.workspace_root}")
 
     def reset_iterations(self):
@@ -59,6 +63,7 @@ class WorkspaceManager:
             return []
         return [d.name for d in self.workspace_root.iterdir() if (d.is_dir() and d.name != ".sync_scratch")]
 
+    # TODO: Adapt this method according to new project creation flow. DO NOT implement until project creation from zip is stable and tested to avoid blocking other developments.
     def load_project(self, project_id: str) -> Path:
         """
         Loads an existing project from the workspace.
@@ -70,6 +75,12 @@ class WorkspaceManager:
         
         self.project_id = project_id
         self.project_root = project_path
+        
+        
+        # Ensure other standard directories exist or at least we know about them
+        (self.project_root / "Stable").mkdir(exist_ok=True)
+        (self.project_root / "resources").mkdir(exist_ok=True)
+        (self.project_root / "Archives").mkdir(exist_ok=True)
         
         # Identify iterations
         iterations_dir = self.project_root / "Iterations"
@@ -104,103 +115,138 @@ class WorkspaceManager:
         else:
             logger.warning(f"[WorkspaceManager.load_project] No .scud file found in project root: {self.project_root}")
         
-        # Ensure other standard directories exist or at least we know about them
-        (self.project_root / "Stable").mkdir(exist_ok=True)
-        (self.project_root / "resources").mkdir(exist_ok=True)
-        (self.project_root / "Archives").mkdir(exist_ok=True)
         
         logger.info(f"[WorkspaceManager.load_project] Project loaded: {self.project_id} at {self.project_root}")
         return self.project_root
 
-    def create_project(self, project_id: str) -> Path:
+    # TODO: Convert this to a generalized orchestrator method.
+    # - Write sub-methods for creating project directory structure under following scenarios:
+    #   - If zip file is provided use create_project_from_zip to create basic project structure
+    #   - If zip flie is not provided, create simple project with "main_module" inside the project directory
+    # - Move module directory creation logic to a separate method. Call that method from sub-methods for creating project.
+    def create_project(self, project_id: str, zip_present:bool=False) -> Path:
         """Creates a new project directory structure."""
         self.project_id = project_id
         self.project_root = self.workspace_root / project_id
         self.project_root.mkdir(parents=True, exist_ok=True)
-        
+
         # Reset iteration state
         self.current_iteration_path = None
         self.previous_iteration_path = None
         self._iteration_count = 0
         
-        # Create Iterations/ and Stable/ (with no contents inside them)
-        (self.project_root / "Iterations").mkdir(exist_ok=True)
-        (self.project_root / "Stable").mkdir(exist_ok=True)
-        (self.project_root / "resources").mkdir(exist_ok=True)
-        (self.project_root / "Archives").mkdir(exist_ok=True)
+        # Create lib directory in project root for library 
+        (self.project_root / "lib").mkdir(exist_ok=True)
+
+        restoration_result = {"project_created": True, "manifest": None}
+        if zip_present:
+            logger.info(f"[WorkspaceManager.create_project] Zip file is present. Expecting project structure to be created from zip extraction.")
+            restoration_result = self.create_project_from_zip(project_id)
+
+        if restoration_result["project_created"]:
+            logger.info(f"[WorkspaceManager.create_project] Project created successfully: {project_id}")
+            modules = restoration_result["manifest"]["modules"].keys() if restoration_result["manifest"] else ["main_module"]
+            # Filter out "root" and "lib" from modules list as they are not standard modules
+            modules = [m for m in modules if m not in ["root", "lib"]]
+            self.setup_modules(project_root_path=self.project_root, modules=modules)
+        else:
+            logger.error(f"[WorkspaceManager.create_project] Project creation failed for: {project_id}")
+            # TODO: Implement cleanup and rollback if project creation fails at any step to avoid leaving the workspace in an inconsistent state. DO NOT implement until project creation is stable and tested.
+            raise RuntimeError(f"Project creation failed for: {project_id}")
         
-        
+        # Prepare project manifest dictionary in the simplest form
+        self.project_manifest = self._generate_manifest(self.project_root)
+        # save manifest to a json file in the project root for future reference
+        manifest_path = self.project_root / f"{project_id}_manifest.json"
+        try:
+            with open(manifest_path, 'w') as f:
+                json.dump(self.project_manifest, f, indent=4)
+            logger.info(f"[WorkspaceManager.create_project] Project manifest created at: {manifest_path}")
+        except Exception as e:
+            logger.error(f"[WorkspaceManager.create_project] Failed to create project manifest: {e}")
+
         logger.info(f"[WorkspaceManager.create_project] Project created at: {self.project_root}")
         return self.project_root
+    
+    def _get_file_hash(self, file_path, block_size=65536):
+        """Generates a SHA-256 hash for a file."""
+        sha256 = hashlib.sha256()
+        try:
+            with open(file_path, 'rb') as f:
+                for block in iter(lambda: f.read(block_size), b''):
+                    sha256.update(block)
+            return sha256.hexdigest()
+        except (PermissionError, OSError):
+            return "ERROR_ACCESS_DENIED"
 
-    def create_project_from_zip(self, project_id: str):
-        """Restores project structure from the temporary zip directory."""
+    def _generate_manifest(self,root_dir):
+        """Recursively builds a dictionary manifest of the project structure."""
+        manifest = {}
+        
+        # List all items in the current directory
+        try:
+            items = os.listdir(root_dir)
+        except PermissionError:
+            return "FOLDER_ACCESS_DENIED"
+
+        for item in items:
+            item_path = os.path.join(root_dir, item)
+            
+            if os.path.isdir(item_path):
+                # RECURSIVE STEP: Enter the subdirectory
+                manifest[item] = self._generate_manifest(item_path)
+            else:
+                # BASE CASE: Hash the file and store it
+                manifest[item] = self._get_file_hash(item_path)
+                
+        return manifest
+    
+    def setup_modules(self, project_root_path: Path, modules: List[str] = ["main_module"]):
+        """Sets up the main_module directory structure for a new project."""
+        for module in modules:
+            # Module directory creation logic
+            module_dir = project_root_path / module
+            module_dir.mkdir(exist_ok=True)
+            # Create Iterations/ and Stable/ (with no contents inside them)
+            (module_dir / "Iterations").mkdir(exist_ok=True)
+            (module_dir / "Stable").mkdir(exist_ok=True)
+            (module_dir / "resources").mkdir(exist_ok=True) # resources directory may already exist if created during zip restoration, but mkdir with exist_ok=True will handle that case
+            (module_dir / "Archives").mkdir(exist_ok=True)
+            # Create softlink to lib directory from project root for module to use library imports
+            lib_link = module_dir / "lib"
+            if not lib_link.exists():
+                os.symlink(project_root_path / "lib", lib_link)
+
+            logger.info(f"[WorkspaceManager.setup_modules] Main module structure created at: {module_dir}")
+        
+    def create_project_from_zip(self, project_id: str)-> Dict[str, Any]:
+        """
+        Restores project structure from the temporary zip directory.
+        Expects the zip file to be already extracted in a temporary directory under workspace root with name defined by ZIP_TEMP_DIR.
+        Returns a dictionary with project creation status and manifest information.
+        """
         temp_dir = self.workspace_root / ZIP_TEMP_DIR
         
         project_dir = self.workspace_root / project_id
         
         if not temp_dir.exists():
             logger.error(f"[WorkspaceManager.create_project_from_zip] Zip temp directory not found at {temp_dir}")
-            return
+            return {"project_created": False, "manifest": None}
             
-        success = restore_project_from_manifest(temp_dir, project_dir)
+        restoration_result = restore_project_from_manifest(temp_dir, project_dir)
         
-        if success:
-            logger.info(f"[WorkspaceManager.create_project_from_zip] Project successfully restored to {project_dir}")
-        else:
-            logger.error(f"[WorkspaceManager.create_project_from_zip] Errors occurred during project restoration.")
-            
         # Clean up temp directory
         try:
-            shutil.rmtree(temp_dir)
+            # shutil.rmtree(temp_dir)
             logger.info(f"[WorkspaceManager.create_project_from_zip] Cleaned up temp directory: {temp_dir}")
         except Exception as e:
             logger.error(f"[WorkspaceManager.create_project_from_zip] Failed to clean up temp directory: {e}")
+        
+        return restoration_result
 
-    def register_project_root(self, path: str) -> Path:
-        """Registers an existing project root and ensures its existence."""
-        self.project_root = Path(path).resolve()
-        self.project_root.mkdir(parents=True, exist_ok=True)
-        
-        # Reset or identify iterations
-        self.current_iteration_path = None
-        self.previous_iteration_path = None
-        self._iteration_count = None # Will be recalculated on first use
-        
-        # Ensure Iterations/ and Stable/ exist
-        (self.project_root / "Iterations").mkdir(exist_ok=True)
-        (self.project_root / "Stable").mkdir(exist_ok=True)
-        (self.project_root / "resources").mkdir(exist_ok=True)
-        (self.project_root / "Archives").mkdir(exist_ok=True)
-            
-        logger.info(f"[WorkspaceManager.register_project_root] Project root registered at: {self.project_root}")
-        return self.project_root
 
-    def add_project_files(self, files: List[str], target_dir: str):
-        """Add files to a target directory in the project root. 
-        Currently only support adding files to one target directory at a time.
-        Args:
-            files (List[str]): List of file paths to add to the project root.
-            target_dir (str): Target directory to add files to. Defaults to project root.
-        """
-        if not self.project_root or not target_dir:
-            raise RuntimeError(f"Project root or target directory or files not set. Call create_project or register_project_root first. Project Root: {self.project_root}, Target Directory: {target_dir}, Files: {files}")
-        
-        # Create target directory if it doesn't exist
-        (self.project_root / target_dir).mkdir(exist_ok=True)
-        
-        for file in files:
-            shutil.copy(file, self.project_root / target_dir)
-
-        logger.info(f"[WorkspaceManager.add_project_files] {files} added to target directory: {target_dir}")
-    
-    def add_ref_schematic_image(self, image_path: str, target_dir: str = "resources"):
-        """Add a reference schematic image to the project root."""
-        self.add_project_files([image_path], target_dir)
-        
-        logger.info(f"[WorkspaceManager.add_ref_schematic_image] Reference schematic image added: {image_path}")
-    
-
+    # VAP related methods
+    # =====================
     def _get_next_iteration_number(self) -> int:
         """Calculates and returns the next iteration number, maintaining state in a class member."""
         if self._iteration_count is None:
@@ -248,7 +294,7 @@ class WorkspaceManager:
         self.current_iteration_id = iteration_id
 
         # Setup symbolic links
-        self._setup_symlinks(iteration_path)
+        self._setup_iteration_symlinks(iteration_path)
 
         # Copy .tsx files from previous iteration if it exists
         if self.previous_iteration_path and self.previous_iteration_path.exists():
@@ -367,7 +413,7 @@ class WorkspaceManager:
                 shutil.copytree(item, stable_dir / item.name)
         
         # Setup symbolic links
-        self._setup_symlinks(stable_dir)
+        self._setup_iteration_symlinks(stable_dir)
         
         logger.info(f"[WorkspaceManager.populate_stable] Stable directory populated at: {stable_dir}")
         return stable_dir
@@ -400,7 +446,7 @@ class WorkspaceManager:
         self.reset_iterations()
         logger.info(f"All iteration related paths are reset. Workspace manager is ready for next synthesis.")
 
-    def _setup_symlinks(self, target_dir: Path):
+    def _setup_iteration_symlinks(self, target_dir: Path):
         """Sets up symbolic links to project-level files and directories."""
         # Symbolic links should include schematic_images/ dir, scud file and pin mapping file.
         
@@ -490,8 +536,8 @@ class WorkspaceManager:
 
         return {
             "project_id": self.project_id,
-            "project_root_path": str(self.project_root) if self.project_root else None,
-            "project_contents": [item.name for item in self.project_root.iterdir()] if self.project_root else [],
+            "project_manifest": self.project_manifest,
+            # VAP information
             "current_iteration_path": str(self.current_iteration_path) if self.current_iteration_path else None,
             "previous_iteration_path": str(self.previous_iteration_path) if self.previous_iteration_path else None,
             "iteration_count": self._iteration_count if hasattr(self, "_iteration_count") else 0,

@@ -24,14 +24,15 @@ def verify_checksum(file_path: Path, expected_checksum: str) -> bool:
         logger.error(f"Error verifying checksum for {file_path}: {e}")
         return False
 
-def restore_project_from_manifest(zip_temp_dir: Path, output_dir: Path) -> bool:
+def restore_project_from_manifest(zip_temp_dir: Path, output_dir: Path) -> dict:
     """
     Reconstruct the directory structure based on the manifest file found in zip_temp_dir.
     """
-    manifest_files = list(zip_temp_dir.glob("*.json"))
+    
+    manifest_files = list(zip_temp_dir.rglob("*.json"))
     if not manifest_files:
         logger.error(f"No manifest JSON file found in {zip_temp_dir}")
-        return False
+        return {"project_created": False, "manifest": None}
     
     if len(manifest_files) > 1:
         logger.warning(f"Multiple JSON files found in {zip_temp_dir}, using the first one: {manifest_files[0]}")
@@ -43,9 +44,11 @@ def restore_project_from_manifest(zip_temp_dir: Path, output_dir: Path) -> bool:
             manifest = json.load(f)
     except Exception as e:
         logger.error(f"Failed to read manifest file: {e}")
-        return False
+        return {"project_created": False, "manifest": None}
+    
+    project_name = manifest.get("metadata").get("project_name")
+    source_dir: Path = zip_temp_dir / project_name
 
-    source_dir = zip_temp_dir
     modules = manifest.get("modules", {})
     
     logger.info(f"Restoring project to: {output_dir}")
@@ -54,13 +57,21 @@ def restore_project_from_manifest(zip_temp_dir: Path, output_dir: Path) -> bool:
     errors = 0
 
     for module_name, files in modules.items():
+        # Determine the module root directory
+        if module_name == "root":
+            module_root = output_dir
+        elif module_name == "lib":
+            module_root = output_dir / "lib"
+        else:
+            module_root = output_dir / module_name
+
         for file_key, file_info in files.items():
             file_name = file_info['name']
             rel_path = file_info['rel_path']
             expected_checksum = file_info.get('checksum', '')
 
             current_file_path = source_dir / file_name
-            target_folder = output_dir / rel_path
+            target_folder = module_root / rel_path
             target_file_path = target_folder / file_name
 
             if not current_file_path.exists():
@@ -87,7 +98,7 @@ def restore_project_from_manifest(zip_temp_dir: Path, output_dir: Path) -> bool:
     
     if errors > 0:
         logger.warning(f"Issues encountered: {errors}")
-        return False
+        return {"project_created": False, "manifest": manifest}
     else:
         logger.info("All files restored and verified successfully.")
-        return True
+        return {"project_created": True, "manifest": manifest}
