@@ -194,7 +194,7 @@ export class VHLRuntime implements RuntimeSender {
 
                 // Move project initialization to COWWorkspaceManager
                 try {
-                    await COWWorkspaceManager.initializeProject(projectDir);
+                    await COWWorkspaceManager.initializeProject(projectDir, workspace_info?.project_manifest);
                 } catch (error: any) {
                     this.sendError("TSCI_INIT_FAILED", error.message);
                     break;

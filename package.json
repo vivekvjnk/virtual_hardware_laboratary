@@ -13,7 +13,8 @@
     "start:workspace": "tsx src/workspace/index.ts",
     "start:ana": "tsx src/mcp/ana/index.ts",
     "start:ui_snapshot": "tsx src/mcp/ui_snapshot/index.ts",
-    "test": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand",
+    "test": "vitest",
+    "test:jest": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand",
     "clean": "rm -rf dist"
   },
   "dependencies": {
@@ -42,7 +43,8 @@
     "ts-jest": "^29.1.2",
     "ts-node": "^10.9.2",
     "tsx": "^4.21.0",
-    "typescript": "^5.4.0"
+    "typescript": "^5.4.0",
+    "vitest": "^1.4.0"
   },
   "engines": {
     "node": ">=20.0.0"

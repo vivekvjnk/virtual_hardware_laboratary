@@ -2,6 +2,8 @@ import { spawn, ChildProcess } from "child_process";
 import * as path from "path";
 import * as http from "http";
 import httpProxy from "http-proxy";
+import * as fs from "fs/promises";
+import * as crypto from "crypto";
 import { randomUUID } from "crypto";
 import { RuntimeSender } from "./types.js";
 
@@ -122,7 +124,7 @@ export class VHLWebUI {
                 let outputBuffer = "";
                 let isReady = false;
 
-                const checkReady = (chunk: string) => {
+                const checkReady = async (chunk: string) => {
                     if (isReady) return;
                     outputBuffer += chunk;
                     process.stdout.write(`[tsci dev] ${chunk}`);
@@ -152,7 +154,8 @@ export class VHLWebUI {
                             payload: {
                                 url: reloadUrl,
                                 project_path: projectPath,
-                                circuit_name: circuitName
+                                circuit_name: circuitName,
+                                manifest: await this.generateManifest(fullPath)
                             }
                         });
                         resolve();
@@ -216,6 +219,40 @@ export class VHLWebUI {
             });
         } catch (error: any) {
             console.error(`[VHLWebUI] Error launching snapshots capture: ${error.message}`);
+        }
+    }
+
+    private async generateManifest(rootDir: string): Promise<any> {
+        const manifest: any = {};
+        try {
+            const items = await fs.readdir(rootDir);
+            for (const item of items) {
+                // Ignore hidden files and specific folders to avoid bloat
+                if (item.startsWith('.') && item !== '.vhl_eval') continue;
+                if (item === 'node_modules') continue;
+
+                const itemPath = path.join(rootDir, item);
+                const stats = await fs.stat(itemPath);
+
+                if (stats.isDirectory()) {
+                    manifest[item] = await this.generateManifest(itemPath);
+                } else {
+                    manifest[item] = await this.getFileHash(itemPath);
+                }
+            }
+        } catch (error) {
+            console.error(`[VHLWebUI] Error generating manifest for ${rootDir}:`, error);
+            return "ACCESS_DENIED";
+        }
+        return manifest;
+    }
+
+    private async getFileHash(filePath: string): Promise<string> {
+        try {
+            const content = await fs.readFile(filePath);
+            return crypto.createHash('sha256').update(content).digest('hex');
+        } catch (error) {
+            return "HASH_ERROR";
         }
     }
 
