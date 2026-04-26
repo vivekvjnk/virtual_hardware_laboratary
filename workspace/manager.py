@@ -106,7 +106,7 @@ class WorkspaceManager:
         
         # Ensure other standard directories exist or at least we know about them
         (self.project_root / "Stable").mkdir(exist_ok=True)
-        (self.project_root / "UserArtefacts").mkdir(exist_ok=True)
+        (self.project_root / "resources").mkdir(exist_ok=True)
         (self.project_root / "Archives").mkdir(exist_ok=True)
         
         logger.info(f"[WorkspaceManager.load_project] Project loaded: {self.project_id} at {self.project_root}")
@@ -126,7 +126,7 @@ class WorkspaceManager:
         # Create Iterations/ and Stable/ (with no contents inside them)
         (self.project_root / "Iterations").mkdir(exist_ok=True)
         (self.project_root / "Stable").mkdir(exist_ok=True)
-        (self.project_root / "UserArtefacts").mkdir(exist_ok=True)
+        (self.project_root / "resources").mkdir(exist_ok=True)
         (self.project_root / "Archives").mkdir(exist_ok=True)
         
         
@@ -170,7 +170,7 @@ class WorkspaceManager:
         # Ensure Iterations/ and Stable/ exist
         (self.project_root / "Iterations").mkdir(exist_ok=True)
         (self.project_root / "Stable").mkdir(exist_ok=True)
-        (self.project_root / "UserArtefacts").mkdir(exist_ok=True)
+        (self.project_root / "resources").mkdir(exist_ok=True)
         (self.project_root / "Archives").mkdir(exist_ok=True)
             
         logger.info(f"[WorkspaceManager.register_project_root] Project root registered at: {self.project_root}")
@@ -194,7 +194,7 @@ class WorkspaceManager:
 
         logger.info(f"[WorkspaceManager.add_project_files] {files} added to target directory: {target_dir}")
     
-    def add_ref_schematic_image(self, image_path: str, target_dir: str = "UserArtefacts"):
+    def add_ref_schematic_image(self, image_path: str, target_dir: str = "resources"):
         """Add a reference schematic image to the project root."""
         self.add_project_files([image_path], target_dir)
         
@@ -467,13 +467,13 @@ class WorkspaceManager:
         is_synthesis_completed = False
         if self.project_root:
             has_schematic_images = (self.project_root / "schematic_images").exists() and (self.project_root / "schematic_images").is_dir()
-            has_user_artefacts = (self.project_root / "UserArtefacts").exists() and (self.project_root / "UserArtefacts").is_dir()
+            has_user_artefacts = (self.project_root / "resources").exists() and (self.project_root / "resources").is_dir()
             scud_files = list(self.project_root.glob("*.scud"))
             
-            # Also check if UserArtefacts has any images
+            # Also check if resources has any images
             has_images = False
             if has_user_artefacts:
-                has_images = any(f.suffix.lower() in ['.png', '.jpg', '.jpeg'] for f in (self.project_root / "UserArtefacts").iterdir() if f.is_file())
+                has_images = any(f.suffix.lower() in ['.png', '.jpg', '.jpeg'] for f in (self.project_root / "resources").iterdir() if f.is_file())
 
             logger.info(f"[WorkspaceManager.get_workspace_info] has_schematic_images: {has_schematic_images}, has_user_artefacts: {has_user_artefacts}, has_images: {has_images}, scud_files: {scud_files}")
 

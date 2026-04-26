@@ -782,8 +782,8 @@ class AOSM:
         if not project_root:
             raise ValueError("Project root not initialized")
 
-        # Save raw image to project root under UserArtefacts/
-        user_artefacts_dir = project_root / "UserArtefacts"
+        # Save raw image to project root under resources/
+        user_artefacts_dir = project_root / "resources"
         user_artefacts_dir.mkdir(exist_ok=True)
         raw_image_path = user_artefacts_dir / f"{image_id}.png"
         

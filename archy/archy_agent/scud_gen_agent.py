@@ -151,5 +151,5 @@ if __name__ == "__main__":
     archy_build_scud(
         module_name="bq79616",
         workspace=Path("./image_to_schematic/agent_1/workspace"),
-        image_path=Path("./image_to_schematic/agent_1/workspace/UserArtefacts/bq79616.png"),
+        image_path=Path("./image_to_schematic/agent_1/workspace/resources/bq79616.png"),
     )

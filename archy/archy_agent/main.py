@@ -117,8 +117,8 @@ def prepare_archy_workspace(workspace_path: Union[str, Path], image_id: str) -> 
     Returns the path to the preprocessed image.
     """
     workspace = Path(workspace_path).resolve()
-    source_image_path = workspace / "UserArtefacts" / f"{image_id}.png"
-    processed_image_path = workspace / "UserArtefacts" / f"{image_id}_preprocessed.png"
+    source_image_path = workspace / "resources" / f"{image_id}.png"
+    processed_image_path = workspace / "resources" / f"{image_id}_preprocessed.png"
     output_dir = workspace / "schematic_images" / image_id
 
     logger.info(f"[prepare_archy_workspace] Preparing workspace for image_id: {image_id}")

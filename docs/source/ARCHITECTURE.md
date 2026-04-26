@@ -151,7 +151,7 @@ The SCUD is the core data contract between Archy, Librarian, and ANA.
 ## 7. Workspace & Iteration Management
 The `WorkspaceManager` implements a **Copy-on-Write (CoW)** pattern for managing circuit refinements.
 
--   **Base State**: The project root contains `Stable/`, `UserArtefacts/`, and `lib/`.
+-   **Base State**: The project root contains `Stable/`, `resources/`, and `lib/`.
 -   **Iterations**: Each synthesis or correction attempt is isolated in a new directory `iterations/iteration_<uuid>_<i>/`.
 -   **Commitment**: Only when the user or the evaluation system (VAP) accepts a design is the iteration content promoted to the `Stable/` directory.
 -   **Archives**: Rejected or abandoned iterations are moved to `archives/` to prevent workspace clutter while maintaining a history of attempts.
