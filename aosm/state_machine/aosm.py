@@ -268,6 +268,7 @@ class AOSM:
             # Transition to IDLE state
             await self.transition_to(AOSMState.IDLE, f"Project {project_id} created successfully")
 
+        # TODO : Outdated. Needs to be refactored to align with new project structure
         elif event.type == EventType.LOAD_PROJECT:
             payload = event.payload or {}
             project_id = payload.get("project_id")

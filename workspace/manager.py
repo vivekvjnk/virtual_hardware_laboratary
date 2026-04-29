@@ -61,7 +61,8 @@ class WorkspaceManager:
         """Lists all project IDs available in the workspace."""
         if not self.workspace_root.exists():
             return []
-        return [d.name for d in self.workspace_root.iterdir() if (d.is_dir() and d.name != ".sync_scratch")]
+        support_dirs = [".sync_scratch",".zip_temp"] # directories to ignore in the workspace listing
+        return [d.name for d in self.workspace_root.iterdir() if (d.is_dir() and d.name not in support_dirs)]
 
     # TODO: Adapt this method according to new project creation flow. DO NOT implement until project creation from zip is stable and tested to avoid blocking other developments.
     def load_project(self, project_id: str) -> Path:

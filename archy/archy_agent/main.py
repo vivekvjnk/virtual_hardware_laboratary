@@ -221,6 +221,7 @@ def orchestrate_archy(
     scud_file = workspace / f"{module_name}.scud"
     if not scud_file.exists():
         raise RuntimeError(f"Final verification failed: SCUD document not found at {scud_file}")
+        # TODO If this happens, ask agent to rename the generate SCUD file to match the expected naming convention
     
     logger.info(f"[orchestrate_archy] Workflow completed successfully. SCUD document generated: {scud_file}")
     return scud_file
