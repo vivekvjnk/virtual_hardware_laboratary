@@ -39,3 +39,11 @@ class AgentState:
     session_id: str
     status: str = "INITIALIZED"
     internal_memory: Dict[str, Any] = field(default_factory=dict)
+
+@dataclass
+class AgentContext:
+    workspace_handle: Any = None
+    tool_registry: Any = None
+    llm_adapter: Any = None
+    persistent_memory_handle: Any = None
+    configuration: Dict[str, Any] = field(default_factory=dict)

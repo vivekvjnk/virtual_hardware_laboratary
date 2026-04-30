@@ -22,7 +22,7 @@ The `vhl-agent-backend` currently employs a mix of orchestration patterns, rangi
 | Agent/Component | Current Implementation | Core Responsibility |
 | :--- | :--- | :--- |
 | **AOSM** | Monolithic State Machine (`aosm.py`) | Global orchestration, project lifecycle, and cross-agent coordination. |
-| **Archy** | Procedural Workflow (`archy_agent/main.py`) | SCUD generation from schematic images and documentation. |
+| **Archy** | URP Agent (`urp_scud_gen_agent.py`) | SCUD generation from schematic images and documentation. |
 | **Librarian** | Class-based Agent (`librarian_agent/agent.py`) | Component resolution and library mapping within SCUD files. |
 | **ANA-D** | Multi-level State Machine (`ana_sm.py`) | Circuit synthesis, error correction, and validation loop management. |
 | **ANA Workers** | Functional Workers (W1, W2, Observer) | Domain-specific tasks (code gen, validation, observation). |
@@ -32,12 +32,12 @@ The `vhl-agent-backend` currently employs a mix of orchestration patterns, rangi
 ## 3. Mapping to URP Regime
 
 ### 3.1 Archy (Architect Agent)
-*   **Current State**: Currently a blocking procedural call (`orchestrate_archy`). It uses the OpenHands SDK internally but is treated as a "one-shot" task by AOSM.
-*   **URP Mapping**:
+*   **Current State**: Successfully migrated to URP (`urp_scud_gen_agent.py`). It utilizes a stateful `Conversation` object and externalized system prompts.
+*   **URP Implementation**:
     *   **AgentDescriptor**: `id="vhl.archy.v1"`, `capabilities=["SCUD_GENERATION", "SCUD_REFINEMENT"]`.
-    *   **AgentContext**: Injected `FileEditorTool` and `schematic_images` workspace handle.
-    *   **Process Logic**: The logic in `scud_gen_agent.py` moves into the `process()` method.
-    *   **State**: Persistent state allows Archy to handle "Retry" requests with memory of previous attempts.
+    *   **AgentContext**: Mandatory `module_name`, `workspace`, and `image_path` provided via `context.configuration`.
+    *   **Process Logic**: Lightweight `process()` method that forwards raw user messages to a persistent `Conversation`.
+    *   **State**: Maintains `self.llm_messages` history and `self.conversation` across multiple mailbox invocations.
 
 ### 3.2 Librarian Agent
 *   **Current State**: A class-based implementation that wraps OpenHands SDK. Already utilizes an `AgentContext`-like structure for MCP configuration.
@@ -77,30 +77,43 @@ Currently, AOSM directly calls agent logic (e.g., `await self._run_archy(...)`).
 | **Concurrency** | Some agents run in threads via `asyncio.to_thread`. | Agents should ideally run as dedicated `asyncio.Task` instances with their own event loops (Standard URP Scheduler). |
 | **Capabilities** | Hardcoded in AOSM dispatch logic. | Agents must declare capabilities to allow dynamic discovery. |
 
-## 6. Conclusion
+---
 
-The current VHL architecture is highly compatible with the URP regime, particularly the **ANA-D** module. The primary effort will involve refactoring **Archy** and **Librarian** from procedural/class wrappers into stateful `AbstractURPAgent` subclasses, and evolving **AOSM** into a message-routing runtime.
+## 6. Migration Guidance (Lessons from Archy)
 
+The migration of the Archy agent from a procedural OpenHands wrapper to a URP primitive provided several critical insights for future agent transitions.
 
+### 6.1 Instruction Externalization (Prompt Engineering)
+*   **Insight**: In the procedural version, task instructions were hardcoded in Python as f-strings (`user_msg`).
+*   **URP Guidance**: Move all "crystallized" instructions, guidelines, and tool usage rules into a `.j2` system prompt file.
+*   **Implementation**: Use `system_prompt_kwargs` to inject dynamic paths (e.g., `{{ datasheet_path }}`) at initialization. This makes the code cleaner and the agent's behavior easier to tune without modifying Python logic.
+
+### 6.2 Stateful vs. Ephemeral Initialization
+*   **Insight**: Initially, the conversation was recreated per message.
+*   **URP Guidance**: Initialize the heavy objects (`Agent`, `Conversation`, `LLM`) exactly once inside `_on_initialize`.
+*   **Benefit**: Ensures that the internal LLM context (short-term memory) and tool state persist across multiple `process()` calls, allowing for iterative refinement (e.g., "now add a level shifter").
+
+### 6.3 Async/Sync Bridging
+*   **Insight**: Many external SDKs (like OpenHands) provide blocking synchronous methods (`conversation.run()`).
+*   **URP Guidance**: Always wrap blocking execution calls in `asyncio.to_thread()`.
+*   **Why**: This prevents a single agent from stalling the entire URP Runtime's event loop, ensuring the mailbox remains responsive.
+
+### 6.4 Defensive Initialization
+*   **URP Guidance**: Perform strict validation of the `AgentContext` configuration inside `_on_initialize`.
+*   **Pattern**: Raise `ValueError` if mandatory fields (like `workspace` or `model_id`) are missing. This provides immediate feedback during the `spawn` phase rather than failing silently during `process()`.
+
+### 6.5 Capturing Telemetry via Callbacks
+*   **URP Guidance**: Implement SDK callbacks (e.g., `LLMConvertibleEvent`) to capture raw LLM outputs and tool interactions.
+*   **Benefit**: Allows the URP `process()` method to return a structured response containing the final assistant message or error details, which are then automatically emitted as `TASK_COMPLETED` events.
+
+---
+
+## 7. Conclusion
+
+The transition of **Archy** proves that even complex, multi-step agents can be successfully "trapped" within the URP boundary. The primary effort in future migrations (ANA workers, Librarian) should focus on **Context Injection** and **Prompt Externalization**, rather than rewriting core reasoning logic.
+
+---
 # Reference resources
-Viewed URP.md:1-336
-Listed directory vhl-agent-backend
-Listed directory urp
-Listed directory aosm
-Listed directory ana
-Listed directory archy
-Listed directory librarian
-Searched for "URPAgent"
-Searched for "AbstractURP"
-Listed directory ana_agent
-Listed directory archy_agent
-Listed directory librarian_agent
-Viewed abstract_urp.py:1-197
-Viewed main.py:1-279
-Viewed scud_gen_agent.py:1-156
-Viewed agent.py:1-114
-Listed directory state_machine
-Viewed ana_sm.py:1-569
-Listed directory state_machine
-Viewed aosm.py:1-800
-Viewed aosm.py:801-931
+- Migrated Archy to URP (April 2026)
+- Implemented `ArchyURPAgent` with persistent conversation state.
+- Externalized `sys_prompt_gemini.j2` with Jinja2 support.

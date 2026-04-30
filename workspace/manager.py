@@ -202,7 +202,7 @@ class WorkspaceManager:
                 
         return manifest
     
-    def setup_modules(self, project_root_path: Path, modules: List[str] = ["main_module"]):
+    def setup_modules(self, project_root_path: Path, modules: List[str] = ["main_module"],system_boundary_doc:str="system-boundary.md"):
         """Sets up the main_module directory structure for a new project."""
         for module in modules:
             # Module directory creation logic
@@ -217,6 +217,10 @@ class WorkspaceManager:
             lib_link = module_dir / "lib"
             if not lib_link.exists():
                 os.symlink(project_root_path / "lib", lib_link)
+            # Create softlink to system_boundary_doc file
+            system_boundary_link = module_dir/system_boundary_doc
+            if not system_boundary_link.exists():
+                os.symlink(project_root_path/system_boundary_doc, system_boundary_link)
 
             logger.info(f"[WorkspaceManager.setup_modules] Main module structure created at: {module_dir}")
         

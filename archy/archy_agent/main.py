@@ -12,7 +12,7 @@ load_dotenv()  # Load environment variables from .env file
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("archy_orchestrator")
 
-def _preprocess_image(image_path: Path, output_path: Path, contrast_factor: float = 1.3):
+def _convert_to_grayscale_n_increase_contrast(image_path: Path, output_path: Path, contrast_factor: float = 1.3):
     """Preprocess image by converting to grayscale and increasing contrast."""
     logger.info(f"Preprocessing image: {image_path} -> {output_path}")
     try:
@@ -110,43 +110,73 @@ def crop_image_into_segments(image_path: Path, output_dir: Path, num_segments: i
                 
     logger.info(f"Successfully created {num_segments} segments and overview in {output_dir}")
 
-def prepare_archy_workspace(workspace_path: Union[str, Path], image_id: str) -> Path:
+def prepare_archy_workspace(workspace_path: Union[str, Path]) -> bool:
     """
     Handles all deterministic workspace and artifact preparation steps.
     Consolidates path resolution, image preprocessing, and segmentation.
-    Returns the path to the preprocessed image.
+    Steps:
+    1. Read manifest from workspace to identify all modules in the project.
+        - Find all directories with Iterations/ subdirectory in it. They are the modules.
+    2. Start iterating through modules. For each module:
+        a. Check if {module_name}/resources/schematic_images/ directory contains any images.
+        b. If yes, convert each image to grayscale and increase contrast, then save in place of original image.
+        c. For each preprocessed image, check if segments already exist in {module_name}/resources/schematic_images/{image_name}_segments/. If not, segment the image into 4 overlapping crops(using crop_image_into_segments) and save them in that directory.
+    3. Return if all steps completed successfully, or raise error if any step fails.
     """
     workspace = Path(workspace_path).resolve()
-    source_image_path = workspace / "resources" / f"{image_id}.png"
-    processed_image_path = workspace / "resources" / f"{image_id}_preprocessed.png"
-    output_dir = workspace / "schematic_images" / image_id
-
-    logger.info(f"[prepare_archy_workspace] Preparing workspace for image_id: {image_id}")
+    logger.info(f"[prepare_archy_workspace] Preparing workspace at: {workspace}")
     
-    if not source_image_path.exists():
-        raise FileNotFoundError(f"Source image not found at {source_image_path}")
+    if not workspace.exists():
+        raise FileNotFoundError(f"Workspace not found at {workspace}")
 
-    # Step 1: Image Preprocessing (Idempotent)
-    if not processed_image_path.exists():
-        logger.info(f"[prepare_archy_workspace] Preprocessed image not found. Generating...")
-        _preprocess_image(source_image_path, processed_image_path)
-    else:
-        logger.info(f"[prepare_archy_workspace] Preprocessed image already exists at {processed_image_path}")
+    # Step 1: Identify all modules (directories with 'Iterations' subfolder)
+    modules = []
+    for item in workspace.iterdir():
+        if item.is_dir() and (item / "Iterations").exists():
+            modules.append(item)
+    
+    if not modules:
+        logger.warning(f"No modules found in {workspace} (no directories with 'Iterations/' subfolder).")
+        return False
 
-    # Step 2: Image Segmentation (Idempotent)
-    # Check if segments already exist by checking if output_dir has files
-    if not output_dir.exists() or not any(output_dir.iterdir()):
-        logger.info(f"[prepare_archy_workspace] Segments not found. Segmenting image...")
-        crop_image_into_segments(
-            image_path=processed_image_path,
-            output_dir=output_dir,
-            num_segments=4,
-            overlap_pct=0.1
-        )
-    else:
-        logger.info(f"[prepare_archy_workspace] Segments already exist in {output_dir}")
-
-    return processed_image_path
+    # Step 2: Iterate through modules
+    for module_path in modules:
+        module_name = module_path.name
+        logger.info(f"Processing module: {module_name}")
+        
+        images_dir = module_path / "resources" / "schematic_images"
+        if not images_dir.exists() or not images_dir.is_dir():
+            logger.info(f"No schematic_images directory found for module {module_name}, skipping.")
+            continue
+            
+        # Supported image extensions
+        extensions = (".png", ".jpg", ".jpeg")
+        
+        for image_file in images_dir.iterdir():
+            if image_file.suffix.lower() in extensions:
+                # Skip if it's a directory (unlikely but possible with weird naming)
+                if image_file.is_dir():
+                    continue
+                
+                # a & b. Convert to grayscale and increase contrast, save in place
+                # Note: This follows docstring instructions.
+                logger.info(f"Preprocessing image: {image_file}")
+                _convert_to_grayscale_n_increase_contrast(image_file, image_file)
+                
+                # c. Segment the image if segments don't already exist
+                segments_dir = images_dir / f"{image_file.stem}_segments"
+                if not segments_dir.exists() or not any(segments_dir.iterdir()):
+                    logger.info(f"Generating segments for {image_file.name} in {segments_dir}")
+                    crop_image_into_segments(
+                        image_path=image_file,
+                        output_dir=segments_dir,
+                        num_segments=4,
+                        overlap_pct=0.1
+                    )
+                else:
+                    logger.info(f"Segments already exist for {image_file.name} in {segments_dir}")
+                    
+    return True
 
 def _archy_build_scud_stub(image_id: str, workspace_path: Path):
     """Stub implementation of archy_build_scud for faster validation."""
