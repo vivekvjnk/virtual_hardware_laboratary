@@ -1,0 +1,139 @@
+{
+    "modules": {
+        "microcontroller-module": {
+            "system-boundary.md": "956bc4edb08096f4459d3d00f65cab7bb3b21ef02d8cda8efc19c48accdb16dc",
+            "lib": {},
+            "resources": {
+                "tms75012-reference-manual.md": "c116d2e120b23cdcd3c81394b9050d2a56acd4210e0023f4d71cf70dc4a43f38",
+                "tms570ls1227-datasheet.md": "8a9506f7078f7b3796b8e15ce374d5198c236b9228ee0ad0aacf80b295077f23",
+                "schematic_images": {
+                    "LAUNCHXL2_TMS57012_RM46.pdf": "e49cac64e28c83f979c47685d8497ac6d2af0376ac5fdd47327a98551d93b002"
+                },
+                "TMS57012-launchpad-eval-board.md": "38a5268e684659b927d183b907563e80b2acba118ee087da7658817b449b5a87"
+            },
+            "Stable": {},
+            "Iterations": {},
+            "Archives": {}
+        },
+        "low-voltage-power-supply": {
+            "system-boundary.md": "956bc4edb08096f4459d3d00f65cab7bb3b21ef02d8cda8efc19c48accdb16dc",
+            "lib": {},
+            "resources": {
+                "ucc28750-eval-board.md": "ce5ce906320b9ad36ced5f09e015155f96aeb9e35b320dafab934708b38808b4",
+                "ucc28750-datasheet.md": "bc0a2458ce65a755395490d700d0183b29d0527532a186e69a1ead7d2df9a8a5",
+                "schematic_images": {
+                    "ucc28750_eval_board_segments": {
+                        "segments_overview_with_bboxes.png": "691eb15bdeca05a9c4f53598adeaa5ac74257b98c7ec0c2ba8d36741e7bf0d86",
+                        "segment_3.png": "7fea0f3b3994ddaabd4914ad9127e505c7caeecb359305ce89f38f723acb0996",
+                        "segment_2.png": "40c26127fea60f2c202cbb34e2e9f638d476e797d90b153e446bfdb71bb6a026",
+                        "segment_1.png": "f45e0019e0fc1bf495e4957b567894c11b74aa9de8c3b9e60208525aabff7fcc",
+                        "segment_0.png": "224aece9e3622ee9dfe0237862861b6787beba2362e7c9cf831960178b22d2f5"
+                    },
+                    "ucc28750_eval_board.png": "d9caec91908a0866b56fe230296960861e86cdca1e6d7447bba70b411317e328"
+                }
+            },
+            "Stable": {},
+            "Iterations": {},
+            "Archives": {}
+        },
+        "high-voltage-power-supply": {
+            "system-boundary.md": "956bc4edb08096f4459d3d00f65cab7bb3b21ef02d8cda8efc19c48accdb16dc",
+            "lib": {},
+            "resources": {
+                "ucc28881-eval-board.md": "2ca60b494f8dbc2fc8dd922347b9fdc66b2da915502aac0fed81f95803578ae1",
+                "ucc28881-datasheet.md": "8b3239a111093c5b4c794e32d16e6c9db1a6ae3c8e0a7f250ddee9b5c9316d50",
+                "schematic_images": {
+                    "ucc28881_eval_board_segments": {
+                        "segments_overview_with_bboxes.png": "f7b3ad0d07171487561b16f8b62accba1fee42e263222b9666447d5b051a2adc",
+                        "segment_3.png": "c5f651a537c962dc80fa2c70698616a1a07725b62c46a87f17eb97ed7b7fd671",
+                        "segment_2.png": "a506d728169c9c58c84801b43ceb62b5b2fedbc19323d4a30ccf94350cf1621d",
+                        "segment_1.png": "b16cf27496f522763c29822e389e8dcb7669d5c1250baf4dfa0bf8fc5b15d5b5",
+                        "segment_0.png": "f6cf09336a305f747e0dff680d556f1f3d8dffbd2afe7d1615750da55c2da69b"
+                    },
+                    "ucc28881_eval_board.png": "84bfe0a8eb99365939c81e9280bcaf32da599788c7c6797526f4c6d0757ef715"
+                }
+            },
+            "Stable": {},
+            "Iterations": {},
+            "Archives": {}
+        },
+        "current-sensing": {
+            "system-boundary.md": "956bc4edb08096f4459d3d00f65cab7bb3b21ef02d8cda8efc19c48accdb16dc",
+            "lib": {},
+            "resources": {
+                "schematic_images": {
+                    "am130x_eval_board_segments": {
+                        "segments_overview_with_bboxes.png": "e8c2f834e19999c736c353d68f6c9714682619868de13d807ca8626d9c013451",
+                        "segment_3.png": "5c0bc0db536801b955b0f5e007e1877699408b650dceedeecaf77709857ab5d9",
+                        "segment_2.png": "7967bad6c3b7b0e1ab1fe96456d92b95e45d67d595238170b3f0fc7a59f18539",
+                        "segment_1.png": "14f58c8f2fa966035582f0f8bc68c25340fd585d609e7d6fad9eec450bec8a64",
+                        "segment_0.png": "88122e5a1b1c30ae8fa9cdd21dce53722cb1e748383c4328ceb734a822ef2bd5"
+                    },
+                    "am130x_eval_board.png": "0684578d39259767ca2f2958011dca19be7a78f54098e8e81425121f87985e0d"
+                },
+                "amc130x-eval-board.md": "08f4e97a58a88be7ab688d71116353b51886994d5fc90d8fcd18050eb67f046f",
+                "amc1301-datasheet.md": "0e5c7dd2eebd784654ce1e03582e6ecfac1ca79342b82f5bebc3fd45b75c4ff1"
+            },
+            "Stable": {},
+            "Iterations": {},
+            "Archives": {}
+        },
+        "communication-bridge": {
+            "system-boundary.md": "956bc4edb08096f4459d3d00f65cab7bb3b21ef02d8cda8efc19c48accdb16dc",
+            "lib": {},
+            "resources": {
+                "schematic_images": {
+                    "bq79600_eval_part_1_segments": {
+                        "segments_overview_with_bboxes.png": "3e959e92956d0d3e99961ed0ea914f6a534976852f29a27542d6e35e419fc28f",
+                        "segment_3.png": "44ccb4b1ced538a4a753d32d683fcf37b1833e0a7dfc6916d103f48c349e6e8c",
+                        "segment_2.png": "6d3a31d91c15e4190e120d6adf6a3e49a3a9f1b69cfaa5fd534131911e0b051d",
+                        "segment_1.png": "50233bd6508dcac78e2166a36faf3caac156b2b5d0f36af1cd5ac41bff7f621c",
+                        "segment_0.png": "340741ad3c8187a7e1486fb11f5ced85be3857947ea87cd2f212704f14a20b25"
+                    },
+                    "bq79600_eval_part_2_segments": {
+                        "segments_overview_with_bboxes.png": "72a88a4570eb0af82efc3fa0047ad0207e9cb5702b62386559a99e67fe8843ac",
+                        "segment_3.png": "72a7664a81a29fb575a63dc05b1e4e62d9bce40335a60094e2d35b1993b9cbe9",
+                        "segment_2.png": "cc71de466a6c20752bbce795d42c1a21db68b69897d9d5c23b020c17034c89fb",
+                        "segment_1.png": "5acecfe8e6e4f1cd8f02885dad299adee9bcef5db951b4cce77de0099c370b3f",
+                        "segment_0.png": "b09f1dc88dd3679a53536b311ae6e393262ace564a8db833e5aad1672af0c9a8"
+                    },
+                    "bq79600_eval_part_2.png": "564ee4f574c82462a649283af285c807feb90733b0d2ecca22a0e5ea59535e8d",
+                    "bq79600_eval_part_1.png": "a1736514ea79701e808c5a89c35944dd15db4179bb4be9833b4c1e8021eccfcd"
+                },
+                "communication-bridge-boundary.md": "3bf2cb9fea440febaf5673d447001ad063b5cdbf17b9662e2474017e8752f26a",
+                "bq79600-q1-datasheet.md": "560a655e5c2cf4e2f19c2dc522a0e1985e5207f51179fdc3544943dcfc681478",
+                "BQ79600-eval-board.md": "0cfa82017631fcf074b6959bdeced4a338425a19eb7c81b27623b70726d8da16"
+            },
+            "Stable": {},
+            "Iterations": {},
+            "Archives": {}
+        },
+        "bms-monitor-module": {
+            "system-boundary.md": "956bc4edb08096f4459d3d00f65cab7bb3b21ef02d8cda8efc19c48accdb16dc",
+            "lib": {},
+            "resources": {
+                "schematic_images": {
+                    "bms-monitor-module_preprocessed_segments": {
+                        "segments_overview_with_bboxes.png": "c4c7a25d2cd9d6b4772262979f191f8a1fa52cf0b00dbbc081de4f9f4d6e3a7f",
+                        "segment_3.png": "1657d1ccbf9599faa6d7d4cf251aa4f29ea3ff98e331964caacf72c5632fbf31",
+                        "segment_2.png": "713a9c5252280a0febf0e87759fc632905a6e207d26b6e730594ca81779d47a1",
+                        "segment_1.png": "cbaec98689d63572935d3751d6a7ef10b454cc625a21a5ac60018934ad386b44",
+                        "segment_0.png": "15c51cd122874edd43f54ed73b79902b41db38a8155f41801badbc60ff9642a3"
+                    },
+                    "bms-monitor-module_preprocessed.png": "58e6f9885e374403f1a5753a9fa94514ec3ddde69d85f86f0885cabcc72cf862"
+                },
+                "bq79616-datasheet.md": "29d9c4bce3c8d577b8be4b53199c507d8ba1262bdfbf1212be556058db295320",
+                "bms-monitor-module-boundary.md": "4c248ba6e7a0382642d3834d7a90032f2770853771d02d0d40eb03d7b323347a",
+                "BQ79616-eval-board.md": "401a878b1ef893ecf343a4015026ef6a0d4ea33b5770047beeeab2a4b738004b"
+            },
+            "Stable": {},
+            "Iterations": {},
+            "Archives": {}
+        }
+    },
+    "root": {
+        "bms-project_77df0190_manifest.json": "898e3728d8b4dafeab26982aa8715974bdc47bf136a679253c8adabfd9e1fcba",
+        "system-boundary.md": "956bc4edb08096f4459d3d00f65cab7bb3b21ef02d8cda8efc19c48accdb16dc",
+        "lib": {}
+    }
+}

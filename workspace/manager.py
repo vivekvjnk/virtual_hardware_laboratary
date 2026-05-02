@@ -30,6 +30,7 @@ class WorkspaceManager:
         self._session_iteration_count: int = 0
         self.current_iteration_id = None
         self.project_manifest = None
+        self.project_modules: List[str] = []
 
         logger.info(f"[WorkspaceManager.__init__] WorkspaceManager initialized with root: {self.workspace_root}")
 
@@ -64,11 +65,11 @@ class WorkspaceManager:
         support_dirs = [".sync_scratch",".zip_temp"] # directories to ignore in the workspace listing
         return [d.name for d in self.workspace_root.iterdir() if (d.is_dir() and d.name not in support_dirs)]
 
-    # TODO: Adapt this method according to new project creation flow. DO NOT implement until project creation from zip is stable and tested to avoid blocking other developments.
+
     def load_project(self, project_id: str) -> Path:
         """
         Loads an existing project from the workspace.
-        Information is derived from the files and subdirectories of the project folder.
+        State variables are reconstructed primarily from the project manifest and then the filesystem.
         """
         project_path = self.workspace_root / project_id
         if not project_path.exists() or not project_path.is_dir():
@@ -77,54 +78,79 @@ class WorkspaceManager:
         self.project_id = project_id
         self.project_root = project_path
         
+        # 1. Try to recover module names from existing manifest file
+        manifest_path = self.project_root / f"{project_id}_manifest.json"
+        if manifest_path.exists():
+            try:
+                with open(manifest_path, 'r') as f:
+                    manifest_data = json.load(f)
+                    self.project_modules = list(manifest_data.get("modules", {}).keys())
+                    logger.info(f"[WorkspaceManager.load_project] Recovered modules from manifest: {self.project_modules}")
+            except Exception as e:
+                logger.error(f"[WorkspaceManager.load_project] Failed to read manifest file: {e}")
+        else:
+            # Fallback for projects without a manifest: Identify modules by looking for 'Iterations' subfolders
+            logger.warning(f"[WorkspaceManager.load_project] Manifest file not found at {manifest_path}. Falling back to filesystem scanning for modules.")
+            self.project_modules = [d.name for d in self.project_root.iterdir() if d.is_dir() and (d / "Iterations").exists()]
+            logger.info(f"[WorkspaceManager.load_project] Inferred modules: {self.project_modules}")
+
+        # 2. Generate manifest and synchronize state
+        self.project_manifest = self._generate_manifest(self.project_root)
+
+        # 3. Reconstruct circuit name
+        # Search priority: 1. Project Root, 2. Modules (starting with 'main_module')
+        scud_files = list(self.project_root.glob("*.scud"))
+        if not scud_files:
+            # Check modules
+            for module in (["main_module"] + [m for m in self.project_modules if m != "main_module"]):
+                module_path = self.project_root / module
+                if module_path.exists():
+                    scud_files = list(module_path.glob("*.scud"))
+                    if scud_files:
+                        break
         
-        # Ensure other standard directories exist or at least we know about them
-        (self.project_root / "Stable").mkdir(exist_ok=True)
-        (self.project_root / "resources").mkdir(exist_ok=True)
-        (self.project_root / "Archives").mkdir(exist_ok=True)
-        
-        # Identify iterations
-        iterations_dir = self.project_root / "Iterations"
-        if iterations_dir.exists():
-            # Get all iteration directories and sort them by iteration number
-            iterations = sorted(
-                [d for d in iterations_dir.iterdir() if d.is_dir() and d.name[:4].isdigit()],
-                key=lambda x: int(x.name[:4])
-            )
-            
-            if iterations:
-                self.current_iteration_path = iterations[-1]
-                if len(iterations) > 1:
-                    self.previous_iteration_path = iterations[-2]
-                
-                # Initialize _iteration_count with the highest number found
-                self._iteration_count = int(self.current_iteration_path.name[:4])
-                logger.info(f"[WorkspaceManager.load_project] Loaded project {project_id}. Latest iteration: {self._iteration_count}")
-            else:
-                self._iteration_count = 0
-                self.current_iteration_path = None
-                self.previous_iteration_path = None
+        if scud_files:
+            self.set_circuit_name(scud_files[0].stem)
+        else:
+            logger.warning(f"[WorkspaceManager.load_project] No .scud file found in project or modules: {self.project_root}")
+
+        # 4. Reconstruct iteration info
+        # Priority: Root Iterations, then modules
+        search_dirs = [self.project_root] + [self.project_root / m for m in self.project_modules]
+        latest_iteration_path = None
+        highest_iteration_count = -1
+
+        for base_dir in search_dirs:
+            iterations_dir = base_dir / "Iterations"
+            if iterations_dir.exists():
+                iterations = sorted(
+                    [d for d in iterations_dir.iterdir() if d.is_dir() and d.name[:4].isdigit()],
+                    key=lambda x: int(x.name[:4])
+                )
+                if iterations:
+                    current_latest = iterations[-1]
+                    count = int(current_latest.name[:4])
+                    if count > highest_iteration_count:
+                        highest_iteration_count = count
+                        latest_iteration_path = current_latest
+                        # Set previous iteration if available in the same directory
+                        if len(iterations) > 1:
+                            self.previous_iteration_path = iterations[-2]
+                        else:
+                            self.previous_iteration_path = None
+
+        if latest_iteration_path:
+            self.current_iteration_path = latest_iteration_path
+            self._iteration_count = highest_iteration_count
+            logger.info(f"[WorkspaceManager.load_project] Reconstructed iteration state. Latest: {self.current_iteration_path.name}")
         else:
             self._iteration_count = 0
             self.current_iteration_path = None
             self.previous_iteration_path = None
-        
-        # If any .scud file is available in the project root, set the circuit name
-        scud_files = list(self.project_root.glob("*.scud"))
-        if scud_files:
-            self.set_circuit_name(scud_files[0].stem)
-        else:
-            logger.warning(f"[WorkspaceManager.load_project] No .scud file found in project root: {self.project_root}")
-        
-        
+
         logger.info(f"[WorkspaceManager.load_project] Project loaded: {self.project_id} at {self.project_root}")
         return self.project_root
 
-    # TODO: Convert this to a generalized orchestrator method.
-    # - Write sub-methods for creating project directory structure under following scenarios:
-    #   - If zip file is provided use create_project_from_zip to create basic project structure
-    #   - If zip flie is not provided, create simple project with "main_module" inside the project directory
-    # - Move module directory creation logic to a separate method. Call that method from sub-methods for creating project.
     def create_project(self, project_id: str, zip_present:bool=False) -> Path:
         """Creates a new project directory structure."""
         self.project_id = project_id
@@ -146,22 +172,20 @@ class WorkspaceManager:
 
         if restoration_result["project_created"]:
             logger.info(f"[WorkspaceManager.create_project] Project created successfully: {project_id}")
-            modules = restoration_result["manifest"]["modules"].keys() if restoration_result["manifest"] else ["main_module"]
+            modules = list(restoration_result["manifest"]["modules"].keys()) if restoration_result["manifest"] else ["main_module"]
             # Filter out "root" and "lib" from modules list as they are not standard modules
-            modules = [m for m in modules if m not in ["root", "lib"]]
-            self.setup_modules(project_root_path=self.project_root, modules=modules)
+            self.project_modules = [m for m in modules if m not in ["root", "lib"]]
+            self.setup_modules(project_root_path=self.project_root, modules=self.project_modules)
         else:
             logger.error(f"[WorkspaceManager.create_project] Project creation failed for: {project_id}")
             # TODO: Implement cleanup and rollback if project creation fails at any step to avoid leaving the workspace in an inconsistent state. DO NOT implement until project creation is stable and tested.
             raise RuntimeError(f"Project creation failed for: {project_id}")
         
-        # Prepare project manifest dictionary in the simplest form
-        self.project_manifest = self._generate_manifest(self.project_root)
         # save manifest to a json file in the project root for future reference
         manifest_path = self.project_root / f"{project_id}_manifest.json"
         try:
             with open(manifest_path, 'w') as f:
-                json.dump(self.project_manifest, f, indent=4)
+                json.dump(self.project_tree, f, indent=4)
             logger.info(f"[WorkspaceManager.create_project] Project manifest created at: {manifest_path}")
         except Exception as e:
             logger.error(f"[WorkspaceManager.create_project] Failed to create project manifest: {e}")
@@ -169,7 +193,63 @@ class WorkspaceManager:
         logger.info(f"[WorkspaceManager.create_project] Project created at: {self.project_root}")
         return self.project_root
     
-    def _get_file_hash(self, file_path, block_size=65536):
+    def update_workspace(self):
+        """Updates the workspace state, such as regenerating the manifest."""
+        if not self.project_root:
+            raise RuntimeError("Project root not set.")
+        
+        # Regenerate manifest to reflect any changes in the filesystem
+        self.project_manifest = self._generate_manifest(self.project_root)
+        
+        # Update project_modules list based on current manifest
+        self.project_modules = list(self.project_manifest.get("modules", {}).keys())
+        
+        logger.info(f"[WorkspaceManager.update_workspace] Workspace updated. Current modules: {self.project_modules}")
+    
+    @property
+    def module_names(self) -> List[str]:
+        """Returns a list of all available module names in the project."""
+        if not self.project_manifest:
+            return []
+        return list(self.project_manifest.get("modules", {}).keys())
+    
+    @property
+    def module_paths(self) -> Dict[str,Path]:
+        """Returns a list of Paths for all available modules in the project."""
+        if not self.project_manifest:
+            return {}
+        module_paths = {}
+        for module_name in self.module_names:
+            module_path = self.project_root / module_name
+            if module_path.exists() and module_path.is_dir():
+                module_paths[module_name]=module_path
+            else:
+                logger.warning(f"Module directory not found for module '{module_name}': expected at {module_path}")
+        return module_paths
+    
+    @property
+    def project_name(self) -> Optional[str]:
+        """Returns the current project name if set."""
+        return self.project_id
+    
+    @property
+    def project_tree(self) -> Dict[str, Any]:
+        """Returns the complete tree structure of the project."""
+        return self.project_manifest if self.project_manifest else {}
+
+    @property
+    def manifest(self) -> Dict[str, Any]:
+        # Update the manifest
+        self.project_manifest = self._generate_manifest(self.project_root)
+        return self.project_manifest
+
+    def get_module_tree(self, module_name: str) -> Dict[str, Any]:
+        """Returns the tree structure of a specific module."""
+        if not self.project_manifest:
+            return {}
+        return self.project_manifest.get("modules", {}).get(module_name, {})
+
+    def _get_file_hash(self, file_path: Path, block_size=65536):
         """Generates a SHA-256 hash for a file."""
         sha256 = hashlib.sha256()
         try:
@@ -180,30 +260,73 @@ class WorkspaceManager:
         except (PermissionError, OSError):
             return "ERROR_ACCESS_DENIED"
 
-    def _generate_manifest(self,root_dir):
-        """Recursively builds a dictionary manifest of the project structure."""
-        manifest = {}
-        
-        # List all items in the current directory
+    def _get_directory_tree(self, directory: Path) -> Dict[str, Any]:
+        """Recursively builds a dictionary representing the directory tree."""
+        tree = {}
         try:
-            items = os.listdir(root_dir)
+            for item in directory.iterdir():
+                if item.is_dir():
+                    tree[item.name] = self._get_directory_tree(item)
+                    logger.debug(f"Directory added to tree: {item.name}")
+                else:
+                    tree[item.name] = self._get_file_hash(item)
+                    logger.debug(f"File added to tree: {item.name}")
         except PermissionError:
             return "FOLDER_ACCESS_DENIED"
+        return tree
 
-        for item in items:
-            item_path = os.path.join(root_dir, item)
-            
-            if os.path.isdir(item_path):
-                # RECURSIVE STEP: Enter the subdirectory
-                manifest[item] = self._generate_manifest(item_path)
+    def _generate_manifest(self, root_dir: Path, module_names: Optional[List[str]] = None) -> Dict[str, Any]:
+        """
+        Builds an authoritative and structured manifest of the project.
+        Organizes contents into 'modules' and 'root' (common files/folders).
+        If module_names is not provided, it uses the ones registered in self.project_modules.
+        """
+        if module_names is None:
+            module_names = self.project_modules
+
+        manifest = {
+            "modules": {},
+            "root": {}
+        }
+        
+        if not root_dir.exists():
+            return manifest
+
+        for item in root_dir.iterdir():
+            if item.is_dir():
+                # A directory is considered a module if it's explicitly identified as one
+                if item.name in module_names:
+                    manifest["modules"][item.name] = self._get_directory_tree(item)
+                else:
+                    manifest["root"][item.name] = self._get_directory_tree(item)
             else:
-                # BASE CASE: Hash the file and store it
-                manifest[item] = self._get_file_hash(item_path)
-                
+                manifest["root"][item.name] = self._get_file_hash(item)
+        logger.debug(f"[WorkspaceManager._generate_manifest] Manifest generated for project at {root_dir}")        
         return manifest
     
-    def setup_modules(self, project_root_path: Path, modules: List[str] = ["main_module"],system_boundary_doc:str="system-boundary.md"):
-        """Sets up the main_module directory structure for a new project."""
+    def create_module_directory(self, module_name: str, dir_path: str) -> Path:
+        """
+        Creates a directory inside a specific module and refreshes the manifest.
+        This allows all file operations to pass through the WorkspaceManager.
+        """
+        if not self.project_root:
+            raise RuntimeError("Project root not set.")
+        
+        module_path = self.project_root / module_name
+        if not module_path.exists():
+            raise FileNotFoundError(f"Module directory not found: {module_path}")
+            
+        target_dir = module_path / dir_path
+        target_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Refresh manifest to reflect the change
+        self.project_manifest = self._generate_manifest(self.project_root)
+        
+        logger.info(f"[WorkspaceManager.create_module_directory] Created directory: {target_dir}")
+        return target_dir
+
+    def setup_modules(self, project_root_path: Path, modules: List[str] = ["main_module"], system_boundary_doc: str = "system-boundary.md"):
+        """Sets up the directory structure for multiple modules in a project."""
         for module in modules:
             # Module directory creation logic
             module_dir = project_root_path / module
@@ -211,18 +334,25 @@ class WorkspaceManager:
             # Create Iterations/ and Stable/ (with no contents inside them)
             (module_dir / "Iterations").mkdir(exist_ok=True)
             (module_dir / "Stable").mkdir(exist_ok=True)
-            (module_dir / "resources").mkdir(exist_ok=True) # resources directory may already exist if created during zip restoration, but mkdir with exist_ok=True will handle that case
+            (module_dir / "resources").mkdir(exist_ok=True)
             (module_dir / "Archives").mkdir(exist_ok=True)
+            
             # Create softlink to lib directory from project root for module to use library imports
             lib_link = module_dir / "lib"
-            if not lib_link.exists():
-                os.symlink(project_root_path / "lib", lib_link)
+            if not os.path.lexists(lib_link):
+                rel_lib_source = os.path.relpath(project_root_path / "lib", lib_link.parent)
+                os.symlink(rel_lib_source, lib_link)
+                
             # Create softlink to system_boundary_doc file
-            system_boundary_link = module_dir/system_boundary_doc
-            if not system_boundary_link.exists():
-                os.symlink(project_root_path/system_boundary_doc, system_boundary_link)
+            system_boundary_link = module_dir / system_boundary_doc
+            if not os.path.lexists(system_boundary_link) and (project_root_path / system_boundary_doc).exists():
+                rel_sys_boundary_source = os.path.relpath(project_root_path / system_boundary_doc, system_boundary_link.parent)
+                os.symlink(rel_sys_boundary_source, system_boundary_link)
 
-            logger.info(f"[WorkspaceManager.setup_modules] Main module structure created at: {module_dir}")
+            logger.info(f"[WorkspaceManager.setup_modules] Module structure created at: {module_dir}")
+        
+        # Refresh manifest after setting up modules
+        self.project_manifest = self._generate_manifest(project_root_path, module_names=modules)
         
     def create_project_from_zip(self, project_id: str)-> Dict[str, Any]:
         """

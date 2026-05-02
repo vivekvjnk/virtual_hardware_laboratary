@@ -8,6 +8,7 @@ dependencies = [
     "httpx",
     "setuptools",
     "vhl-common",
+    "vhl-workspace",
 ]
 
 [build-system]

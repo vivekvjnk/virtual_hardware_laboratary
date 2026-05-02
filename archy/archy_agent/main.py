@@ -4,6 +4,7 @@ import logging
 from typing import Union, Optional
 from pathlib import Path
 from PIL import Image, ImageEnhance, ImageOps, ImageDraw
+from workspace.manager import WorkspaceManager
 
 from dotenv import load_dotenv
 load_dotenv()  # Load environment variables from .env file
@@ -110,38 +111,30 @@ def crop_image_into_segments(image_path: Path, output_dir: Path, num_segments: i
                 
     logger.info(f"Successfully created {num_segments} segments and overview in {output_dir}")
 
-def prepare_archy_workspace(workspace_path: Union[str, Path]) -> bool:
+def prepare_archy_workspace(workspace_manager: WorkspaceManager) -> bool:
     """
     Handles all deterministic workspace and artifact preparation steps.
     Consolidates path resolution, image preprocessing, and segmentation.
     Steps:
-    1. Read manifest from workspace to identify all modules in the project.
-        - Find all directories with Iterations/ subdirectory in it. They are the modules.
+    1. Identify all modules in the project using the workspace manager's manifest.
     2. Start iterating through modules. For each module:
         a. Check if {module_name}/resources/schematic_images/ directory contains any images.
         b. If yes, convert each image to grayscale and increase contrast, then save in place of original image.
         c. For each preprocessed image, check if segments already exist in {module_name}/resources/schematic_images/{image_name}_segments/. If not, segment the image into 4 overlapping crops(using crop_image_into_segments) and save them in that directory.
     3. Return if all steps completed successfully, or raise error if any step fails.
     """
-    workspace = Path(workspace_path).resolve()
-    logger.info(f"[prepare_archy_workspace] Preparing workspace at: {workspace}")
     
-    if not workspace.exists():
-        raise FileNotFoundError(f"Workspace not found at {workspace}")
-
-    # Step 1: Identify all modules (directories with 'Iterations' subfolder)
-    modules = []
-    for item in workspace.iterdir():
-        if item.is_dir() and (item / "Iterations").exists():
-            modules.append(item)
+    logger.info(f"[prepare_archy_workspace] Preparing workspace")
+    
+    # Step 1: Identify all modules from the authoritative manifest
+    modules = workspace_manager.module_paths
     
     if not modules:
-        logger.warning(f"No modules found in {workspace} (no directories with 'Iterations/' subfolder).")
+        logger.warning(f"No modules found in project '{workspace_manager.project_name}'.")
         return False
 
     # Step 2: Iterate through modules
-    for module_path in modules:
-        module_name = module_path.name
+    for module_name,module_path in modules.items():
         logger.info(f"Processing module: {module_name}")
         
         images_dir = module_path / "resources" / "schematic_images"
@@ -178,10 +171,9 @@ def prepare_archy_workspace(workspace_path: Union[str, Path]) -> bool:
                     
     return True
 
-def _archy_build_scud_stub(image_id: str, workspace_path: Path):
+def _archy_build_scud_stub(image_id: str, workspace_manager: WorkspaceManager):
     """Stub implementation of archy_build_scud for faster validation."""
-    workspace = Path(workspace_path).resolve()
-    scud_file = workspace / f"{image_id}.scud"
+    scud_file = workspace_manager.project_root / f"{image_id}.scud"
     
     # Check if scud file already exists
     if scud_file.exists():
@@ -213,7 +205,7 @@ def _archy_build_scud_stub(image_id: str, workspace_path: Path):
     return scud_file
 
 def orchestrate_archy(
-    workspace_path: Union[str, Path], 
+    workspace_path: Path, 
     module_name: str, 
     image_path: Path,
     image_segments_path: Path,
@@ -228,17 +220,16 @@ def orchestrate_archy(
     Purpose: Generate a Shared Circuit Understanding Document (SCUD) from a schematic image 
     and supporting technical documentation.
     """
-    workspace = Path(workspace_path).resolve()
     
     # Step 1: Trigger Archy Agent (Scud Generation)
     logger.info("[orchestrate_archy] Triggering Archy agent for SCUD generation...")
     if os.environ.get("ARCHY_STUB") == "true":
-        _archy_build_scud_stub(image_id=module_name, workspace_path=workspace)
+        _archy_build_scud_stub(image_id=module_name, workspace_manager=workspace_path)
     else:
         from archy_agent.scud_gen_agent import archy_build_scud 
         archy_build_scud(
             module_name=module_name,
-            workspace=workspace,
+            workspace=workspace_path,
             image_path=image_path,
             image_segment_paths=image_segments_path,
             system_boundary_path=system_boundary_path,
@@ -248,7 +239,7 @@ def orchestrate_archy(
         )
     
     # Final Verification: Check if scud document is created in workspace
-    scud_file = workspace / f"{module_name}.scud"
+    scud_file = workspace_path / f"{module_name}.scud"
     if not scud_file.exists():
         raise RuntimeError(f"Final verification failed: SCUD document not found at {scud_file}")
         # TODO If this happens, ask agent to rename the generate SCUD file to match the expected naming convention
