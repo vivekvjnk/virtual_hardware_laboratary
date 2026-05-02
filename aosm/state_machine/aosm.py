@@ -375,14 +375,16 @@ class AOSM:
         if event.type == EventType.STATE_TRANSITION:
             try:
                 # Step 1: Prepare assets (Ref, Workspace, Preprocessing)
-                res = await self._prepare_bootstrap_assets(event)
-                if not res:
+                processed_image_path = await asyncio.to_thread(
+                    prepare_archy_workspace,
+                    workspace_manager=self.workspace_manager,
+                )
+                if not processed_image_path:
                     raise ValueError("Failed to prepare bootstrap assets")
-                image_id, image_path = res
                 
                 # Step 2: Store info for downstream agents
-                self.current_message["circuit_id"] = image_id
-                self.current_message["image_path"] = str(image_path)
+                # self.current_message["circuit_id"] = image_id
+                # self.current_message["image_path"] = str(processed_image_path)
                 
                 # Step 3: Transition to ARCHY
                 await self.transition_to(AOSMState.TRIGGER_ARCHY, "Assets prepared. Moving to Archy.")
@@ -758,48 +760,6 @@ class AOSM:
             await self.transition_to(AOSMState.PRESENT_RESULT, payload=event.payload)
         except Exception as e:
             logger.error(f"Background wait failed: {e}")
-
-    async def _prepare_bootstrap_assets(self, event: BaseEvent) -> Tuple[str, Path]:
-        """Logic for BOOTSTRAP_PIPELINE: Validation, asset saving, and workspace prep."""
-        logger.info("[AOSM._prepare_bootstrap_assets] Preparing assets for Bootstrap Pipeline...")
-        
-        payload = event.payload or {}
-        filename = payload.get("filename")
-        base64_img = payload.get("base64")
-        
-        if not base64_img or not filename:
-            raise ValueError("Missing image data or filename in payload")
-        
-        # Ensure type safety for linter
-        assert isinstance(filename, str)
-        assert isinstance(base64_img, str)
-
-        stem = Path(filename).stem
-        uid = uuid.uuid4().hex[:5]
-        image_id = f"{self.workspace_manager.project_id}_{stem}_{uid}"
-
-        project_root = self.workspace_manager.project_root
-        if not project_root:
-            raise ValueError("Project root not initialized")
-
-        # Save raw image to project root under resources/
-        user_artefacts_dir = project_root / "resources"
-        user_artefacts_dir.mkdir(exist_ok=True)
-        raw_image_path = user_artefacts_dir / f"{image_id}.png"
-        
-        logger.info(f"[AOSM._prepare_bootstrap_assets] Saving reference image to {raw_image_path}")
-        with open(raw_image_path, "wb") as f:
-            f.write(base64.b64decode(base64_img))
-            
-        # Run Archy workspace preparation (deterministic preprocessing)
-        # This will create preprocessed image and segments
-        processed_image_path = await asyncio.to_thread(
-            prepare_archy_workspace,
-            workspace_path=project_root,
-            image_id=image_id
-        )
-        
-        return image_id, processed_image_path
 
     # ----ARCHY-----
     #TODO(V0.2): 
