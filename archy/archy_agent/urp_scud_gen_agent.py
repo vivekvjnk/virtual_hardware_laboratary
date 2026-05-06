@@ -25,29 +25,45 @@ from openhands.tools.file_editor import FileEditorTool
 
 from vhl_common.urp.abstract_urp import AbstractURPAgent
 from vhl_common.urp.data_types import AgentDescriptor, MessageEnvelope
+import logging
+from vhl_common.utils import setup_dedicated_logger
 from workspace.manager import WorkspaceManager
 
-logger = get_logger(__name__)
+
 
 from dataclasses import dataclass, field
 from typing import Optional
 
 
+# Attach the same file handler to the openhands logger to capture its logs
+openhands_logger = logging.getLogger("openhands")
+logger = setup_dedicated_logger("archy_agent", "archy_agent.log", extra_loggers=[openhands_logger])
+
+
 @dataclass(frozen=True)
 class ArchyConfig:
+    conversation_persistence: bool = field(
+        default=True,
+        metadata={'description': 'Whether to persist conversation history on disk for retrieval across restarts.'}
+    )
     image_path: str = field(
+        default=None,
         metadata={'description': 'Evaluation circuit image of the main ASIC of the module'}
     )
     system_boundary_path: Optional[str] = field(
+        default=None,
         metadata={'description': 'Document explaining overall system boundaries including every component in the project'}
     )
     module_boundary_path: Optional[str] = field(
+        default=None,
         metadata={'description': 'Document explaining interface boundaries of the module'}
     )
     datasheet_path: Optional[str] = field(
+        default=None,
         metadata={'description': 'Datasheet of the main ASIC of the module'}
     )
     eval_design_path: Optional[str] = field(
+        default=None,
         metadata={'description': 'Evaluation design document of the main ASIC of the module'}
     )
 
@@ -335,10 +351,13 @@ class ArchyURPAgent(AbstractURPAgent):
         # Conversation setup
         self.llm_messages = []  # collect raw LLM messages
         
+        # If persistence is enabled, create .conversation/ directory inside workspace and set it as persistence_dir for Conversation.
+
         self.conversation = Conversation(
             agent=self.agent,
             workspace=str(module_path),
-            callbacks=[self._conversation_callback]
+            callbacks=[self._conversation_callback],
+            
         )
 
         # -------- Move to initialization : END ---------- #

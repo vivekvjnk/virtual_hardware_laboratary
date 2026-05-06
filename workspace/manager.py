@@ -4,8 +4,9 @@ import os, shutil
 import logging
 from pathlib import Path
 from datetime import datetime
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
 from .zip_restore import restore_project_from_manifest
+from vhl_common.git_client import GitClient
 
 ZIP_TEMP_DIR = ".zip_temp"
 
@@ -16,9 +17,10 @@ class WorkspaceManager:
     Workspace Manager for Virtual Hardware Laboratory.
     Centralizes project creation, iteration management, and symbolic link setup.
     """
-    def __init__(self, workspace_root: str):
+    def __init__(self, workspace_root: str, git_client: Optional[GitClient] = None):
         self.workspace_root = Path(workspace_root).resolve()
         self.workspace_root.mkdir(parents=True, exist_ok=True)
+        self.git = git_client or GitClient(self.workspace_root)
         self.project_root: Optional[Path] = None
         self.project_id: Optional[str] = None
         self.circuit_name: Optional[str] = None
@@ -723,3 +725,60 @@ class WorkspaceManager:
             logger.info(f"[WorkspaceManager.resolve_resource_path] resolved resource path: {resolved_path}")
             return resolved_path
         raise ValueError(f"Unknown resource type: {resource_type}")
+
+    # Git Worktree Support
+    # ====================
+    def ensure_git_repo(self):
+        """Ensures that the current project root is a git repository."""
+        if not self.project_root:
+            raise RuntimeError("Project root not set.")
+        
+        git = GitClient(self.project_root)
+        if not git.is_repo():
+            logger.info(f"[WorkspaceManager.ensure_git_repo] Initializing git repository at {self.project_root}")
+            git.init_repo()
+            git.add_all()
+            try:
+                git.commit("Initial project state")
+            except RuntimeError as e:
+                # Might fail if nothing to commit, which is fine
+                logger.warning(f"[WorkspaceManager.ensure_git_repo] Initial commit failed: {e}")
+        return git
+
+    def spawn_worktree(self, target_path: Union[str, Path], branch_name: str, commit: Optional[str] = None) -> 'WorkspaceManager':
+        """
+        Creates a new git worktree from the current project and returns a new WorkspaceManager instance.
+        """
+        if not self.project_root:
+            raise RuntimeError("Cannot spawn worktree: No project loaded.")
+
+        target_path = Path(target_path).resolve()
+        git = self.ensure_git_repo()
+
+        logger.info(f"[WorkspaceManager.spawn_worktree] Spawning worktree at {target_path} on branch {branch_name}")
+        git.worktree_add(target_path, branch_name, commit=commit)
+
+        # Create a new WorkspaceManager for the worktree
+        # The workspace_root for the new manager is the parent of the worktree path
+        new_manager = WorkspaceManager(workspace_root=str(target_path.parent))
+        new_manager.load_project(target_path.name)
+        
+        # Mark it as a worktree for cleanup
+        new_manager._is_worktree = True
+        new_manager._base_repo_path = self.project_root
+        
+        return new_manager
+
+    def cleanup(self):
+        """Performs cleanup, including removing the git worktree if applicable."""
+        if getattr(self, "_is_worktree", False) and hasattr(self, "_base_repo_path"):
+            logger.info(f"[WorkspaceManager.cleanup] Removing git worktree at {self.project_root}")
+            base_git = GitClient(self._base_repo_path)
+            try:
+                base_git.worktree_remove(self.project_root, force=True)
+                base_git.worktree_prune()
+            except Exception as e:
+                logger.error(f"[WorkspaceManager.cleanup] Failed to remove worktree: {e}")
+        
+        # Additional cleanup if needed
+        self.close_project()
