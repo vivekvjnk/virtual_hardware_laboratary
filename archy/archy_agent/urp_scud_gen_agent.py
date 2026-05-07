@@ -357,6 +357,7 @@ class ArchyURPAgent(AbstractURPAgent):
             agent=self.agent,
             workspace=str(module_path),
             callbacks=[self._conversation_callback],
+            persistence_dir=str(module_path / ".conversation") if config.conversation_persistence else None
             
         )
 
