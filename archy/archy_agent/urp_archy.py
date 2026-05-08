@@ -372,7 +372,6 @@ class ArchyURPAgent(AbstractURPAgent):
         Core execution primitive. Handles BUILD_SCUD messages.
         """
         logger.debug(f"[ArchyURPAgent:{self.descriptor.agent_id}] Received message: {message}")
-        logger.info(f"[ArchyURPAgent:{self.descriptor.agent_id}] Starting conversation for {self.module_name}...")
 
         # payload is now the raw message input, nothing more.
         user_msg = message.payload

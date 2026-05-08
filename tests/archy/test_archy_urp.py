@@ -13,7 +13,7 @@ import shutil
 # Ensure vhl-agent-backend is in sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from archy.archy_agent.urp_scud_gen_agent import ArchyConfig, ArchyContext, ArchyURPAgent
+from archy.archy_agent.urp_archy import ArchyConfig, ArchyContext, ArchyURPAgent
 from archy.archy_agent.main import prepare_archy_workspace
 from vhl_common.urp.data_types import AgentContext, MessageEnvelope, EventEnvelope
 
@@ -51,47 +51,88 @@ def workspace_manager(tmp_path):
     wm.cleanup()
 
 @pytest.mark.asyncio
-async def test_archy_urp_agent(workspace_manager):
-    """Placeholder test function for ArchyURPAgent."""
-    # 3. Call prepare_archy_workspace method with the workspace object
+async def test_archy_urp_agent(workspace_manager, replay_llm):
+    """
+    Test ArchyURPAgent following URP standards.
+    This test executes a regression test using mailbox-driven invocation and event-based verification.
+    """
+    # 1. Prepare Workspace
     prepare_archy_workspace(workspace_manager=workspace_manager)
     
-    logger.info(f"Workspace root after preparation: {workspace_manager.project_root}")
-    # save the workspace_manager.manifest dictionary to a file for debugging
+    # 2. Setup Agent Dependencies
+    # Use ReplayLLM if available for deterministic regression testing
+    # For now, we'll try to find a snapshot in the module directory if it exists
+    module_path = workspace_manager.module_paths["bms-monitor-module"]
+    persistence_dir = module_path / ".conversation"
     
-    manifest_path = Path("workspace_manifest.json")
-    with open(manifest_path, "w") as f:
-        import json
-        json.dump(workspace_manager.manifest, f, indent=4)
-    logger.info(f"Workspace manifest saved to {manifest_path} for debugging.")
+    if persistence_dir.exists():
+        llm = replay_llm.from_persistence(str(persistence_dir))
+    else:
+        # Fallback to real LLM or dummy for structural testing
+        api_key = os.getenv("LLM_API_KEY", "dummy_key")
+        model = os.getenv("LLM_MODEL", "anthropic/claude-sonnet-4-5-20250929")
+        llm = LLM(
+            usage_id="archy-regression-test",
+            model=model,
+            api_key=SecretStr(api_key),
+        )
 
-    # 4. Trigger Archy agent
-    # Prepare context for archy
-    # Import data classes from archy
-    config = ArchyConfig(
-        conversation_persistence=True,
-    )
-    context = {"config": config, "workspace": workspace_manager, "module_name": "bms-monitor-module"}
-
-    model = os.getenv("LLM_MODEL", "anthropic/claude-sonnet-4-5-20250929")
-    api_key = os.getenv("LLM_API_KEY")
-    base_url = os.getenv("LLM_BASE_URL")
-    api_key = "dummy_key"
-    llm = LLM(
-        usage_id="archy-scud-architect",
-        model=model,
-        base_url=base_url,
-        api_key=SecretStr(api_key),
-    )
-
+    # 3. Initialize Agent with Event Capturer
     archy = ArchyURPAgent(llm=llm)
-    # initialize archy agent
-    archy.initialize(context = context,emit_callback=None)
+    
+    event_queue = asyncio.Queue()
+    def emit_callback(event: EventEnvelope):
+        logger.info(f"[EVENT] Received {event.type}")
+        event_queue.put_nowait(event)
 
-    message = MessageEnvelope(type="user_message",payload="Please prepare the scud document.",sender="user",receiver="archy")
-    await archy.process(message=message)
-    logger.info("successfully processed the user message")
-    pass
+    context = {
+        "config": ArchyConfig(conversation_persistence=True),
+        "workspace": workspace_manager,
+        "module_name": "bms-monitor-module"
+    }
+    
+    archy.initialize(context=context, emit_callback=emit_callback)
+
+    # 4. Start Agent (Enters WAITING state)
+    await archy.start()
+    assert archy.state.status == "WAITING"
+
+    # 5. Send Message (Mailbox-driven)
+    message = MessageEnvelope(
+        type="BUILD_SCUD",
+        payload="Please prepare the scud document.",
+        sender="test_suite",
+        receiver=archy.descriptor.agent_id
+    )
+    await archy.send(message)
+
+    # 6. Wait for Completion Event (Verification)
+    # We wait for TASK_COMPLETED or TASK_FAILED
+    found_completion = False
+    timeout = 300 # 5 minutes for complex SCUD generation
+    start_time = asyncio.get_event_loop().time()
+    
+    while (asyncio.get_event_loop().time() - start_time) < timeout:
+        try:
+            event = await asyncio.wait_for(event_queue.get(), timeout=1.0)
+            if event.type == "TASK_COMPLETED":
+                found_completion = True
+                assert "result" in event.payload
+                assert event.payload["result"]["status"] == "success"
+                break
+            elif event.type == "TASK_FAILED":
+                pytest.fail(f"Agent task failed: {event.payload.get('error')}")
+        except asyncio.TimeoutError:
+            continue
+
+    if not found_completion:
+        pytest.fail("Timed out waiting for TASK_COMPLETED event")
+
+    # 7. Shutdown Agent
+    await archy.shutdown()
+    assert archy.state.status == "TERMINATED"
+    logger.info("Archy URP regression test passed successfully.")
+    
 
 def emit_callback(event: EventEnvelope):
     logger.debug(f"\n[EVENT BUS] Received Event:")

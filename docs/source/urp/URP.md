@@ -77,6 +77,8 @@ PROCESSING
 WAITING
   ↓ ...
 TERMINATED
+
+AGENT_ERROR (Error state)
 ```
 
 Single invariant:
