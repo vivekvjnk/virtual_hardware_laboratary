@@ -1,16 +1,23 @@
+import asyncio
+import time
+import logging
 from pathlib import Path
 import json
 import os
-from typing import Optional, Dict, Any
-from fastmcp import FastMCP
+from typing import Optional, Dict
+from contextlib import asynccontextmanager
+
+from fastmcp import FastMCP, Context
+from starlette.types import ASGIApp, Scope, Receive, Send
+
 from openhands.tools.terminal.impl import TerminalExecutor
 from openhands.tools.terminal.definition import TerminalAction
 
-# 1. Initialize MCP Server
-# We name it OpenHands-Terminal. In the future, this can serve multiple tools.
-mcp = FastMCP("VHL-Library-Terminal")
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("terminal_server")
 
-# 2. Path Configurations consistent with VHL_runtime/src/config/paths.ts
+# 1. Path Configurations consistent with VHL_runtime/src/config/paths.ts
 PROJECT_ROOT = os.environ.get("VHL_PROJECT_ROOT", "/app")
 STATE_FILE = os.path.join(PROJECT_ROOT, ".tmp", "active_project.json")
 DEFAULT_DIR = PROJECT_ROOT
@@ -23,36 +30,92 @@ def get_active_project_dir() -> str:
                 data = json.load(f)
                 return data.get("projectDir") or DEFAULT_DIR
     except Exception as e:
-        print(f"[TerminalServer] Warning: Failed to read state file: {e}")
+        logger.warning(f"Failed to read state file: {e}")
     return DEFAULT_DIR
 
-# 3. State Management for Extensibility
-class ToolRegistry:
-    def __init__(self):
-        self._executors: Dict[str, Any] = {}
+# 2. State Management for Multi-Agent Session Isolation
+class SessionTerminalRegistry:
+    def __init__(self, idle_timeout: int = 300):
+        self._sessions: Dict[str, TerminalExecutor] = {}
+        self._last_access: Dict[str, float] = {}
+        self.idle_timeout = idle_timeout
 
-    def get_executor(self, name: str, factory, **kwargs):
-        if name not in self._executors:
-            self._executors[name] = factory(**kwargs)
-        return self._executors[name]
+    def get_terminal(self, session_id: str) -> TerminalExecutor:
+        self._last_access[session_id] = time.time()
+        if session_id not in self._sessions:
+            logger.info(f"Creating new terminal for session: {session_id}")
+            active_dir = get_active_project_dir()
+            self._sessions[session_id] = TerminalExecutor(working_dir=active_dir)
+        return self._sessions[session_id]
 
-registry = ToolRegistry()
+    def remove_session(self, session_id: str):
+        if session_id in self._sessions:
+            logger.info(f"Removing terminal for session: {session_id}")
+            terminal = self._sessions.pop(session_id)
+            self._last_access.pop(session_id, None)
+            # Force cleanup if possible
+            try:
+                del terminal
+            except Exception as e:
+                logger.error(f"Error cleaning up terminal for session {session_id}: {e}")
 
-def get_terminal() -> TerminalExecutor:
-    # Always pull the current active project dir
-    active_dir = get_active_project_dir()
-    
-    # Initialize executor if it doesn't exist
-    return registry.get_executor(
-        "terminal", 
-        TerminalExecutor, 
-        working_dir=active_dir
-    )
+    async def reaper_loop(self):
+        """Periodically clean up idle sessions."""
+        while True:
+            await asyncio.sleep(60)
+            now = time.time()
+            idle_sessions = [
+                sid for sid, last in self._last_access.items()
+                if now - last > self.idle_timeout
+            ]
+            for sid in idle_sessions:
+                logger.info(f"Session {sid} idle for {self.idle_timeout}s, reaping...")
+                self.remove_session(sid)
+
+registry = SessionTerminalRegistry()
+
+class SessionCleanupMiddleware:
+    """Middleware to catch DELETE /mcp and clean up sessions."""
+    def __init__(self, app: ASGIApp, registry: SessionTerminalRegistry):
+        self.app = app
+        self.registry = registry
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send):
+        if scope["type"] == "http" and scope["method"] == "DELETE" and scope["path"] == "/mcp":
+            # Extract session ID from headers
+            headers = dict(scope.get("headers", []))
+            session_id = None
+            for k, v in headers.items():
+                if k.lower() == b"mcp-session-id":
+                    session_id = v.decode("utf-8")
+                    break
+            
+            if session_id:
+                logger.info(f"Intercepted DELETE for session {session_id}, cleaning up...")
+                self.registry.remove_session(session_id)
+        
+        await self.app(scope, receive, send)
+
+# 3. Initialize MCP Server with lifespan
+@asynccontextmanager
+async def lifespan(app: FastMCP):
+    reaper_task = asyncio.create_task(registry.reaper_loop())
+    try:
+        yield
+    finally:
+        reaper_task.cancel()
+        try:
+            await reaper_task
+        except asyncio.CancelledError:
+            pass
+
+mcp = FastMCP("VHL-Runtime-Terminal", lifespan=lifespan)
 
 # 4. Tool Definitions
 @mcp.tool(name="run_terminal_command")
-def run_terminal_command(
+async def run_terminal_command(
     command: str,
+    ctx: Context,
     is_input: bool = False,
     timeout: Optional[float] = None,
     reset: bool = False
@@ -84,21 +147,28 @@ def run_terminal_command(
         timeout: Maximum time in seconds to wait for output.
         reset: Set to True to clear session state if the terminal hangs.
     """
-    terminal = get_terminal()
+    # Context injection gives us the session ID, fallback to "default" if not provided
+    session_id = ctx.session_id if ctx.session_id else "default"
+    
+    logger.info(f"Running command for session {session_id}: {command}")
+    
+    terminal = registry.get_terminal(session_id)
     active_dir = Path(get_active_project_dir()) / "lib"
 
     # Create lib/ directory in active project directory if it doesn't exist
-    os.makedirs(active_dir,exist_ok=True)
+    os.makedirs(active_dir, exist_ok=True)
     
     # If the active project directory in the state file has changed since the terminal started,
     # we automatically 'cd' the session into the new folder before running the command.
     # Note: terminal.session._cwd tracks the actual shell directory.
     current_shell_dir = getattr(terminal.session, "_cwd", None)
     
+    loop = asyncio.get_running_loop()
+    
     if not is_input and not reset and active_dir and current_shell_dir != active_dir:
         # Synchronize directory
         sync_action = TerminalAction(command=f"cd {active_dir}")
-        terminal(sync_action)
+        await loop.run_in_executor(None, terminal, sync_action)
 
     action = TerminalAction(
         command=command,
@@ -107,10 +177,10 @@ def run_terminal_command(
         reset=reset
     )
     
-    observation = terminal(action)
+    # TerminalExecutor.__call__ is synchronous, so we run it in an executor
+    observation = await loop.run_in_executor(None, terminal, action)
     
     # Return terminal output
-    # We can also include exit_code if helpful, but usually text is enough for an agent.
     result = observation.text
     
     if hasattr(observation, 'exit_code') and observation.exit_code is not None:
@@ -120,14 +190,18 @@ def run_terminal_command(
     return result
 
 if __name__ == "__main__":
-    # Check if we should run in SSE mode
+    # Check if we should run in HTTP mode (which handles streamable-http and SSE)
     port_env = os.environ.get("VHL_TERMINAL_MCP_PORT")
     if port_env:
-        print(f"[TerminalServer] Starting SSE server on 0.0.0.0:{port_env}")
+        print(f"[TerminalServer] Starting server on 0.0.0.0:{port_env}")
         try:
-            mcp.run(transport="sse", host="0.0.0.0", port=int(port_env))
+            transport = os.environ.get("VHL_TERMINAL_TRANSPORT", "sse")
+            starlette_app = mcp.http_app(transport=transport)
+            wrapped_app = SessionCleanupMiddleware(starlette_app, registry)
+            import uvicorn
+            uvicorn.run(wrapped_app, host="0.0.0.0", port=int(port_env))
         except Exception as e:
-            print(f"[TerminalServer] CRITICAL: Failed to start SSE server: {e}")
+            print(f"[TerminalServer] CRITICAL: Failed to start server: {e}")
             import traceback
             traceback.print_exc()
     else:
