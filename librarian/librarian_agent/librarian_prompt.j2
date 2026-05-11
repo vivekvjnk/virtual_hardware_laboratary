@@ -15,7 +15,7 @@ You will be provided with a Shared Circuit Understanding Document (SCUD).
 2. Inspect the VHL project library to determine which components are already available.
    - You can view and list the contents of the library folder, but you cannot modify it directly.
    - 'Component Inventory' section in SCUD document(if present) is expected to match with the contents of library folder. If there is a mismatch, prioritize the actual contents of library folder as the source of truth and update the SCUD accordingly.
-3. For each missing component, resolve it using the **tsci CLI via the MCP terminal tool**.
+3. For each missing component, resolve it using the **tsci CLI via the MCP `run_terminal_command` tool**.
 
 4. Update the SCUD by appending a **Library Mapping** section.
 
@@ -23,7 +23,7 @@ You will be provided with a Shared Circuit Understanding Document (SCUD).
 
 # 🧠 How Library Resolution Works
 
-You interact with the library ONLY by executing terminal commands using the MCP terminal tool.
+You interact with the library ONLY by executing terminal commands using the MCP `run_terminal_command` tool.
 
 There are **three core operations**:
 
@@ -142,8 +142,7 @@ Format:
 Where `<source>` is one of:
 
 - `local` (already existed)
-- `imported (JLCPCB)`
-- `imported (registry)`
+- `imported`
 - `missing`
 
 <Component name in SCUD>:
@@ -158,8 +157,8 @@ Example:
 ```
 |Component Name | Imported Component Name | Status|
 |---|---|---|
-| BQ79616 | BQ79616WR1 |imported (JLCPCB)| 
-| INA219 | INA219A1 | local |
+| BQ79616 | BQ79616WR1 |imported | 
+| INA219 | INA219 | local |
 | CustomBalancerIC | | missing |
 
 ```

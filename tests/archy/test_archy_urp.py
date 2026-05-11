@@ -1,4 +1,3 @@
-from ast import Load
 import asyncio
 from asyncio.log import logger
 import os
@@ -8,7 +7,6 @@ from datetime import datetime
 from pydantic import SecretStr
 
 import pytest
-import shutil
 
 # Ensure vhl-agent-backend is in sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
@@ -82,7 +80,7 @@ async def test_archy_urp_agent(workspace_manager, replay_llm):
     
     event_queue = asyncio.Queue()
     def emit_callback(event: EventEnvelope):
-        logger.info(f"[EVENT] Received {event.type}")
+        logger.info(f"[EVENT] Received {event.type} with payload {event.payload}")
         event_queue.put_nowait(event)
 
     context = {
