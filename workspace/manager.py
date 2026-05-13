@@ -6,7 +6,9 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Optional, Dict, Any, Union
 from .zip_restore import restore_project_from_manifest
+from .models import FileChange, Artifact, Operation
 from vhl_common.git_client import GitClient
+from vhl_common.project_state_manager import GitClientWrapper, SQLiteManager
 
 ZIP_TEMP_DIR = ".zip_temp"
 
@@ -17,10 +19,19 @@ class WorkspaceManager:
     Workspace Manager for Virtual Hardware Laboratory.
     Centralizes project creation, iteration management, and symbolic link setup.
     """
-    def __init__(self, workspace_root: str, git_client: Optional[GitClient] = None):
+    def __init__(self, workspace_root: str, git_wrapper: Optional[GitClientWrapper] = None, db_manager: Optional[SQLiteManager] = None, debug: bool = False):
         self.workspace_root = Path(workspace_root).resolve()
         self.workspace_root.mkdir(parents=True, exist_ok=True)
-        self.git = git_client or GitClient(self.workspace_root)
+        
+        # Initialize Git and DB wrappers
+        self.git = git_wrapper or GitClientWrapper(GitClient(self.workspace_root))
+        
+        # SQLite DB path (default to .vhl/state.db in workspace root)
+        db_path = self.workspace_root / ".vhl" / "state.db"
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        self.db = db_manager or SQLiteManager(str(db_path))
+        
+        self.debug = debug
         self.project_root: Optional[Path] = None
         self.project_id: Optional[str] = None
         self.circuit_name: Optional[str] = None
@@ -782,3 +793,152 @@ class WorkspaceManager:
         
         # Additional cleanup if needed
         self.close_project()
+
+    # Project State Management Interfaces
+    # ==================================
+
+    def record_operation(
+        self,
+        module_name: str,
+        op_name: str,
+        status: str,
+        payload: dict,
+        commit_message: str
+    ) -> int:
+        """
+        Commit workspace and record operation state atomically.
+        """
+        # 1. Commit operation via Git wrapper
+        # This creates a commit and returns metadata (hash, parent, changes)
+        git_metadata = self.git.commit_operation(commit_message)
+        
+        # 2. Record in SQLite via DB manager
+        # This handles the transaction for snapshot, changes, and semantic operation
+        snapshot_id = self.db.record_operation(
+            git_metadata=git_metadata,
+            module_name=module_name,
+            op_name=op_name,
+            status=status,
+            payload=payload
+        )
+        
+        logger.info(f"[WorkspaceManager.record_operation] Recorded {op_name} for {module_name} with status {status}. Snapshot ID: {snapshot_id}")
+        return snapshot_id
+
+    def _build_operation(self, row) -> Operation:
+        """Internal builder to convert DB rows into Operation objects."""
+        snapshot_id = row["artifact_ref_id"]
+
+        snapshot = self.db.conn.execute(
+            "SELECT * FROM artifact_snapshots WHERE id = ?",
+            (snapshot_id,)
+        ).fetchone()
+
+        if not snapshot:
+            raise RuntimeError(f"Artifact snapshot not found for id: {snapshot_id}")
+
+        changes = self.db.conn.execute(
+            """
+            SELECT file_path, change_type
+            FROM artifact_changes
+            WHERE snapshot_id = ?
+            """,
+            (snapshot_id,)
+        ).fetchall()
+
+        return Operation(
+            module_name=snapshot["module_name"],
+            op_name=row["op_name"],
+            status=row["status"],
+            payload=json.loads(row["payload"]) if row["payload"] else None,
+            timestamp=row["timestamp"],
+            artifact=Artifact(
+                commit_hash=snapshot["git_commit_hash"],
+                parent_commit_hash=snapshot["parent_commit_hash"],
+                changes=[
+                    FileChange(c["file_path"], c["change_type"])
+                    for c in changes
+                ]
+            )
+        )
+
+    def get_latest_operation(self, module_name: str) -> Optional[Operation]:
+        """Returns the most recent operation for a given module."""
+        row = self.db.conn.execute(
+            """
+            SELECT so.*
+            FROM semantic_operations so
+            JOIN artifact_snapshots sn ON so.artifact_ref_id = sn.id
+            WHERE sn.module_name = ?
+            ORDER BY so.timestamp DESC
+            LIMIT 1
+            """,
+            (module_name,)
+        ).fetchone()
+
+        if not row:
+            return None
+
+        return self._build_operation(row)
+
+    def get_last_operation(self, module_name: str, op_name: str) -> Optional[Operation]:
+        """Returns the most recent operation of a specific type for a module."""
+        row = self.db.conn.execute(
+            """
+            SELECT so.*
+            FROM semantic_operations so
+            JOIN artifact_snapshots sn ON so.artifact_ref_id = sn.id
+            WHERE sn.module_name = ? AND so.op_name = ?
+            ORDER BY so.timestamp DESC
+            LIMIT 1
+            """,
+            (module_name, op_name)
+        ).fetchone()
+
+        if not row:
+            return None
+
+        return self._build_operation(row)
+
+    def query_operations(
+        self,
+        module_name: Optional[str] = None,
+        op_name: Optional[str] = None,
+        status: Optional[str] = None,
+        limit: int = 10
+    ) -> List[Operation]:
+        """Flexible query for operations with filtering and limiting."""
+        query = """
+            SELECT so.*
+            FROM semantic_operations so
+            JOIN artifact_snapshots sn ON so.artifact_ref_id = sn.id
+            WHERE 1=1
+        """
+        params = []
+        if module_name:
+            query += " AND sn.module_name = ?"
+            params.append(module_name)
+        if op_name:
+            query += " AND so.op_name = ?"
+            params.append(op_name)
+        if status:
+            query += " AND so.status = ?"
+            params.append(status)
+            
+        query += " ORDER BY so.timestamp DESC LIMIT ?"
+        params.append(limit)
+        
+        rows = self.db.conn.execute(query, params).fetchall()
+        return [self._build_operation(row) for row in rows]
+
+    def _query(self, sql: str, params=None, write: bool = False):
+        """Internal escape hatch for raw SQL queries (Debug mode only)."""
+        if not self.debug:
+            raise RuntimeError("Raw query only allowed in debug mode.")
+            
+        params = params or []
+        if write:
+            with self.db.conn:
+                return self.db.conn.execute(sql, params).fetchall()
+        else:
+            return self.db.conn.execute(sql, params).fetchall()
