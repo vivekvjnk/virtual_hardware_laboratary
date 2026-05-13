@@ -1,7 +1,7 @@
 import subprocess
 import logging
 from pathlib import Path
-from typing import List, Optional, Dict, Any, Union
+from typing import List, Optional, Dict, Any, Union, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -73,9 +73,44 @@ class GitClient:
         """Adds all changes to the staging area."""
         self._run_git(["add", "."], cwd=cwd)
 
-    def commit(self, message: str, cwd: Optional[Union[str, Path]] = None):
-        """Commits the staged changes."""
+    def commit(self, message: str, cwd: Optional[Union[str, Path]] = None) -> str:
+        """Commits the staged changes and returns the commit hash."""
         self._run_git(["commit", "-m", message], cwd=cwd)
+        return self._run_git(["rev-parse", "HEAD"], cwd=cwd)
+
+    def get_parent(self, commit_hash: str, cwd: Optional[Union[str, Path]] = None) -> Optional[str]:
+        """Returns the parent hash of the specified commit."""
+        try:
+            return self._run_git(["rev-parse", f"{commit_hash}^"], cwd=cwd)
+        except Exception:
+            # If no parent (initial commit), return None
+            return None
+
+    def diff(self, parent: str, current: str, cwd: Optional[Union[str, Path]] = None) -> List[Tuple[str, str]]:
+        """Returns the list of changed files between two commits."""
+        # Use --name-status to get change type and file path
+        output = self._run_git(["diff", "--name-status", parent, current], cwd=cwd)
+        diff_list = []
+        status_map = {
+            "A": "ADDED",
+            "M": "MODIFIED",
+            "D": "DELETED",
+            "R": "RENAMED",
+            "C": "COPIED",
+            "T": "TYPE_CHANGED"
+        }
+        for line in output.splitlines():
+            if not line.strip():
+                continue
+            parts = line.split("\t")
+            if len(parts) >= 2:
+                status_code = parts[0]
+                # For renames/copies, we take the target path (last element)
+                file_path = parts[-1]
+                status_char = status_code[0]
+                change_type = status_map.get(status_char, "UNKNOWN")
+                diff_list.append((change_type, file_path.strip()))
+        return diff_list
 
     def worktree_add(self, path: Union[str, Path], branch: str, commit: Optional[str] = None, force: bool = False, new_branch: bool = True):
         """Adds a new worktree at the specified path."""
