@@ -1,4 +1,4 @@
-# 🧩 Two Core Components
+# Two Core Components
 
 ```text
 GitClientWrapper   → produces artifact evidence
@@ -7,7 +7,7 @@ SQLiteManager      → records interpreted state
 
 ---
 
-# 1️⃣ GitClientWrapper (High-Level Git Interface)
+# GitClientWrapper (High-Level Git Interface)
 
 This wraps your existing Git client and exposes **VHL-specific operations**.
 
@@ -77,7 +77,7 @@ What changed?
 
 ---
 
-# 2️⃣ SQLiteManager (Semantic State Recorder)
+# SQLiteManager (Semantic State Recorder)
 
 This is your **authoritative recording layer**.
 
@@ -228,7 +228,7 @@ This is the **most important function**.
 
 ---
 
-# 🔁 End-to-End Flow
+# End-to-End Flow
 
 ```python
 git_wrapper = GitClientWrapper(existing_git_client)
@@ -255,16 +255,16 @@ db.record_operation(
 
 ---
 
-# ⚙️ Design Properties Achieved
+# Design Properties Achieved
 
-## ✔ Deterministic
+## Deterministic
 
 * No logic hidden in DB layer
 * All decisions passed explicitly
 
 ---
 
-## ✔ Atomic
+## Atomic
 
 ```text
 One operation = one transaction
@@ -272,14 +272,14 @@ One operation = one transaction
 
 ---
 
-## ✔ Replayable
+## Replayable
 
 * Git → artifacts
 * SQLite → decisions
 
 ---
 
-## ✔ Minimal
+## Minimal
 
 Only:
 
@@ -288,7 +288,7 @@ Only:
 
 ---
 
-# ⚠️ Important Constraints
+# Important Constraints
 
 ## 1. No decision logic inside SQLiteManager
 
@@ -320,26 +320,4 @@ Only:
 ```text
 diff + commit
 ```
-
----
-
-# 🚀 Next Step (Natural Progression)
-
-Now that storage + interfaces are defined, next logical step is:
-
-👉 **Semantic Evaluator Layer**
-
-```text
-ArchyEvaluator
-LibrarianEvaluator
-ANAEvaluator
-```
-
-These produce:
-
-```text
-(status, payload)
-```
-
-Which feed into SQLite.
 

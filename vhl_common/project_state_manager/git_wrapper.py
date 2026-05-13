@@ -1,18 +1,21 @@
-from typing import List, Dict, Any, Optional
-
+from typing import List, Optional
+from vhl_common.git_client import GitClient
 class GitClientWrapper:
     """
     High-level Git interface for VHL-specific operations.
     Wraps the low-level GitClient to provide semantic commit operations
     and change extraction.
     """
-    def __init__(self, git_client):
+    def __init__(self, git_client:GitClient):
         self.git = git_client  # existing low-level client
 
     def commit_operation(self, message: str) -> dict:
         """
         Creates a commit and returns commit metadata.
         """
+        # Step 1: Add all changed files. Assumption: .gitignore file is configured properly to ignore all unwanted files.
+        self.git.add_all()
+        
         commit_hash = self.git.commit(message)
         parent_hash = self.git.get_parent(commit_hash)
 
