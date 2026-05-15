@@ -15,7 +15,7 @@ class GitClient:
     def __init__(self, repo_path: Union[str, Path]):
         self.repo_path = Path(repo_path).resolve()
 
-    def _run_git(self, args: List[str], cwd: Optional[Union[str, Path]] = None) -> str:
+    def _run_git(self, args: List[str], cwd: Optional[Union[str, Path]] = None, quiet: bool = False) -> str:
         """Executes a git command and returns the stripped stdout."""
         work_dir = Path(cwd).resolve() if cwd else self.repo_path
         
@@ -25,7 +25,8 @@ class GitClient:
 
         cmd = ["git"] + args
         try:
-            logger.debug(f"Running git command: {' '.join(cmd)} in {work_dir}")
+            import shlex
+            logger.debug(f"Running git command: {' '.join(shlex.quote(arg) for arg in cmd)} in {work_dir}")
             result = subprocess.run(
                 cmd,
                 cwd=str(work_dir),
@@ -35,9 +36,11 @@ class GitClient:
             )
             return result.stdout.strip()
         except subprocess.CalledProcessError as e:
-            logger.error(f"Git command failed: {' '.join(cmd)}")
-            logger.debug(f"Stdout: {e.stdout}")
-            logger.debug(f"Stderr: {e.stderr}")
+            if not quiet:
+                import shlex
+                logger.error(f"Git command failed: {' '.join(shlex.quote(arg) for arg in cmd)}")
+                logger.debug(f"Stdout: {e.stdout}")
+                logger.debug(f"Stderr: {e.stderr}")
             # We raise a RuntimeError with stderr to provide context to the caller
             error_msg = e.stderr.strip() or e.stdout.strip() or str(e)
             raise RuntimeError(f"Git operation failed: {error_msg}") from e
@@ -49,47 +52,58 @@ class GitClient:
         args = ["init"]
         if bare:
             args.append("--bare")
-        self._run_git(args, cwd=target)
-        logger.info(f"Initialized {'bare ' if bare else ''}repository at {target}")
+        response = self._run_git(args, cwd=target)
+        logger.info(f"Initialized {'bare ' if bare else ''}repository at {target}\nGit response: {response}")
 
     def is_repo(self, path: Optional[Union[str, Path]] = None) -> bool:
-        """Checks if the given path is a git repository."""
+        """Checks if the given path is the root of a git repository."""
         target = Path(path).resolve() if path else self.repo_path
         if not target.exists():
             return False
         try:
-            # rev-parse --is-inside-work-tree or --is-inside-git-dir
-            # This is a reliable way to check if a directory is part of a repo
-            self._run_git(["rev-parse", "--is-inside-work-tree"], cwd=target)
-            return True
+            # rev-parse --show-toplevel returns the root of the worktree.
+            # If the target is the root, this will match the target path.
+            toplevel = self._run_git(["rev-parse", "--show-toplevel"], cwd=target)
+            return Path(toplevel).resolve() == target
         except Exception:
             try:
-                self._run_git(["rev-parse", "--is-inside-git-dir"], cwd=target)
-                return True
+                # Fallback for bare repositories
+                is_bare = self._run_git(["rev-parse", "--is-bare-repository"], cwd=target)
+                return is_bare == "true"
             except Exception:
                 return False
 
     def add_all(self, cwd: Optional[Union[str, Path]] = None):
         """Adds all changes to the staging area."""
-        self._run_git(["add", "."], cwd=cwd)
+        response = self._run_git(["add", "."], cwd=cwd)
+        logger.debug(f"Added all changes to staging area in {cwd or self.repo_path}\nGit response: {response}")
+        return response
 
     def commit(self, message: str, cwd: Optional[Union[str, Path]] = None) -> str:
         """Commits the staged changes and returns the commit hash."""
-        self._run_git(["commit", "-m", message], cwd=cwd)
+        # Use --allow-empty to ensure semantic operations always create a commit
+        self._run_git(["commit", "--allow-empty", "-m", message], cwd=cwd)
         return self._run_git(["rev-parse", "HEAD"], cwd=cwd)
 
     def get_parent(self, commit_hash: str, cwd: Optional[Union[str, Path]] = None) -> Optional[str]:
         """Returns the parent hash of the specified commit."""
         try:
-            return self._run_git(["rev-parse", f"{commit_hash}^"], cwd=cwd)
+            return self._run_git(["rev-parse", f"{commit_hash}^"], cwd=cwd, quiet=True)
         except Exception:
             # If no parent (initial commit), return None
             return None
 
-    def diff(self, parent: str, current: str, cwd: Optional[Union[str, Path]] = None) -> List[Tuple[str, str]]:
+    def diff(self, parent: Optional[str], current: str, cwd: Optional[Union[str, Path]] = None) -> List[Tuple[str, str]]:
         """Returns the list of changed files between two commits."""
         # Use --name-status to get change type and file path
-        output = self._run_git(["diff", "--name-status", parent, current], cwd=cwd)
+        if not parent:
+            # For the first commit, diff against the empty tree hash
+            # This is the magic SHA-1 for an empty tree in git
+            EMPTY_TREE_HASH = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+            output = self._run_git(["diff", "--name-status", EMPTY_TREE_HASH, current], cwd=cwd)
+        else:
+            output = self._run_git(["diff", "--name-status", parent, current], cwd=cwd)
+
         diff_list = []
         status_map = {
             "A": "ADDED",

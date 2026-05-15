@@ -88,6 +88,25 @@ def get_tree_view(self):
 2.  **Phase 2 (Migration)**: Update `load_project` to prefer SQLite recovery. If a legacy project is loaded (no SQLite), perform a "One-Time Upgrade" by scanning the filesystem once and recording an `INITIALIZE` operation.
 3.  **Phase 3 (Cleanup)**: Remove the `_manifest.json` logic entirely. The "Manifest" becomes a transient, derived view of the Git repository, generated only when requested by the UI.
 
-## 4. Impact on AOSM
--   **Minimal breaking changes**: The `workspace_info` payload will look the same to AOSM and the UI, but the backend will generate it instantly from Git.
--   **Increased Reliability**: AOSM can now trust that the "manifest" is always exactly what is committed in Git.
+## 4. Downstream Impact Analysis
+
+A deep scan of the codebase reveals that while the `project_manifest` JSON is mostly internal to `WorkspaceManager`, the derived state variables are critical for system operation.
+
+### Key Variable Dependencies
+
+| Variable | Consumer(s) | Impact | Risk |
+| :--- | :--- | :--- | :--- |
+| **`circuit_name`** | `AOSM`, `SyncClient`, `ANAWorker`, `VHL Protocol` | **High** | Critical for file naming and protocol matching. |
+| **`current_iteration_path`** | `ANADStateMachine`, `SyncClient` | **Medium** | Essential for ANA-D worker synchronization. |
+| **`project_modules`** | `WorkspaceManager` (Internal) | **Low** | Used for directory setup and iteration scanning. |
+| **`project_manifest`** | `VHL Runtime` (UI) | **Medium** | Used by the UI to display the file tree. |
+
+### Risks and Mitigation
+
+1.  **Discovery Failure**: If `load_project` fails to recover `circuit_name` from SQLite, the agents (ANA, Librarian) will fail to locate their target files (e.g., `{circuit_name}.tsx`).
+    *   **Mitigation**: Implement **Shadow Recovery**. If SQLite is empty, fall back to the legacy `.scud` filename scanning and immediately persist the result to SQLite `project_settings`.
+2.  **UI Desync**: If the Git-native tree generation (`get_tree_view`) produces a different structure than the old JSON manifest, the UI might fail to render the project.
+    *   **Mitigation**: The `GitClientWrapper.get_tree_view()` must strictly mimic the nested dictionary structure of the legacy manifest.
+3.  **AOSM State Persistence**: AOSM relies on `get_workspace_info()` to report project status back to the runtime.
+    *   **Mitigation**: The return shape of `get_workspace_info()` must remain unchanged, even if its internal implementation shifts to SQLite/Git.
+

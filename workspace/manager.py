@@ -23,13 +23,10 @@ class WorkspaceManager:
         self.workspace_root = Path(workspace_root).resolve()
         self.workspace_root.mkdir(parents=True, exist_ok=True)
         
-        # Initialize Git and DB wrappers
-        self.git = git_wrapper or GitClientWrapper(GitClient(self.workspace_root))
-        
-        # SQLite DB path (default to .vhl/state.db in workspace root)
-        db_path = self.workspace_root / ".vhl" / "state.db"
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-        self.db = db_manager or SQLiteManager(str(db_path))
+        # Per-project persistence managers
+        self.git: Optional[GitClientWrapper] = git_wrapper
+        self.db: Optional[SQLiteManager] = db_manager
+
         
         self.debug = debug
         self.project_root: Optional[Path] = None
@@ -42,7 +39,6 @@ class WorkspaceManager:
         self.previous_iteration_path: Optional[Path] = None
         self._session_iteration_count: int = 0
         self.current_iteration_id = None
-        self.project_manifest = None
         self.project_modules: List[str] = []
 
         logger.info(f"[WorkspaceManager.__init__] WorkspaceManager initialized with root: {self.workspace_root}")
@@ -60,16 +56,36 @@ class WorkspaceManager:
         self.project_root = None
         self.project_id = None
         self.circuit_name = None
+        self.git = None
+        self.db = None
         self.reset_iterations()
         logger.info("[WorkspaceManager.close_project] Project closed and state reset.")
+
 
     def set_circuit_name(self, name: str):
         """Sets the circuit name for the current project."""
         if name:
             self.circuit_name = name
+            if self.db:
+                self.db.upsert_project_setting("circuit_name", name)
             logger.info(f"[WorkspaceManager.set_circuit_name] Circuit name set to: {self.circuit_name}")
         else:
             logger.error(f"[WorkspaceManager.set_circuit_name] Triggered with None for circuit name")
+
+    def _init_project_persistence(self, project_path: Path):
+        """Initializes Git and SQLite managers for a specific project."""
+        # Initialize Git at project root
+        if not self.git:
+            self.git = GitClientWrapper(GitClient(project_path))
+            logger.info(f"[WorkspaceManager._init_project_persistence] Git initialized at: {project_path}")
+        
+        # Initialize SQLite at project_root/.vhl/state.db
+        if not self.db:
+            db_path = project_path / ".vhl" / "state.db"
+            db_path.parent.mkdir(parents=True, exist_ok=True)
+            self.db = SQLiteManager(str(db_path))
+            logger.info(f"[WorkspaceManager._init_project_persistence] SQLite initialized at: {db_path}")
+
             
     def list_projects(self) -> List[str]:
         """Lists all project IDs available in the workspace."""
@@ -91,41 +107,67 @@ class WorkspaceManager:
         self.project_id = project_id
         self.project_root = project_path
         
-        # 1. Try to recover module names from existing manifest file
-        manifest_path = self.project_root / f"{project_id}_manifest.json"
-        if manifest_path.exists():
-            try:
-                with open(manifest_path, 'r') as f:
-                    manifest_data = json.load(f)
-                    self.project_modules = list(manifest_data.get("modules", {}).keys())
-                    logger.info(f"[WorkspaceManager.load_project] Recovered modules from manifest: {self.project_modules}")
-            except Exception as e:
-                logger.error(f"[WorkspaceManager.load_project] Failed to read manifest file: {e}")
-        else:
-            # Fallback for projects without a manifest: Identify modules by looking for 'Iterations' subfolders
-            logger.warning(f"[WorkspaceManager.load_project] Manifest file not found at {manifest_path}. Falling back to filesystem scanning for modules.")
-            self.project_modules = [d.name for d in self.project_root.iterdir() if d.is_dir() and (d / "Iterations").exists()]
-            logger.info(f"[WorkspaceManager.load_project] Inferred modules: {self.project_modules}")
+        # Initialize persistence for the loaded project
+        self._init_project_persistence(self.project_root)
 
-        # 2. Generate manifest and synchronize state
-        self.project_manifest = self._generate_manifest(self.project_root)
-
-        # 3. Reconstruct circuit name
-        # Search priority: 1. Project Root, 2. Modules (starting with 'main_module')
-        scud_files = list(self.project_root.glob("*.scud"))
-        if not scud_files:
-            # Check modules
-            for module in (["main_module"] + [m for m in self.project_modules if m != "main_module"]):
-                module_path = self.project_root / module
-                if module_path.exists():
-                    scud_files = list(module_path.glob("*.scud"))
-                    if scud_files:
-                        break
         
-        if scud_files:
-            self.set_circuit_name(scud_files[0].stem)
+        # 1. Shadow Recovery: Try SQLite first
+        modules_records = self.db.get_project_modules()
+        if modules_records:
+            self.project_modules = [m["module_name"] for m in modules_records]
+            circuit_name = self.db.get_project_setting("circuit_name")
+            if circuit_name:
+                self.circuit_name = circuit_name
+            logger.info(f"[WorkspaceManager.load_project] Recovered state from SQLite. Modules: {self.project_modules}")
         else:
-            logger.warning(f"[WorkspaceManager.load_project] No .scud file found in project or modules: {self.project_root}")
+            # Fallback for legacy projects
+            logger.warning(f"[WorkspaceManager.load_project] No SQLite state found. Falling back to legacy recovery.")
+            manifest_path = self.project_root / f"{project_id}_manifest.json"
+            if manifest_path.exists():
+                try:
+                    with open(manifest_path, 'r') as f:
+                        manifest_data = json.load(f)
+                        self.project_modules = list(manifest_data.get("modules", {}).keys())
+                except Exception as e:
+                    logger.error(f"[WorkspaceManager.load_project] Failed to read manifest file: {e}")
+            
+            if not self.project_modules:
+                self.project_modules = [d.name for d in self.project_root.iterdir() if d.is_dir() and (d / "Iterations").exists()]
+                
+            # Reconstruct circuit name
+            scud_files = list(self.project_root.glob("*.scud"))
+            if not scud_files:
+                for module in (["main_module"] + [m for m in self.project_modules if m != "main_module"]):
+                    module_path = self.project_root / module
+                    if module_path.exists():
+                        scud_files = list(module_path.glob("*.scud"))
+                        if scud_files:
+                            break
+            if scud_files:
+                self.set_circuit_name(scud_files[0].stem)
+            
+            # Immediate Upgrade
+            logger.info(f"[WorkspaceManager.load_project] Upgrading legacy project to Semantic Ledger.")
+            if self.circuit_name:
+                self.db.upsert_project_setting("circuit_name", self.circuit_name)
+            for m_name in self.project_modules:
+                self.db.insert_project_module(m_name, "WORKER", m_name, "Inferred from legacy project")
+            # Commit baseline to Git if repo exists, else init
+            if not self.git.git.is_repo():
+                self.git.git.init_repo()
+            response = self.git.git.add_all()
+            logger.info(f"[WorkspaceManager.load_project] Added existing project files to Git staging area.\nGit response: {response}")
+            try:
+                self.record_operation(
+                    module_name="root",
+                    op_name="INITIALIZE",
+                    status="SUCCESS",
+                    payload={"message": "Legacy project upgraded to Semantic Ledger"},
+                    commit_message="INITIALIZE: Semantic Ledger Upgrade"
+                )
+            except Exception as e:
+                logger.warning(f"[WorkspaceManager.load_project] Failed to record upgrade operation: {e}")
+
 
         # 4. Reconstruct iteration info
         # Priority: Root Iterations, then modules
@@ -170,6 +212,10 @@ class WorkspaceManager:
         self.project_root = self.workspace_root / project_id
         self.project_root.mkdir(parents=True, exist_ok=True)
 
+        # Initialize persistence for the new project
+        self._init_project_persistence(self.project_root)
+
+
         # Reset iteration state
         self.current_iteration_path = None
         self.previous_iteration_path = None
@@ -189,50 +235,70 @@ class WorkspaceManager:
             # Filter out "root" and "lib" from modules list as they are not standard modules
             self.project_modules = [m for m in modules if m not in ["root", "lib"]]
             self.setup_modules(project_root_path=self.project_root, modules=self.project_modules)
-            # Refresh manifest after setting up modules
-            self.project_manifest = self._generate_manifest(project_root_path=self.project_root, module_names=modules)
+            
+            # --- Semantic Ledger Population ---
+            if restoration_result["manifest"]:
+                manifest = restoration_result["manifest"]
+                for m_name, files in manifest.get("modules", {}).items():
+                    if m_name in ["root", "lib"]:
+                        continue
+                    logger.info(f"[WorkspaceManager.create_project] Populating module '{m_name}' with {len(files)} files from manifest.")
+                    mod_id = self.db.insert_project_module(m_name, "WORKER", m_name, f"Bootstrap module {m_name}")
+                    for file_key, file_info in files.items():
+                        self.db.insert_module_resource(
+                            module_id=mod_id,
+                            resource_name=file_info.get("name", file_key),
+                            file_path=file_info.get("rel_path", ""),
+                            resource_type="file",
+                            description="Bootstrap resource",
+                            checksum=file_info.get("checksum", "")
+                        )
+            
+            # --- Git Baseline & Operation Recording ---
+            if not self.git.git.is_repo():
+                logger.info(f"[WorkspaceManager.create_project] Initializing new Git repository for the project.")
+                self.git.git.init_repo()
+            self.git.git.add_all()
+            try:
+                self.record_operation(
+                    module_name="root",
+                    op_name="INITIALIZE",
+                    status="SUCCESS",
+                    payload={"source": "zip_bootstrap" if zip_present else "empty_init"},
+                    commit_message="INITIALIZE: Project Bootstrap"
+                )
+            except Exception as e:
+                logger.warning(f"[WorkspaceManager.create_project] Failed to record INITIALIZE operation: {e}")
         
         else:
             logger.error(f"[WorkspaceManager.create_project] Project creation failed for: {project_id}")
-            # TODO: Implement cleanup and rollback if project creation fails at any step to avoid leaving the workspace in an inconsistent state. DO NOT implement until project creation is stable and tested.
             raise RuntimeError(f"Project creation failed for: {project_id}")
-        
-        # save manifest to a json file in the project root for future reference
-        manifest_path = self.project_root / f"{project_id}_manifest.json"
-        try:
-            with open(manifest_path, 'w') as f:
-                json.dump(self.project_tree, f, indent=4)
-            logger.info(f"[WorkspaceManager.create_project] Project manifest created at: {manifest_path}")
-        except Exception as e:
-            logger.error(f"[WorkspaceManager.create_project] Failed to create project manifest: {e}")
 
         logger.info(f"[WorkspaceManager.create_project] Project created at: {self.project_root}")
         return self.project_root
     
     def update_workspace(self):
         """Updates the workspace state, such as regenerating the manifest."""
-        if not self.project_root:
-            raise RuntimeError("Project root not set.")
-        
-        # Regenerate manifest to reflect any changes in the filesystem
-        self.project_manifest = self._generate_manifest(self.project_root)
-        
-        # Update project_modules list based on current manifest
-        self.project_modules = list(self.project_manifest.get("modules", {}).keys())
+        if not self.db:
+            raise RuntimeError("Project not loaded. SQLite manager not initialized.")
+            
+        # Reload modules from SQLite
+        modules_records = self.db.get_project_modules()
+        if modules_records:
+            self.project_modules = [m["module_name"] for m in modules_records]
         
         logger.info(f"[WorkspaceManager.update_workspace] Workspace updated. Current modules: {self.project_modules}")
+
     
     @property
     def module_names(self) -> List[str]:
         """Returns a list of all available module names in the project."""
-        if not self.project_manifest:
-            return []
-        return list(self.project_manifest.get("modules", {}).keys())
+        return self.project_modules
     
     @property
     def module_paths(self) -> Dict[str,Path]:
         """Returns a list of Paths for all available modules in the project."""
-        if not self.project_manifest:
+        if not self.project_modules:
             return {}
         module_paths = {}
         for module_name in self.module_names:
@@ -251,75 +317,24 @@ class WorkspaceManager:
     @property
     def project_tree(self) -> Dict[str, Any]:
         """Returns the complete tree structure of the project."""
-        return self.project_manifest if self.project_manifest else {}
+        if not self.git:
+            return {}
+        return self.git.get_tree_view()
 
     @property
     def manifest(self) -> Dict[str, Any]:
-        # Update the manifest
-        self.project_manifest = self._generate_manifest(self.project_root)
-        return self.project_manifest
+        if not self.git:
+            return {}
+        return self.git.get_tree_view()
 
     def get_module_tree(self, module_name: str) -> Dict[str, Any]:
         """Returns the tree structure of a specific module."""
-        if not self.project_manifest:
+        if not self.git:
             return {}
-        return self.project_manifest.get("modules", {}).get(module_name, {})
+        tree = self.git.get_tree_view()
+        return tree.get(module_name, {})
 
-    def _get_file_hash(self, file_path: Path, block_size=65536):
-        """Generates a SHA-256 hash for a file."""
-        sha256 = hashlib.sha256()
-        try:
-            with open(file_path, 'rb') as f:
-                for block in iter(lambda: f.read(block_size), b''):
-                    sha256.update(block)
-            return sha256.hexdigest()
-        except (PermissionError, OSError):
-            return "ERROR_ACCESS_DENIED"
 
-    def _get_directory_tree(self, directory: Path) -> Dict[str, Any]:
-        """Recursively builds a dictionary representing the directory tree."""
-        tree = {}
-        try:
-            for item in directory.iterdir():
-                if item.is_dir():
-                    tree[item.name] = self._get_directory_tree(item)
-                    logger.debug(f"Directory added to tree: {item.name}")
-                else:
-                    tree[item.name] = self._get_file_hash(item)
-                    logger.debug(f"File added to tree: {item.name}")
-        except PermissionError:
-            return "FOLDER_ACCESS_DENIED"
-        return tree
-
-    def _generate_manifest(self, root_dir: Path, module_names: Optional[List[str]] = None) -> Dict[str, Any]:
-        """
-        Builds an authoritative and structured manifest of the project.
-        Organizes contents into 'modules' and 'root' (common files/folders).
-        If module_names is not provided, it uses the ones registered in self.project_modules.
-        """
-        if module_names is None:
-            module_names = self.project_modules
-
-        manifest = {
-            "modules": {},
-            "root": {}
-        }
-        
-        if not root_dir.exists():
-            return manifest
-
-        for item in root_dir.iterdir():
-            if item.is_dir():
-                # A directory is considered a module if it's explicitly identified as one
-                if item.name in module_names:
-                    manifest["modules"][item.name] = self._get_directory_tree(item)
-                else:
-                    manifest["root"][item.name] = self._get_directory_tree(item)
-            else:
-                manifest["root"][item.name] = self._get_file_hash(item)
-        logger.debug(f"[WorkspaceManager._generate_manifest] Manifest generated for project at {root_dir}")        
-        return manifest
-    
     def create_module_directory(self, module_name: str, dir_path: str) -> Path:
         """
         Creates a directory inside a specific module and refreshes the manifest.
@@ -335,8 +350,7 @@ class WorkspaceManager:
         target_dir = module_path / dir_path
         target_dir.mkdir(parents=True, exist_ok=True)
         
-        # Refresh manifest to reflect the change
-        self.project_manifest = self._generate_manifest(self.project_root)
+        # Git dynamically generates the tree view, no need to refresh static manifest.
         
         logger.info(f"[WorkspaceManager.create_module_directory] Created directory: {target_dir}")
         return target_dir
@@ -685,7 +699,7 @@ class WorkspaceManager:
 
         return {
             "project_id": self.project_id,
-            "project_manifest": self.project_manifest,
+            "project_manifest": self.git.get_tree_view(),
             # VAP information
             "current_iteration_path": str(self.current_iteration_path) if self.current_iteration_path else None,
             "previous_iteration_path": str(self.previous_iteration_path) if self.previous_iteration_path else None,
@@ -810,10 +824,14 @@ class WorkspaceManager:
         """
         Commit workspace and record operation state atomically.
         """
+        if not self.git or not self.db:
+            raise RuntimeError("Project not loaded. Git/DB persistence not initialized.")
+            
         # 1. Commit operation via Git wrapper
+
         # This creates a commit and returns metadata (hash, parent, changes)
         git_metadata = self.git.commit_operation(commit_message)
-        
+        logger.info(f"[WorkspaceManager.record_operation] Git commit created for operation '{op_name}' in module '{module_name}' with status '{status}'. Commit hash: {git_metadata['commit_hash']}")
         # 2. Record in SQLite via DB manager
         # This handles the transaction for snapshot, changes, and semantic operation
         snapshot_id = self.db.record_operation(
