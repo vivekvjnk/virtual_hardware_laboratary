@@ -47,3 +47,56 @@ class GitClientWrapper:
             }
             for change_type, path in diff
         ]
+
+    def get_tree_view(self, commit_ish: str = "HEAD") -> dict:
+        """
+        Generates a nested dictionary representing the repository structure at a given commit.
+        This serves as the Git-native replacement for the legacy project manifest JSON.
+        """
+        try:
+            output = self.git.ls_tree(commit_ish)
+        except Exception as e:
+            return {}
+
+        tree_view = {}
+        
+        for line in output.splitlines():
+            if not line.strip():
+                continue
+            
+            # Format: mode type hash size\tpath
+            # Example: 100644 blob abcdef1234... 1234\tpath/to/file.txt
+            # Example (tree): 040000 tree abcdef1234... -\tpath/to/dir
+            
+            parts = line.split(maxsplit=4)
+            if len(parts) < 5:
+                continue
+            
+            obj_mode = parts[0]
+            obj_type = parts[1]
+            obj_hash = parts[2]
+            # size = parts[3]
+            obj_path = parts[4]
+            
+            if obj_type == "tree":
+                continue  # We can infer directories from file paths
+                
+            path_parts = obj_path.split("/")
+            
+            # Navigate/build the nested dictionary
+            current_level = tree_view
+            for part in path_parts[:-1]:
+                if part not in current_level:
+                    current_level[part] = {}
+                current_level = current_level[part]
+            
+            filename = path_parts[-1]
+            current_level[filename] = {
+                "name": filename,
+                "rel_path": obj_path,
+                "type": "file",  # We can't know mime type easily here without mimetypes module, keeping simple
+                "checksum": f"sha1:{obj_hash}"  # git uses sha1 by default
+            }
+
+        return tree_view
+

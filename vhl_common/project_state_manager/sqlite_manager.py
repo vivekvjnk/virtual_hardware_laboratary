@@ -48,6 +48,36 @@ class SQLiteManager:
                     FOREIGN KEY (artifact_ref_id) REFERENCES artifact_snapshots(id)
                 )
             """)
+            self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS project_settings (
+                    setting_key TEXT PRIMARY KEY,
+                    setting_value TEXT,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS project_modules (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    module_name TEXT UNIQUE NOT NULL,
+                    module_type TEXT,
+                    rel_path TEXT NOT NULL,
+                    description TEXT,
+                    status TEXT DEFAULT 'ACTIVE',
+                    created_at DATETIME NOT NULL
+                )
+            """)
+            self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS module_resources (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    module_id INTEGER NOT NULL,
+                    resource_name TEXT NOT NULL,
+                    file_path TEXT NOT NULL,
+                    resource_type TEXT NOT NULL,
+                    description TEXT,
+                    checksum TEXT,
+                    FOREIGN KEY (module_id) REFERENCES project_modules(id)
+                )
+            """)
 
     def begin(self):
         """Starts a transaction."""
@@ -150,3 +180,82 @@ class SQLiteManager:
             self.rollback()
             logger.error(f"Failed to record operation: {e}")
             raise e
+
+    # --- Metadata Ledger Access Methods ---
+
+    def upsert_project_setting(self, key: str, value: str):
+        """Inserts or updates a global project setting."""
+        with self.conn:
+            self.conn.execute(
+                """
+                INSERT INTO project_settings (setting_key, setting_value, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(setting_key) DO UPDATE SET
+                    setting_value=excluded.setting_value,
+                    updated_at=excluded.updated_at
+                """,
+                (key, value, datetime.now(UTC).isoformat())
+            )
+
+    def get_project_setting(self, key: str) -> Optional[str]:
+        """Retrieves a specific project setting."""
+        row = self.conn.execute(
+            "SELECT setting_value FROM project_settings WHERE setting_key = ?",
+            (key,)
+        ).fetchone()
+        return row["setting_value"] if row else None
+
+    def get_all_project_settings(self) -> Dict[str, str]:
+        """Retrieves all project settings as a dictionary."""
+        rows = self.conn.execute("SELECT setting_key, setting_value FROM project_settings").fetchall()
+        return {row["setting_key"]: row["setting_value"] for row in rows}
+
+    def insert_project_module(
+        self,
+        module_name: str,
+        module_type: str,
+        rel_path: str,
+        description: str,
+        status: str = 'ACTIVE'
+    ) -> int:
+        """Inserts a project module record."""
+        with self.conn:
+            cursor = self.conn.execute(
+                """
+                INSERT INTO project_modules
+                (module_name, module_type, rel_path, description, status, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (module_name, module_type, rel_path, description, status, datetime.now(UTC).isoformat())
+            )
+            return cursor.lastrowid
+
+    def insert_module_resource(
+        self,
+        module_id: int,
+        resource_name: str,
+        file_path: str,
+        resource_type: str,
+        description: str,
+        checksum: str
+    ):
+        """Inserts a module resource record."""
+        with self.conn:
+            self.conn.execute(
+                """
+                INSERT INTO module_resources
+                (module_id, resource_name, file_path, resource_type, description, checksum)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (module_id, resource_name, file_path, resource_type, description, checksum)
+            )
+
+    def get_project_modules(self) -> List[Dict[str, Any]]:
+        """Retrieves all active project modules."""
+        rows = self.conn.execute("SELECT * FROM project_modules WHERE status = 'ACTIVE'").fetchall()
+        return [dict(row) for row in rows]
+
+    def get_module_resources(self, module_id: int) -> List[Dict[str, Any]]:
+        """Retrieves all resources for a given module."""
+        rows = self.conn.execute("SELECT * FROM module_resources WHERE module_id = ?", (module_id,)).fetchall()
+        return [dict(row) for row in rows]

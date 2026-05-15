@@ -204,3 +204,12 @@ class GitClient:
     def status(self, cwd: Optional[Union[str, Path]] = None) -> str:
         """Returns the git status."""
         return self._run_git(["status"], cwd=cwd)
+
+    def ls_tree(self, commit_ish: str = "HEAD", cwd: Optional[Union[str, Path]] = None) -> str:
+        """
+        Executes git ls-tree to get the tree structure of a commit.
+        Returns the raw output string.
+        """
+        # -r for recursive, -l for long format (includes size), -t to show trees
+        return self._run_git(["ls-tree", "-r", "-l", "-t", commit_ish], cwd=cwd)
+
