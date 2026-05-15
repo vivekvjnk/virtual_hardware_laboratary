@@ -188,6 +188,7 @@ class SyncClient:
 
         Flow: storage download → hash verify → decompress (if needed) → atomic apply → SYNC_COMPLETE
         
+        Target path is derived from project_id + resource_type + iteration_id. get_resource_path() calls resolve_resource_path() from WorkspaceManager to resolve the target path.
         NOTE: Necessary items in payload:
             - payload.blob_id       : the storage blob to download
             - payload.project_id    : project name; used as the project directory name in vhl-agent-backend; 

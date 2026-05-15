@@ -189,6 +189,9 @@ class WorkspaceManager:
             # Filter out "root" and "lib" from modules list as they are not standard modules
             self.project_modules = [m for m in modules if m not in ["root", "lib"]]
             self.setup_modules(project_root_path=self.project_root, modules=self.project_modules)
+            # Refresh manifest after setting up modules
+            self.project_manifest = self._generate_manifest(project_root_path=self.project_root, module_names=modules)
+        
         else:
             logger.error(f"[WorkspaceManager.create_project] Project creation failed for: {project_id}")
             # TODO: Implement cleanup and rollback if project creation fails at any step to avoid leaving the workspace in an inconsistent state. DO NOT implement until project creation is stable and tested.
@@ -364,8 +367,6 @@ class WorkspaceManager:
 
             logger.info(f"[WorkspaceManager.setup_modules] Module structure created at: {module_dir}")
         
-        # Refresh manifest after setting up modules
-        self.project_manifest = self._generate_manifest(project_root_path, module_names=modules)
         
     def create_project_from_zip(self, project_id: str)-> Dict[str, Any]:
         """
@@ -385,7 +386,7 @@ class WorkspaceManager:
         
         # Clean up temp directory
         try:
-            # shutil.rmtree(temp_dir)
+            shutil.rmtree(temp_dir)
             logger.info(f"[WorkspaceManager.create_project_from_zip] Cleaned up temp directory: {temp_dir}")
         except Exception as e:
             logger.error(f"[WorkspaceManager.create_project_from_zip] Failed to clean up temp directory: {e}")
@@ -700,6 +701,7 @@ class WorkspaceManager:
     def get_current_iteration_id(self):
         return self.current_iteration_id
 
+    # NOTE: Location 1: Direct reference to project directory structure
     def resolve_resource_path(self,resource_type: str, project_id: Optional[str]=None,  iteration_id: Optional[str] = None) -> Path:
         """Resolve the local filesystem path for a resource using workspace conventions."""
         if (not project_id) and (resource_type == "ProjectZip"):
