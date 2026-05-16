@@ -19,8 +19,8 @@ class WorkspaceManager:
     Workspace Manager for Virtual Hardware Laboratory.
     Centralizes project creation, iteration management, and symbolic link setup.
     """
-    def __init__(self, workspace_root: str, git_wrapper: Optional[GitClientWrapper] = None, db_manager: Optional[SQLiteManager] = None, debug: bool = False):
-        self.workspace_root = Path(workspace_root).resolve()
+    def __init__(self, workspace_root: Path, git_wrapper: Optional[GitClientWrapper] = None, db_manager: Optional[SQLiteManager] = None, debug: bool = False):
+        self.workspace_root = workspace_root
         self.workspace_root.mkdir(parents=True, exist_ok=True)
         
         # Per-project persistence managers
@@ -258,6 +258,17 @@ class WorkspaceManager:
             if not self.git.git.is_repo():
                 logger.info(f"[WorkspaceManager.create_project] Initializing new Git repository for the project.")
                 self.git.git.init_repo()
+            
+            # Ensure .gitignore exists and ignores .vhl/ directory (SQLite DB)
+            gitignore_path = self.project_root / ".gitignore"
+            if not gitignore_path.exists():
+                gitignore_path.write_text(".vhl/\n")
+            else:
+                content = gitignore_path.read_text()
+                if ".vhl/" not in content:
+                    with open(gitignore_path, "a") as f:
+                        f.write("\n.vhl/\n")
+
             self.git.git.add_all()
             try:
                 self.record_operation(
@@ -787,7 +798,7 @@ class WorkspaceManager:
 
         # Create a new WorkspaceManager for the worktree
         # The workspace_root for the new manager is the parent of the worktree path
-        new_manager = WorkspaceManager(workspace_root=str(target_path.parent))
+        new_manager = WorkspaceManager(workspace_root=target_path.parent)
         new_manager.load_project(target_path.name)
         
         # Mark it as a worktree for cleanup

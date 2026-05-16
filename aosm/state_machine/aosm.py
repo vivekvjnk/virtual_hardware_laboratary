@@ -28,7 +28,7 @@ class AOSM:
     Agentic Orchestration State Machine (AOSM)
     Always-on, time-aware control layer for VHL.
     """
-    def __init__(self, ws_url: str = "ws://localhost:1080"):
+    def __init__(self, ws_url: str = "ws://localhost:1080", workspace_path:Path = Path("vhl_workspace").resolve()):
         logger.info(f"[AOSM.__init__] Initializing AOSM with ws_url: {ws_url}")
         self.state = AOSMState.STARTUP
         self.web_socket_client = VHLWebSocketClient(
@@ -40,7 +40,7 @@ class AOSM:
             "observations": []
         }
         self.event_queue = asyncio.Queue()
-        self.workspace_manager = WorkspaceManager("vhl_workspace")
+        self.workspace_manager = WorkspaceManager(workspace_path)
         self.project_root_info: Optional[Dict[str, Any]] = None
         self.active_ana_sm: Optional[ANADStateMachine] = None
         self.ana_inbox: Optional[asyncio.Queue] = None
@@ -873,7 +873,9 @@ def main():
     )
     
     ws_url = os.getenv("VHL_WS_URL", "ws://localhost:1080")
-    aosm = AOSM(ws_url=ws_url)
+    workspace_arg = sys.argv[1] if len(sys.argv) > 1 else None
+    workspace_path = Path(workspace_arg).expanduser().resolve() if workspace_arg else Path("vhl_workspace").resolve()
+    aosm = AOSM(ws_url=ws_url, workspace_path=workspace_path)
     
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
