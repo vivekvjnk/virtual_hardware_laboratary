@@ -210,8 +210,8 @@ class VHLWebSocketClient:
 
     # --- Helper methods for Backend -> Runtime events ---
 
-    async def emit_state_transition(self, from_state: str, to_state: str, reason: str):
-        payload = StateTransitionPayload(from_state=from_state, to_state=to_state, reason=reason)
+    async def emit_state_transition(self, from_state: str, to_state: str, reason: str, **kwargs):
+        payload = StateTransitionPayload(from_state=from_state, to_state=to_state, reason=reason, **kwargs)
         await self.emit(EventType.STATE_TRANSITION, payload)
 
     async def emit_evaluation_update(self, task_id: str, decision: str ):

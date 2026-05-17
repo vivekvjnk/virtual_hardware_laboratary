@@ -102,7 +102,7 @@ class InterruptRequestPayload(BaseModel):
     reason: str
 
 class StateTransitionPayload(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, extra='allow')
     
     from_state: str = Field(alias="from")
     to_state: str = Field(alias="to")
@@ -157,9 +157,11 @@ class ProjectsListPayload(BaseModel):
     projects: List[str]
 
 class HILRequestPayload(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra='allow')
     reason: str
     message: Optional[str] = None
     scud_content: Optional[str] = None
+    scud_path: Optional[str] = None
 
 class SyncPayload(BaseModel):
     project_id: str

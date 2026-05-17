@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import sys
+import json
 from typing import Optional, Dict, Any, Union, Tuple
 from pathlib import Path
 from state_machine.states import AOSMState
@@ -171,21 +172,28 @@ class AOSM:
         
         # Update current message
         self.current_message["state_id"] = next_state
+        logger.info(f"[AOSM.transition_to] Incoming payload for {next_state.name}: {payload}")
         
-        if payload:
-            payload.update({
-                    "from": from_state.name,
-                    "to": next_state.name,
-                    "reason": reason
-                })
+        if payload is None:
+            payload = {}
+        else:
+            payload = dict(payload) # Ensure it's a mutable dict
+            
+        payload.update({
+                "from": from_state.name,
+                "to": next_state.name,
+                "reason": reason
+            })
         
         
         # Notify the UI/Protocol layer
-        # await self.ws_client.emit_state_transition(
-        #     from_state=from_state.name,
-        #     to_state=next_state.name,
-        #     reason=reason
-        # )
+        extra_fields = {k: v for k, v in payload.items() if k not in ["from", "to", "reason"]}
+        await self.web_socket_client.emit_state_transition(
+            from_state=from_state.name,
+            to_state=next_state.name,
+            reason=reason,
+            **extra_fields
+        )
         
         
         
@@ -345,7 +353,10 @@ class AOSM:
         """
         logger.info(f"[AOSM._handle_idle] In IDLE state...")
         if event.type == EventType.REFERENCE_UPLOADED:
-            await self.transition_to(AOSMState.BOOTSTRAP_PIPELINE, "New schematic uploaded", payload=event.payload)
+            logger.info(f"[AOSM._handle_idle] Received REFERENCE_UPLOADED: {event.payload}")
+            # Ensure we have a clean dict of the payload
+            payload = json.loads(json.dumps(event.payload)) if event.payload else {}
+            await self.transition_to(AOSMState.BOOTSTRAP_PIPELINE, "New schematic uploaded", payload=payload)
         elif event.type == EventType.HUMAN_INPUT:
             await self.transition_to(AOSMState.INTENT_CLASSIFY, "User message received", payload=event.payload)
         
@@ -367,24 +378,39 @@ class AOSM:
     async def _handle_bootstrap_pipeline(self, event: BaseEvent):
         """
         Prepares necessary assets for Archy Agent after receiving REFERENCE_UPLOADED event in IDLE state.
-        Expects event.payload to contain "image_id" and "image_path" for the uploaded schematic reference.
+        Expects event.payload to contain "reference_id" and "filename" for the uploaded schematic reference.
         If preparation is successful, transitions to TRIGGER_ARCHY to start Archy Agent. Otherwise, transitions to ERROR_PRESENTED.
         """
-        logger.info(f"[AOSM._handle_bootstrap_pipeline] In BOOTSTRAP_PIPELINE state...")
+        logger.info(f"[AOSM._handle_bootstrap_pipeline] In BOOTSTRAP_PIPELINE state... Event type: {event.type}")
         # We trigger the bootstrap asset preparation upon entering this state.
         if event.type == EventType.STATE_TRANSITION:
+            payload = event.payload or {}
+            logger.info(f"[AOSM._handle_bootstrap_pipeline] Transition payload: {payload}")
+            reference_id = payload.get("reference_id")
+            filename = payload.get("filename")
+
             try:
                 # Step 1: Prepare assets (Ref, Workspace, Preprocessing)
-                processed_image_path = await asyncio.to_thread(
+                success = await asyncio.to_thread(
                     prepare_archy_workspace,
                     workspace_manager=self.workspace_manager,
                 )
-                if not processed_image_path:
+                if not success:
                     raise ValueError("Failed to prepare bootstrap assets")
                 
                 # Step 2: Store info for downstream agents
-                # self.current_message["circuit_id"] = image_id
-                # self.current_message["image_path"] = str(processed_image_path)
+                if reference_id:
+                    self.current_message["circuit_id"] = reference_id
+                    # Resolve the processed image path
+                    module_path = self.workspace_manager.module_paths.get(reference_id)
+                    if module_path and filename:
+                        image_path = module_path / "resources" / "schematic_images" / filename
+                        self.current_message["image_path"] = str(image_path)
+                        logger.info(f"[AOSM._handle_bootstrap_pipeline] Resolved image_path: {image_path}")
+                    else:
+                        logger.warning(f"[AOSM._handle_bootstrap_pipeline] Module path or filename missing: module_path={module_path}, filename={filename}")
+                else:
+                    logger.warning(f"[AOSM._handle_bootstrap_pipeline] reference_id missing in payload")
                 
                 # Step 3: Transition to ARCHY
                 await self.transition_to(AOSMState.TRIGGER_ARCHY, "Assets prepared. Moving to Archy.")
@@ -652,15 +678,22 @@ class AOSM:
                 ))
 
     async def _handle_wait_for_archy_hil(self, event: BaseEvent):
-        logger.info(f"[AOSM._handle_wait_for_archy_hil] In WAIT_FOR_ARCHY_HIL state...")
+        logger.info(f"[AOSM._handle_wait_for_archy_hil] In WAIT_FOR_ARCHY_HIL state... Event: {event.type}")
         
         if event.type == EventType.STATE_TRANSITION:
             # On entering state, notify user for review
-            scud_path = event.payload.get("scud_path")
+            scud_path = event.payload.get("scud_path") or self.current_message.get("scud_path")
             scud_content = ""
+            logger.info(f"[AOSM._handle_wait_for_archy_hil] Attempting to read SCUD from: {scud_path}")
             if scud_path and os.path.exists(scud_path):
-                with open(scud_path, "r") as f:
-                    scud_content = f.read()
+                try:
+                    with open(scud_path, "r") as f:
+                        scud_content = f.read()
+                    logger.info(f"[AOSM._handle_wait_for_archy_hil] Read SCUD content successfully. Length: {len(scud_content)}")
+                except Exception as e:
+                    logger.error(f"[AOSM._handle_wait_for_archy_hil] Failed to read SCUD at {scud_path}: {e}")
+            else:
+                logger.warning(f"[AOSM._handle_wait_for_archy_hil] scud_path is None or does not exist: {scud_path}")
             
             await self.web_socket_client.emit_event(BaseEvent(
                 type=EventType.HIL_REQUEST,
@@ -668,7 +701,8 @@ class AOSM:
                 payload={
                     "reason": "ARCHY_REVIEW",
                     "message": "Archy has finished schematic generation. Please review the generated SCUD.",
-                    "scud_content": scud_content
+                    "scud_content": scud_content,
+                    "scud_path": str(scud_path)
                 }
             ))
             
@@ -767,15 +801,18 @@ class AOSM:
     #   - Parse detailed design document provided by user
     #   - Design document may include image + textual description + component preferences
     #   - Output of this stage is still a SCUD, but with richer information for the downstream modules to work with
-    async def _run_archy(self, image_id: str, image_path: Path):
+    async def _run_archy(self, module_name: str, image_path: Path):
         """Logic for TRIGGER_ARCHY: Invocating Archy agent."""
-        logger.info(f"[AOSM._run_archy] Triggering Archy agent invocation for image: {image_id}")
+        logger.info(f"[AOSM._run_archy] Triggering Archy agent invocation for module: {module_name}")
         
         project_root = self.workspace_manager.project_root
         
+        # Resolve segments path
+        image_segments_path = image_path.parent / f"{image_path.stem}_segments"
+
         # Handle Stub Mode
         if os.environ.get("STUBS") == "true":
-            logger.info(f"[AOSM._run_archy] STUB mode detected. Activating Archy stub for image: {image_id}")
+            logger.info(f"[AOSM._run_archy] STUB mode detected. Activating Archy stub for module: {module_name}")
             os.environ["ARCHY_STUB"] = "true"
         else:
             # Ensure it's not accidentally left on from a previous run in the same process
@@ -786,8 +823,9 @@ class AOSM:
             scud_path = await asyncio.to_thread(
                 orchestrate_archy, 
                 workspace_path=project_root, 
-                image_id=image_id,
-                image_path=image_path
+                module_name=module_name,
+                image_path=image_path,
+                image_segments_path=image_segments_path
             )
             self.update_agent_status("archy", AgentStatus.IDLE)
             logger.info(f"[AOSM._run_archy] Archy completed successfully. SCUD generated at: {scud_path}")
