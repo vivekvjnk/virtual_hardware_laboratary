@@ -66,12 +66,26 @@ def archy_build_scud(
 
     if conversation is None:
         model = os.getenv("LLM_MODEL", "vertex_ai/gemini-3-flash-preview")
-
-        llm = LLM(
-            usage_id="archy-scud-architect",
-            model=model,
-            api_key=SecretStr(os.getenv("LLM_API_KEY")),
-        )
+        replay_dir = os.getenv("VHL_E2E_REPLAY_DIR")
+        
+        if replay_dir and os.path.exists(replay_dir):
+            logger.info(f"[scud_gen_agent] Using ReplayLLM from {replay_dir}")
+            import sys
+            tests_dir = str(Path(__file__).resolve().parent.parent.parent / "tests")
+            if tests_dir not in sys.path:
+                sys.path.append(tests_dir)
+            from tests.fixtures.replay_snapshot_test_llm.replay_llm import ReplayLLM
+            llm = ReplayLLM.from_persistence(
+                replay_dir, 
+                usage_id="archy-scud-architect",
+                current_workspace=str(workspace)
+            )
+        else:
+            llm = LLM(
+                usage_id="archy-scud-architect",
+                model=model,
+                api_key=SecretStr(os.getenv("LLM_API_KEY", "dummy_key")),
+            )
         surgical_condenser = LargeFileSurgicalCondenser(
             threshold_bytes=10240, # 10KB
             target_tool="file_editor"
@@ -109,6 +123,7 @@ def archy_build_scud(
         conversation = Conversation(
             agent=agent,
             workspace=str(workspace),
+            persistence_dir=str(workspace / ".conversations")
         )
 
     user_msg = (

@@ -5,6 +5,7 @@ from enum import Enum
 from typing import Any, Callable, Dict, Optional
 
 from .data_types import AgentDescriptor, AgentContext, AgentState, MessageEnvelope, EventEnvelope
+MAILBOX_POLL_INTERVAL = 0.5  # seconds
 
 class AgentStatus(Enum):
     """Strict state machine enforcement per URP Section 2."""
@@ -27,7 +28,7 @@ class AbstractURPAgent(ABC):
         self.descriptor = descriptor
         
         # 3. Persistent State (initialized to baseline)
-        self.state = AgentState(
+        self._state = AgentState(
             session_id=str(uuid.uuid4()), 
             status=AgentStatus.UNINITIALIZED.value
         )
@@ -48,8 +49,8 @@ class AbstractURPAgent(ABC):
     def initialize(self, context, emit_callback: Callable[['EventEnvelope'], None]) -> None:
         """Runs exactly once. Binds dependencies and event bus."""
         # Invariant 1: Initialize exactly once
-        if self.state.status != AgentStatus.UNINITIALIZED.value:
-            raise RuntimeError(f"Cannot initialize agent in state: {self.state.status}")
+        if self._state.status != AgentStatus.UNINITIALIZED.value:
+            raise RuntimeError(f"Cannot initialize agent in state: {self._state.status}")
         
         self.context = context
         self._emit_callback = emit_callback
@@ -57,25 +58,25 @@ class AbstractURPAgent(ABC):
         # Allow child classes to perform specific initialization (e.g., loading prompts)
         self._on_initialize(context)
         
-        self.state.status = AgentStatus.INITIALIZED.value
+        self._state.status = AgentStatus.INITIALIZED.value
 
     async def start(self) -> None:
         """Makes agent runnable. Enters WAITING state."""
-        if self.state.status != AgentStatus.INITIALIZED.value:
-            raise RuntimeError(f"Agent must be INITIALIZED to start. Current: {self.state.status}")
+        if self._state.status != AgentStatus.INITIALIZED.value:
+            raise RuntimeError(f"Agent must be INITIALIZED to start. Current: {self._state.status}")
         
-        self.state.status = AgentStatus.WAITING.value
+        self._state.status = AgentStatus.WAITING.value
         self._task = asyncio.create_task(self._lifecycle_loop())
         
         self.emit(EventEnvelope(
             type="AGENT_STARTED",
-            payload={"session_id": self.state.session_id},
+            payload={"session_id": self._state.session_id},
             source_agent_id=self.descriptor.agent_id
         ))
 
     async def send(self, message: 'MessageEnvelope') -> None:
         """Asynchronous mailbox delivery. Invariant 3: Messages enter only through mailbox."""
-        if self.state.status in (AgentStatus.TERMINATING.value, AgentStatus.TERMINATED.value):
+        if self._state.status in (AgentStatus.TERMINATING.value, AgentStatus.TERMINATED.value):
             raise RuntimeError("Cannot send message to a terminating/terminated agent.")
             
         await self.mailbox.put(message)
@@ -87,7 +88,7 @@ class AbstractURPAgent(ABC):
 
     async def shutdown(self) -> None:
         """Graceful termination."""
-        self.state.status = AgentStatus.TERMINATING.value
+        self._state.status = AgentStatus.TERMINATING.value
         self._shutdown_event.set()
         
         # Allow child classes to clean up resources
@@ -96,7 +97,7 @@ class AbstractURPAgent(ABC):
         if self._task:
             await self._task
             
-        self.state.status = AgentStatus.TERMINATED.value
+        self._state.status = AgentStatus.TERMINATED.value
         self.emit(EventEnvelope(
             type="AGENT_TERMINATED",
             payload=None,
@@ -115,15 +116,16 @@ class AbstractURPAgent(ABC):
         while not self._shutdown_event.is_set():
             try:
                 # 1. WAITING
-                self.state.status = AgentStatus.WAITING.value
+                self._state.status = AgentStatus.WAITING.value
                 
-                message = await asyncio.wait_for(self.mailbox.get(), timeout=0.5)
+                # 0.5s timeout to check mailbox periodically. If no messages, loop continues.
+                message = await asyncio.wait_for(self.mailbox.get(), timeout=MAILBOX_POLL_INTERVAL)
                 
                 # 2. PROCESSING
-                self.state.status = AgentStatus.PROCESSING.value
+                self._state.status = AgentStatus.PROCESSING.value
                 
                 try:
-                    # Capture the return value from the implementation (e.g., LangGraph result)
+                    # Capture the return value from the implementation
                     result = await self.process(message)
                     
                     # 3. AUTO-EMIT FINAL RESULT
@@ -184,14 +186,14 @@ class AbstractURPAgent(ABC):
         pass
 
     # ---------------------------------------------------------
-    # OPTIONAL INSPECTION INTERFACES (URP Section 6)
+    # INSPECTION INTERFACES (URP Section 6)
     # ---------------------------------------------------------
-
-    def inspect_state(self) -> Dict[str, Any]:
+    @property
+    def state(self) -> Dict[str, Any]:
         """Returns a safe, read-only view of the agent's current state."""
         return {
             "agent_id": self.descriptor.agent_id,
-            "status": self.state.status,
-            "session_id": self.state.session_id,
+            "status": self._state.status,
+            "session_id": self._state.session_id,
             "mailbox_size": self.mailbox.qsize()
         }

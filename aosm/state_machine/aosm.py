@@ -15,7 +15,12 @@ import base64
 from ana_agent.state_machine.mcp_manager import MCPManager
 from ana_agent.state_machine import ANADStateMachine
 from workspace.manager import WorkspaceManager
+
+from vhl_common.urp.data_types import AgentContext, MessageEnvelope, EventEnvelope
+
 from archy_agent.main import orchestrate_archy, prepare_archy_workspace
+from archy_agent.urp_archy import ArchyURPAgent, ArchyConfig
+
 from librarian_agent.agent import LibrarianAgent
 from librarian_agent.stub import process_scud_stub
 from vhl_common.utils import handle_errors
@@ -347,16 +352,18 @@ class AOSM:
     async def _handle_idle(self, event: BaseEvent):
         """
         Default state of the system. Handles following events:
-        - REFERENCE_UPLOADED: Transition to BOOTSTRAP_PIPELINE to prepare assets for Archy.
+        - REFERENCE_UPLOADED: Transition to ARCHY to prepare assets for Archy.
         - HUMAN_INPUT: Transition to INTENT_CLASSIFY to classify user intent (modification vs synthesis)
         - SYNTHESIZE_CIRCUIT: User trigger to start circuit synthesis. Check if project is synthesizable and transition to TRIGGER_ANA if yes, otherwise emit error.
         """
         logger.info(f"[AOSM._handle_idle] In IDLE state...")
+
+        # TODO: Outdated event type. Remove in next refactor
         if event.type == EventType.REFERENCE_UPLOADED:
             logger.info(f"[AOSM._handle_idle] Received REFERENCE_UPLOADED: {event.payload}")
             # Ensure we have a clean dict of the payload
             payload = json.loads(json.dumps(event.payload)) if event.payload else {}
-            await self.transition_to(AOSMState.BOOTSTRAP_PIPELINE, "New schematic uploaded", payload=payload)
+            await self.transition_to(AOSMState.ARCHY, "New schematic uploaded", payload=payload)
         elif event.type == EventType.HUMAN_INPUT:
             await self.transition_to(AOSMState.INTENT_CLASSIFY, "User message received", payload=event.payload)
         
@@ -374,50 +381,6 @@ class AOSM:
                     payload={"message": "Project not ready for synthesis. Please upload schematic first."}
                 ))
     
-    
-    async def _handle_bootstrap_pipeline(self, event: BaseEvent):
-        """
-        Prepares necessary assets for Archy Agent after receiving REFERENCE_UPLOADED event in IDLE state.
-        Expects event.payload to contain "reference_id" and "filename" for the uploaded schematic reference.
-        If preparation is successful, transitions to TRIGGER_ARCHY to start Archy Agent. Otherwise, transitions to ERROR_PRESENTED.
-        """
-        logger.info(f"[AOSM._handle_bootstrap_pipeline] In BOOTSTRAP_PIPELINE state... Event type: {event.type}")
-        # We trigger the bootstrap asset preparation upon entering this state.
-        if event.type == EventType.STATE_TRANSITION:
-            payload = event.payload or {}
-            logger.info(f"[AOSM._handle_bootstrap_pipeline] Transition payload: {payload}")
-            reference_id = payload.get("reference_id")
-            filename = payload.get("filename")
-
-            try:
-                # Step 1: Prepare assets (Ref, Workspace, Preprocessing)
-                success = await asyncio.to_thread(
-                    prepare_archy_workspace,
-                    workspace_manager=self.workspace_manager,
-                )
-                if not success:
-                    raise ValueError("Failed to prepare bootstrap assets")
-                
-                # Step 2: Store info for downstream agents
-                if reference_id:
-                    self.current_message["circuit_id"] = reference_id
-                    # Resolve the processed image path
-                    module_path = self.workspace_manager.module_paths.get(reference_id)
-                    if module_path and filename:
-                        image_path = module_path / "resources" / "schematic_images" / filename
-                        self.current_message["image_path"] = str(image_path)
-                        logger.info(f"[AOSM._handle_bootstrap_pipeline] Resolved image_path: {image_path}")
-                    else:
-                        logger.warning(f"[AOSM._handle_bootstrap_pipeline] Module path or filename missing: module_path={module_path}, filename={filename}")
-                else:
-                    logger.warning(f"[AOSM._handle_bootstrap_pipeline] reference_id missing in payload")
-                
-                # Step 3: Transition to ARCHY
-                await self.transition_to(AOSMState.TRIGGER_ARCHY, "Assets prepared. Moving to Archy.")
-            except Exception as e:
-                logger.error(f"[AOSM._handle_bootstrap_pipeline] Preparation failed: {e}")
-                await self.transition_to(AOSMState.ERROR_PRESENTED, f"Bootstrap preparation failed: {e}")
-
     async def _handle_present_result(self, event: BaseEvent):
         logger.info(f"[AOSM._handle_present_result] Presenting results to user...")
         
@@ -462,25 +425,44 @@ class AOSM:
     # --- Agent nodes begin--- #    
     # Archy
     @handle_errors(on_error="_aosm_error_transition")
-    async def _handle_trigger_archy(self, event: BaseEvent):
-        logger.info(f"[AOSM._handle_trigger_archy] In TRIGGER_ARCHY state...")
-        image_id = self.current_message.get("circuit_id")
-        image_path_str = self.current_message.get("image_path")
+    async def _handle_archy(self, event: BaseEvent):
+        logger.info(f"[AOSM._handle_archy] In ARCHY state...")
         
-        if not image_id or not image_path_str:
-            logger.error(f"[AOSM._handle_trigger_archy] Missing circuit_id ({image_id}) or image_path ({image_path_str})")
-            await self.transition_to(AOSMState.ERROR_PRESENTED, "Missing session data for Archy")
-            return
-
-        image_path = Path(str(image_path_str))
+        # Step 1: Prepare workspace and assets for Archy
+        success = await asyncio.to_thread(
+                    prepare_archy_workspace,
+                    workspace_manager=self.workspace_manager,
+                )
+        if not success:
+            raise RuntimeError("Failed to prepare workspace for Archy. Check logs for details.")
         
-        scud_path = await self._run_archy(image_id, image_path)
-        if scud_path:
-            self.current_message["scud_path"] = str(scud_path)
-            await self.transition_to(AOSMState.WAIT_FOR_ARCHY_HIL, "Archy completed. Waiting for HIL review.", payload={"scud_path": str(scud_path)})
-        else:
-            raise ValueError("SCUD path not returned from Archy")
+        # Step 2: Initialize Archy URP Agent                                                                       
+        archy_agent = ArchyURPAgent()
 
+        # Step 3: Define emit callback to capture Archy events and re-emit to VHL runtime
+        event_queue = asyncio.Queue()
+        def emit_callback(event: EventEnvelope):
+            logger.info(f"[EVENT] Received {event.type} with payload {event.payload}")
+            event_queue.put_nowait(event)
+
+        # Step 4: Prepare context and initialize Archy agent with context and emit callback
+        module_name = self.current_message.get("module_name", "default_module")
+        context = {
+            "config": ArchyConfig(conversation_persistence=True),
+            "workspace": self.workspace_manager,
+            "module_name": module_name
+        }
+        archy_agent.initialize(context=context, emit_callback=emit_callback)
+
+        # Step 5: Start Archy agent (enters WAITING state)
+        await archy_agent.start()
+        
+
+        self.update_agent_status("archy", archy_agent.state.status)
+        # Trigger archy agent here
+        self.update_agent_status("archy", archy_agent.state.status)
+
+        
     # Librarian
     @handle_errors(on_error="_aosm_error_transition")
     async def _handle_trigger_librarian(self, event: BaseEvent):
@@ -802,7 +784,7 @@ class AOSM:
     #   - Design document may include image + textual description + component preferences
     #   - Output of this stage is still a SCUD, but with richer information for the downstream modules to work with
     async def _run_archy(self, module_name: str, image_path: Path):
-        """Logic for TRIGGER_ARCHY: Invocating Archy agent."""
+        """Logic for ARCHY: Invocating Archy agent."""
         logger.info(f"[AOSM._run_archy] Triggering Archy agent invocation for module: {module_name}")
         
         project_root = self.workspace_manager.project_root
@@ -810,14 +792,6 @@ class AOSM:
         # Resolve segments path
         image_segments_path = image_path.parent / f"{image_path.stem}_segments"
 
-        # Handle Stub Mode
-        if os.environ.get("STUBS") == "true":
-            logger.info(f"[AOSM._run_archy] STUB mode detected. Activating Archy stub for module: {module_name}")
-            os.environ["ARCHY_STUB"] = "true"
-        else:
-            # Ensure it's not accidentally left on from a previous run in the same process
-            os.environ.pop("ARCHY_STUB", None)
-        
         try:
             self.update_agent_status("archy", AgentStatus.RUNNING)
             scud_path = await asyncio.to_thread(
