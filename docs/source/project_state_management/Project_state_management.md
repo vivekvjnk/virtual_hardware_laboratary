@@ -155,7 +155,8 @@ CREATE TABLE semantic_operations (
 
     artifact_ref_id INTEGER NOT NULL,
 
-    op_name TEXT NOT NULL,       -- ARCHY / LIBRARIAN / ANA
+    op_name TEXT NOT NULL,       -- Operation name: INITIALIZE / SCUD_CREATE / CIRCUIT_CREATE / LIB_UPDATE etc.
+    author TEXT NOT NULL,        -- Author of the operation: WORKSPACE_MANAGER / ARCHY / LIBRARIAN / ANA 
     status TEXT NOT NULL,        -- SUCCESS / PARTIAL / FAILURE / ACCEPT / REJECT
 
     payload JSON,                -- structured interpretation details

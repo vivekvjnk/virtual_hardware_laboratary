@@ -146,6 +146,7 @@ def record_operation(
     self,
     module_name: str,
     op_name: str,
+    author: str,
     status: str,
     payload: dict,
     commit_message: str

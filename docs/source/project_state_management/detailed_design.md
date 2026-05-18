@@ -164,12 +164,13 @@ class SQLiteManager:
         self.conn.execute(
             """
             INSERT INTO semantic_operations
-            (artifact_ref_id, op_name, status, payload, timestamp)
-            VALUES (?, ?, ?, ?, ?)
+            (artifact_ref_id, op_name, author, status, payload, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
             (
                 snapshot_id,
                 op_name,
+                author,
                 status,
                 json.dumps(payload) if payload else None,
                 datetime.utcnow()
@@ -189,6 +190,7 @@ This is the **most important function**.
         git_metadata,
         module_name,
         op_name,
+        author,
         status,
         payload=None
     ):
@@ -213,6 +215,7 @@ This is the **most important function**.
             self.insert_semantic_operation(
                 snapshot_id,
                 op_name,
+                author,
                 status,
                 payload
             )
@@ -247,7 +250,8 @@ payload = {"sections_present": True}
 db.record_operation(
     git_metadata=git_meta,
     module_name="bms-monitor",
-    op_name="ARCHY",
+    op_name="SCUD_CREATION",
+    author="ARCHY",
     status=status,
     payload=payload
 )

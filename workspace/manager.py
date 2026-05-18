@@ -161,6 +161,7 @@ class WorkspaceManager:
                 self.record_operation(
                     module_name="root",
                     op_name="INITIALIZE",
+                    author="WORKSPACE_MANAGER",
                     status="SUCCESS",
                     payload={"message": "Legacy project upgraded to Semantic Ledger"},
                     commit_message="INITIALIZE: Semantic Ledger Upgrade"
@@ -274,6 +275,7 @@ class WorkspaceManager:
                 self.record_operation(
                     module_name="root",
                     op_name="INITIALIZE",
+                    author="WORKSPACE_MANAER",
                     status="SUCCESS",
                     payload={"source": "zip_bootstrap" if zip_present else "empty_init"},
                     commit_message="INITIALIZE: Project Bootstrap"
@@ -828,6 +830,7 @@ class WorkspaceManager:
         self,
         module_name: str,
         op_name: str,
+        author: str,
         status: str,
         payload: dict,
         commit_message: str
@@ -849,6 +852,7 @@ class WorkspaceManager:
             git_metadata=git_metadata,
             module_name=module_name,
             op_name=op_name,
+            author=author,
             status=status,
             payload=payload
         )
@@ -935,6 +939,7 @@ class WorkspaceManager:
         self,
         module_name: Optional[str] = None,
         op_name: Optional[str] = None,
+        author: Optional[str] = None,
         status: Optional[str] = None,
         limit: int = 10
     ) -> List[Operation]:
@@ -952,6 +957,9 @@ class WorkspaceManager:
         if op_name:
             query += " AND so.op_name = ?"
             params.append(op_name)
+        if author:
+            query += " AND so.author = ?"
+            params.append(author)
         if status:
             query += " AND so.status = ?"
             params.append(status)

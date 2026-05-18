@@ -42,6 +42,7 @@ class SQLiteManager:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     artifact_ref_id INTEGER NOT NULL,
                     op_name TEXT NOT NULL,
+                    author TEX NOT NULL,
                     status TEXT NOT NULL,
                     payload TEXT,
                     timestamp DATETIME NOT NULL,
@@ -121,6 +122,7 @@ class SQLiteManager:
         self,
         snapshot_id: int,
         op_name: str,
+        author: str,
         status: str,
         payload: Optional[Dict[str, Any]] = None
     ):
@@ -128,12 +130,13 @@ class SQLiteManager:
         self.conn.execute(
             """
             INSERT INTO semantic_operations
-            (artifact_ref_id, op_name, status, payload, timestamp)
-            VALUES (?, ?, ?, ?, ?)
+            (artifact_ref_id, op_name, author, status, payload, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
             (
                 snapshot_id,
                 op_name,
+                author,
                 status,
                 json.dumps(payload) if payload else None,
                 datetime.now(UTC).isoformat()
@@ -145,6 +148,7 @@ class SQLiteManager:
         git_metadata: Dict[str, Any],
         module_name: str,
         op_name: str,
+        author: str,
         status: str,
         payload: Optional[Dict[str, Any]] = None
     ) -> int:
@@ -167,10 +171,11 @@ class SQLiteManager:
             )
 
             self.insert_semantic_operation(
-                snapshot_id,
-                op_name,
-                status,
-                payload
+                snapshot_id=snapshot_id,
+                op_name=op_name,
+                author=author,
+                status=status,
+                payload=payload
             )
 
             self.commit()
