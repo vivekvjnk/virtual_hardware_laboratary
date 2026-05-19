@@ -42,7 +42,7 @@ class SQLiteManager:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     artifact_ref_id INTEGER NOT NULL,
                     op_name TEXT NOT NULL,
-                    author TEX NOT NULL,
+                    author TEXT NOT NULL,
                     status TEXT NOT NULL,
                     payload TEXT,
                     timestamp DATETIME NOT NULL,
