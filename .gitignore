@@ -3,8 +3,8 @@
 *.pyo
 *.pyd
 *.logs
+*.log
 runs/
-tests/
 logs/
 */results/*
 utils/data/*
@@ -24,3 +24,4 @@ ana/ana_agent/ana_worker_2/results/6380a2e8-9874-40f8-90d9-04c226d198e3/results.
 ana/ana_agent/ana_worker_2/results/6380a2e8-9874-40f8-90d9-04c226d198e3/results/eval.log
 ana/ana_agent/ana_worker_2/results/e676cae5-4ddc-479d-9828-97cd4b226f28/results.zip
 ana/ana_agent/ana_worker_2/results/e676cae5-4ddc-479d-9828-97cd4b226f28/results/eval.log
+vhl_workspace/*
