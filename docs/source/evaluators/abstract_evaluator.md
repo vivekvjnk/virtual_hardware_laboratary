@@ -42,7 +42,7 @@ Each evaluator follows a fixed pattern:
 operation: <OPERATION>_EVAL  
 result: SUCCESS | FAILURE  
 description: str  
-author: EVALUATOR  
+author: <AGENT_ID>  
 timestamp: auto  
 ```
 
@@ -64,13 +64,28 @@ Each evaluator must define:
   What data to read from SQLite
 
 * **Validation Rules**
-  Deterministic criteria for success
+  Deterministic criteria for success in `check_rules()`
 
 * **Failure Messages**
   Clear, specific explanations per rule
 
 * **Operation Name**
   `<OPERATION>_EVAL`
+
+* **Agent ID**
+  `<AGENT_ID>` representing the author of the evaluation in the DB
+
+---
+
+## 4.1 Interface Methods
+
+Each evaluator exposes two main methods:
+
+* **`check_rules(self) -> Tuple[str, str]`**
+  Applies deterministic validation rules on facts in the database and returns a dry-run result of `(result, description)` without persistence.
+
+* **`evaluate(self, snapshot_id: Optional[int] = None) -> Tuple[str, str]`**
+  Executes `check_rules()` and commits the semantic operation judgment into the `semantic_operations` table. Automatically links to the latest snapshot ID in the database if not explicitly provided.
 
 ---
 

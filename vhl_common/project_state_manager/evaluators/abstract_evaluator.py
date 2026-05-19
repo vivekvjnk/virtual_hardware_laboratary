@@ -26,7 +26,7 @@ class AbstractEvaluator(ABC):
         pass
 
     @abstractmethod
-    def evaluate(self) -> Tuple[str, str]:
+    def check_rules(self) -> Tuple[str, str]:
         """
         Applies validation rules to the database state.
         
@@ -37,12 +37,20 @@ class AbstractEvaluator(ABC):
         """
         pass
 
-    def run(self, snapshot_id: int) -> Tuple[str, str]:
+    def evaluate(self, snapshot_id: Optional[int] = None) -> Tuple[str, str]:
         """
-        Runs the evaluation and atomically records the semantic operation in the ledger.
+        Executes the evaluation rules and commits the semantic operation judgment
+        into the database under the given or latest snapshot ID.
         """
-        result, description = self.evaluate()
-        
+        result, description = self.check_rules()
+
+        # Find latest snapshot if not provided
+        if snapshot_id is None:
+            row = self.db.conn.execute("SELECT id FROM artifact_snapshots ORDER BY id DESC LIMIT 1").fetchone()
+            if not row:
+                raise ValueError("No artifact snapshots found in the database to link the evaluation to.")
+            snapshot_id = row["id"]
+
         # Atomically write semantic operation
         try:
             self.db.begin()

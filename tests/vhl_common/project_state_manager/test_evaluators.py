@@ -47,16 +47,12 @@ def test_project_creation_evaluator_success(db_setup):
         payload={"source": "empty_init"}
     )
     
-    # Run evaluator
+    # Run evaluator (which now evaluates and commits)
     evaluator = ProjectCreationEvaluator(db)
     result, description = evaluator.evaluate()
     
     assert result == "SUCCESS"
     assert description == "All criteria met"
-    
-    # Run and persist
-    eval_result, eval_desc = evaluator.run(snapshot_id)
-    assert eval_result == "SUCCESS"
     
     # Verify semantic operation entry was recorded in the database
     last_op = db.conn.execute("SELECT * FROM semantic_operations ORDER BY id DESC LIMIT 1").fetchone()
@@ -71,7 +67,7 @@ def test_project_creation_evaluator_failures(db_setup):
     evaluator = ProjectCreationEvaluator(db)
     
     # Without any setup, everything should fail
-    result, description = evaluator.evaluate()
+    result, description = evaluator.check_rules()
     assert result == "FAILURE"
     assert "No entries found in project_modules" in description
     assert "Last semantic operation is not INITIALIZE by WORKSPACE_MANAGER" in description
@@ -84,7 +80,7 @@ def test_project_creation_evaluator_failures(db_setup):
         rel_path="empty_module",
         description="Bootstrap module empty_module"
     )
-    result, description = evaluator.evaluate()
+    result, description = evaluator.check_rules()
     assert result == "FAILURE"
     assert "No entries found in project_modules" not in description  # resolved
     assert f"Module {mod_id} has no associated resources" in description  # new failure

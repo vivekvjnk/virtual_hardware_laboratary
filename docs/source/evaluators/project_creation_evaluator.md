@@ -75,7 +75,7 @@ The evaluator writes a new entry to `semantic_operations`:
     "operation": "CREATE_PROJECT_EVAL",
     "result": "SUCCESS" | "FAILURE",
     "description": str,
-    "author": "EVALUATOR",
+    "author": "PROJECT_CREATION_EVALUATOR",
     "timestamp": ...
 }
 ```
@@ -106,6 +106,7 @@ Examples:
 
 ## 6. Execution Flow
 
+### 6.1 check_rules() [Dry-Run Check]
 ```python
 facts = read_sqlite_state()
 
@@ -130,12 +131,25 @@ else:
     result = "SUCCESS"
     description = "All criteria met"
 
+return result, description
+```
+
+### 6.2 evaluate(snapshot_id = None) [Combined Check & Commit]
+```python
+result, description = check_rules()
+
+if not snapshot_id:
+    snapshot_id = get_latest_snapshot_id()
+
 write_semantic_operation(
+    snapshot_id=snapshot_id,
     operation="CREATE_PROJECT_EVAL",
     result=result,
     description=description,
-    author="EVALUATOR"
+    author="PROJECT_CREATION_EVALUATOR"
 )
+
+return result, description
 ```
 
 ---

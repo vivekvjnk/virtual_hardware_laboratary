@@ -19,13 +19,13 @@ class WorkspaceManager:
     Workspace Manager for Virtual Hardware Laboratory.
     Centralizes project creation, iteration management, and symbolic link setup.
     """
-    def __init__(self, workspace_root: Path, git_wrapper: Optional[GitClientWrapper] = None, db_manager: Optional[SQLiteManager] = None, debug: bool = False):
-        self.workspace_root = workspace_root
+    def __init__(self, workspace_root: Union[str, Path], debug: bool = False):
+        self.workspace_root = Path(workspace_root)
         self.workspace_root.mkdir(parents=True, exist_ok=True)
         
         # Per-project persistence managers
-        self.git: Optional[GitClientWrapper] = git_wrapper
-        self.db: Optional[SQLiteManager] = db_manager
+        self.git: Optional[GitClientWrapper] = None
+        self.db: Optional[SQLiteManager] = None
 
         
         self.debug = debug
@@ -339,6 +339,14 @@ class WorkspaceManager:
         if not self.git:
             return {}
         return self.git.get_tree_view()
+
+    @property
+    def sqlite_db(self)-> SQLiteManager:
+        return self.db
+    
+    @property
+    def git_client(self)-> GitClientWrapper:
+        return self.git
 
     def get_module_tree(self, module_name: str) -> Dict[str, Any]:
         """Returns the tree structure of a specific module."""

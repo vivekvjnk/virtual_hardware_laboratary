@@ -24,7 +24,7 @@ from archy_agent.urp_archy import ArchyURPAgent, ArchyConfig
 from librarian_agent.agent import LibrarianAgent
 from librarian_agent.stub import process_scud_stub
 from vhl_common.utils import handle_errors
-
+from vhl_common.project_state_manager.evaluators.project_creation_evaluator import ProjectCreationEvaluator
 
 logger = logging.getLogger(__name__)
 
@@ -264,6 +264,14 @@ class AOSM:
             
             logger.info(f"[AOSM._handle_startup] Creating new project: {project_id}")
             project_root = self.workspace_manager.create_project(project_id, zip_present=zip_present)
+
+            # Evaluate project creation success and update semantic db with the result. 
+            self.project_semantic_db = self.workspace_manager.sqlite_db
+            project_creation_evaluator = ProjectCreationEvaluator(self.project_semantic_db)
+            project_creation_evaluator.evaluate() # With this step, evaluator will commit a semantic operation to the semantic db. Based on the status of this operation, agent registry should compute the readiness of the Archy agent.
+            # TODO: Archy agent _compute_readiness function should know the Operation Name and Agent ID of the Project Creation Operation in order to query the semantic db and determine if it's ready to run or not. This is because the project creation workflow may involve multiple steps and we want to ensure that all steps are completed before allowing Archy to run. 
+            # Current implementation of ProjectCreationEvaluator uses hardcoded Agent ID and Operation Name(defined in the evaluator implementation code), so we can directly use those values in the Archy agent readiness function to check the status of the project creation workflow. Later, depending on the evolution of the evaluators, we can consider a standardized way to define and query these values.
+
             # Store project root information in class variable
             self.project_root_info = self.workspace_manager.get_workspace_info()
             

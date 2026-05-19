@@ -1,18 +1,21 @@
 from typing import Tuple, List
 from vhl_common.project_state_manager.evaluators.abstract_evaluator import AbstractEvaluator
 
+AGENT_ID = "PROJECT_CREATION_EVALUATOR"
+OPERATION_NAME = "CREATE_PROJECT_EVAL"
+
 class ProjectCreationEvaluator(AbstractEvaluator):
     """
     Project Creation Operation Evaluator.
     Determines whether the project creation workflow completed successfully.
     """
-    agent_id = "PROJECT_CREATION_EVALUATOR"
+    agent_id = AGENT_ID
 
     @property
     def operation_name(self) -> str:
-        return "CREATE_PROJECT_EVAL"
+        return OPERATION_NAME
 
-    def evaluate(self) -> Tuple[str, str]:
+    def check_rules(self) -> Tuple[str, str]:
         failures: List[str] = []
 
         # Rule 1: project_modules contains >= 1 entry
