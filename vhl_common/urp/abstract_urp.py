@@ -17,6 +17,10 @@ class AgentStatus(Enum):
     TERMINATING = "TERMINATING"
     TERMINATED = "TERMINATED"
 
+class PostconditionsViolatedError(Exception):
+    """Raised when post-condition verification fails."""
+    pass
+
 class AbstractURPAgent(ABC):
     """
     Abstract Unified Runtime Primitive (URP).
@@ -121,12 +125,34 @@ class AbstractURPAgent(ABC):
                 # 0.5s timeout to check mailbox periodically. If no messages, loop continues.
                 message = await asyncio.wait_for(self.mailbox.get(), timeout=MAILBOX_POLL_INTERVAL)
                 
-                # 2. PROCESSING
-                self._state.status = AgentStatus.PROCESSING.value
-                
                 try:
+                    # Pre-condition Check: After a message is popped from the mailbox, call _check_preconditions.
+                    pre_ok = await self._check_preconditions(message)
+                    
+                    # If it returns False, do not transition to PROCESSING.
+                    # Instead, emit an event of type TASK_PRECONDITIONS_VIOLATED, mark the task as done, and return the agent to the WAITING loop.
+                    if not pre_ok:
+                        self.emit(EventEnvelope(
+                            type="TASK_PRECONDITIONS_VIOLATED",
+                            payload={
+                                "message_id": message.message_id,
+                                "correlation_id": message.correlation_id,
+                                "reason": "Preconditions check failed"
+                            },
+                            source_agent_id=self.descriptor.agent_id
+                        ))
+                        continue
+                    
+                    # 2. PROCESSING
+                    self._state.status = AgentStatus.PROCESSING.value
+                    
                     # Capture the return value from the implementation
                     result = await self.process(message)
+                    
+                    # Post-condition Check: Inside the successful block of process(), right before emitting TASK_COMPLETED, invoke _check_postconditions.
+                    post_ok = await self._check_postconditions(message, result)
+                    if not post_ok:
+                        raise PostconditionsViolatedError("Postconditions check failed")
                     
                     # 3. AUTO-EMIT FINAL RESULT
                     # If process() returns data, we treat it as a successful task completion.
@@ -141,6 +167,16 @@ class AbstractURPAgent(ABC):
                             source_agent_id=self.descriptor.agent_id
                         ))
                         
+                except PostconditionsViolatedError as e:
+                    self.emit(EventEnvelope(
+                        type="TASK_POSTCONDITIONS_VIOLATED",
+                        payload={
+                            "error": str(e),
+                            "message_id": message.message_id,
+                            "correlation_id": message.correlation_id
+                        },
+                        source_agent_id=self.descriptor.agent_id
+                    ))
                 except Exception as e:
                     self.emit(EventEnvelope(
                         type="TASK_FAILED",
@@ -180,6 +216,22 @@ class AbstractURPAgent(ABC):
     # ---------------------------------------------------------
     # OPTIONAL EXTENSION HOOKS
     # ---------------------------------------------------------
+
+    async def _check_preconditions(self, message: 'MessageEnvelope', *args, **kwargs) -> bool:
+        """
+        Asynchronous verification hook executed before a message is allowed to process.
+        By default, it should return True. Child classes will override this to query
+        database entries, check file-system matrices, or verify upstream dependencies.
+        """
+        return True
+
+    async def _check_postconditions(self, message: 'MessageEnvelope', result: Any, *args, **kwargs) -> bool:
+        """
+        Asynchronous verification hook executed after process() completes successfully
+        but before the final output state is committed or emitted.
+        By default, it should return True.
+        """
+        return True
 
     async def _on_shutdown(self) -> None:
         """Optional hook for child classes during shutdown."""
