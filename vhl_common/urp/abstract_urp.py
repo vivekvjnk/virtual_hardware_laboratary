@@ -21,6 +21,10 @@ class PostconditionsViolatedError(Exception):
     """Raised when post-condition verification fails."""
     pass
 
+class StartPreconditionsViolatedError(Exception):
+    """Raised when agent start precondition verification fails."""
+    pass
+
 class AbstractURPAgent(ABC):
     """
     Abstract Unified Runtime Primitive (URP).
@@ -69,6 +73,16 @@ class AbstractURPAgent(ABC):
         if self._state.status != AgentStatus.INITIALIZED.value:
             raise RuntimeError(f"Agent must be INITIALIZED to start. Current: {self._state.status}")
         
+        # Check start preconditions
+        start_ok = await self._check_start_preconditions()
+        if not start_ok:
+            self.emit(EventEnvelope(
+                type="AGENT_START_PRECONDITIONS_VIOLATED",
+                payload={"reason": "Start preconditions check failed"},
+                source_agent_id=self.descriptor.agent_id
+            ))
+            raise StartPreconditionsViolatedError("Start preconditions check failed")
+            
         self._state.status = AgentStatus.WAITING.value
         self._task = asyncio.create_task(self._lifecycle_loop())
         
@@ -216,6 +230,14 @@ class AbstractURPAgent(ABC):
     # ---------------------------------------------------------
     # OPTIONAL EXTENSION HOOKS
     # ---------------------------------------------------------
+
+    async def _check_start_preconditions(self, *args, **kwargs) -> bool:
+        """
+        Asynchronous verification hook executed before the agent starts.
+        By default, it should return True. Child classes can override this to check
+        essential environment readiness or dependencies before starting.
+        """
+        return True
 
     async def _check_preconditions(self, message: 'MessageEnvelope', *args, **kwargs) -> bool:
         """

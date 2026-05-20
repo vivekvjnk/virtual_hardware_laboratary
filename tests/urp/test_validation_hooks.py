@@ -8,31 +8,37 @@ import pytest
 # Ensure vhl-agent-backend is in sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from vhl_common.urp.abstract_urp import AbstractURPAgent, PostconditionsViolatedError
+from vhl_common.urp.abstract_urp import AbstractURPAgent, PostconditionsViolatedError, StartPreconditionsViolatedError
 from vhl_common.urp.data_types import AgentDescriptor, MessageEnvelope, EventEnvelope
 
 
 class HookableURPAgent(AbstractURPAgent):
     """Dynamic concrete URP agent allowing hook injections for testing."""
 
-    def __init__(self, descriptor: AgentDescriptor, pre_hook=None, post_hook=None):
+    def __init__(self, descriptor: AgentDescriptor, pre_hook=None, post_hook=None, start_hook=None):
         super().__init__(descriptor=descriptor)
         self.pre_hook = pre_hook
         self.post_hook = post_hook
+        self.start_hook = start_hook
         self.process_called = False
 
     def _on_initialize(self, context) -> None:
         pass
 
-    async def _check_preconditions(self, message: MessageEnvelope) -> bool:
+    async def _check_start_preconditions(self, *args, **kwargs) -> bool:
+        if self.start_hook:
+            return await self.start_hook()
+        return await super()._check_start_preconditions(*args, **kwargs)
+
+    async def _check_preconditions(self, message: MessageEnvelope, *args, **kwargs) -> bool:
         if self.pre_hook:
             return await self.pre_hook(message)
-        return await super()._check_preconditions(message)
+        return await super()._check_preconditions(message, *args, **kwargs)
 
-    async def _check_postconditions(self, message: MessageEnvelope, result: Any) -> bool:
+    async def _check_postconditions(self, message: MessageEnvelope, result: Any, *args, **kwargs) -> bool:
         if self.post_hook:
             return await self.post_hook(message, result)
-        return await super()._check_postconditions(message, result)
+        return await super()._check_postconditions(message, result, *args, **kwargs)
 
     async def process(self, message: MessageEnvelope) -> Any:
         self.process_called = True
@@ -276,3 +282,69 @@ async def test_postcondition_raises_exception():
     assert agent.state["status"] == "WAITING"
     
     await agent.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_start_precondition_fails():
+    """Verify that when start pre-condition returns False, start() raises StartPreconditionsViolatedError, and AGENT_START_PRECONDITIONS_VIOLATED is emitted."""
+    desc = AgentDescriptor(
+        agent_id="test.agent",
+        name="Test Agent",
+        version="1.0",
+        capabilities=["TEST"],
+        accepted_message_types=["TEST_MSG"],
+    )
+    
+    async def start_hook():
+        return False
+        
+    agent = HookableURPAgent(descriptor=desc, start_hook=start_hook)
+    
+    events = asyncio.Queue()
+    def emit_callback(event: EventEnvelope):
+        events.put_nowait(event)
+        
+    agent.initialize(context=None, emit_callback=emit_callback)
+    assert agent.state["status"] == "INITIALIZED"
+    
+    with pytest.raises(StartPreconditionsViolatedError, match="Start preconditions check failed"):
+        await agent.start()
+        
+    # State must remain INITIALIZED
+    assert agent.state["status"] == "INITIALIZED"
+    
+    # Wait for AGENT_START_PRECONDITIONS_VIOLATED event
+    event = await asyncio.wait_for(events.get(), timeout=2.0)
+    assert event.type == "AGENT_START_PRECONDITIONS_VIOLATED"
+    assert event.payload["reason"] == "Start preconditions check failed"
+
+
+@pytest.mark.asyncio
+async def test_start_precondition_raises_exception():
+    """Verify that when start pre-condition raises standard exception, it bubbles up normally to start() caller."""
+    desc = AgentDescriptor(
+        agent_id="test.agent",
+        name="Test Agent",
+        version="1.0",
+        capabilities=["TEST"],
+        accepted_message_types=["TEST_MSG"],
+    )
+    
+    async def start_hook():
+        raise RuntimeError("Startup configuration is corrupted")
+        
+    agent = HookableURPAgent(descriptor=desc, start_hook=start_hook)
+    
+    events = asyncio.Queue()
+    def emit_callback(event: EventEnvelope):
+        events.put_nowait(event)
+        
+    agent.initialize(context=None, emit_callback=emit_callback)
+    
+    with pytest.raises(RuntimeError, match="Startup configuration is corrupted"):
+        await agent.start()
+        
+    # State must remain INITIALIZED
+    assert agent.state["status"] == "INITIALIZED"
+    assert events.empty()  # No event emitted for standard exception in start()
+
