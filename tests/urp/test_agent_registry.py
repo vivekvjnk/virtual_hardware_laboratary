@@ -1,463 +1,294 @@
 """
-Unit tests for the Agent Registry layer.
+Unit tests for the Factory-based Agent Registry.
 
-Tests the registry in isolation using a minimal concrete URP agent stub.
-No AOSM dependency, no LLM dependency, no filesystem dependency.
+Tests the global factory registry functions and the instance-based AgentRegistry class,
+including pre-create and post-create hook execution.
 """
 
-import asyncio
 import pytest
-from unittest.mock import MagicMock
-from typing import Any
+from typing import Any, Callable, Optional, List
 
-from vhl_common.urp.abstract_urp import AbstractURPAgent, AgentStatus
-from vhl_common.urp.data_types import AgentDescriptor, MessageEnvelope, EventEnvelope
-from vhl_common.urp.agent_key import AgentKey, AgentReadiness, AgentEntry, AgentHandle
-from vhl_common.urp.agent_registry import AgentRegistry
+from vhl_common.urp.abstract_urp import AbstractURPAgent
+from vhl_common.urp.data_types import AgentDescriptor, EventEnvelope
+from vhl_common.urp.agent_registry import (
+    AgentFactory,
+    AgentRegistry,
+    register_agent,
+    register_agent_if_absent,
+    get_agent_factory,
+    get_registered_agent_descriptors,
+    _reset_registry_for_tests,
+    add_pre_create_hook,
+    add_post_create_hook,
+    create_agent,
+)
 
 
 # ---------------------------------------------------------------------------
-# Test Fixtures: Minimal URP Agent Stub
+# Test Fixtures: Minimal URP Agent Stub & Factory Helper
 # ---------------------------------------------------------------------------
 
 class StubURPAgent(AbstractURPAgent):
-    """
-    Minimal concrete URP agent for testing.
-    Stores received messages and returns a fixed result.
-    """
+    """Minimal concrete URP agent for testing."""
 
-    def __init__(self, descriptor=None):
-        if descriptor is None:
-            descriptor = AgentDescriptor(
-                agent_id="stub.agent.v1",
-                name="Stub Agent",
-                version="1.0",
-                capabilities=["TEST"],
-                accepted_message_types=["TEST_MSG"],
-            )
+    def __init__(self, descriptor: AgentDescriptor, context: Any = None, emit_callback: Optional[Callable] = None):
         super().__init__(descriptor=descriptor)
-        self.received_messages = []
-        self.process_result = {"status": "ok"}
+        self.context = context
+        self.emit_callback = emit_callback
 
     def _on_initialize(self, context) -> None:
-        """Store context for test inspection."""
-        self._test_context = context
+        pass
 
-    async def process(self, message: MessageEnvelope) -> Any:
-        """Record message and return fixed result."""
-        self.received_messages.append(message)
-        return self.process_result
+    async def process(self, message) -> Any:
+        return {"status": "processed"}
 
 
-def make_key(agent_type="archy", module_name="test-module") -> AgentKey:
-    """Helper to create an AgentKey."""
-    return AgentKey(agent_type=agent_type, module_name=module_name)
-
-
-def make_message(payload="test", msg_type="TEST_MSG") -> MessageEnvelope:
-    """Helper to create a MessageEnvelope."""
-    return MessageEnvelope(
-        type=msg_type,
-        payload=payload,
-        sender="test-sender",
-        receiver="test-receiver",
+def make_descriptor(agent_id="stub.agent.v1", name="Stub Agent") -> AgentDescriptor:
+    """Helper to create an AgentDescriptor."""
+    return AgentDescriptor(
+        agent_id=agent_id,
+        name=name,
+        version="1.0",
+        capabilities=["TEST"],
+        accepted_message_types=["TEST_MSG"],
     )
 
 
-def noop_emit(event: EventEnvelope) -> None:
-    """No-op emit callback for tests."""
-    pass
+@pytest.fixture(autouse=True)
+def clean_global_registry():
+    """Ensure the global registry is cleared before and after each test."""
+    _reset_registry_for_tests()
+    yield
+    _reset_registry_for_tests()
 
 
 @pytest.fixture
 def registry():
-    """Fresh AgentRegistry instance."""
+    """Fresh instance of AgentRegistry."""
     return AgentRegistry()
 
 
-@pytest.fixture
-def initialized_agent():
-    """An agent that has been initialized (ready to start)."""
-    agent = StubURPAgent()
-    agent.initialize(context={"test": True}, emit_callback=noop_emit)
-    return agent
+# ---------------------------------------------------------------------------
+# 1. Global Registry Function Tests
+# ---------------------------------------------------------------------------
 
+class TestGlobalRegistry:
 
-@pytest.fixture
-def started_agent():
-    """An agent that has been initialized and started (in WAITING state)."""
-    agent = StubURPAgent()
-    agent.initialize(context={"test": True}, emit_callback=noop_emit)
+    def test_register_and_get_factory(self):
+        desc = make_descriptor(agent_id="archy.v1", name="Archy Agent")
 
-    async def _start():
-        await agent.start()
-        return agent
+        def factory_func(*args, **kwargs):
+            return StubURPAgent(descriptor=desc, *args, **kwargs)
 
-    return asyncio.get_event_loop().run_until_complete(_start()) if False else agent
+        register_agent("archy", factory_func, desc)
+
+        # Retrieve factory
+        factory = get_agent_factory("archy")
+        assert factory is not None
+        assert isinstance(factory, AgentFactory)
+        assert factory.factory_func == factory_func
+        assert factory.descriptor == desc
+
+        # Verify descriptors
+        descriptors = get_registered_agent_descriptors()
+        assert len(descriptors) == 1
+        assert descriptors[0] == desc
+
+    def test_register_duplicate_raises(self):
+        desc = make_descriptor()
+
+        def factory_func(*args, **kwargs):
+            return StubURPAgent(descriptor=desc, *args, **kwargs)
+
+        register_agent("archy", factory_func, desc)
+
+        with pytest.raises(ValueError, match="Agent factory 'archy' already registered"):
+            register_agent("archy", factory_func, desc)
+
+    def test_register_if_absent(self):
+        desc = make_descriptor()
+
+        def factory_func(*args, **kwargs):
+            return StubURPAgent(descriptor=desc, *args, **kwargs)
+
+        # First registration succeeds
+        assert register_agent_if_absent("archy", factory_func, desc) is True
+
+        # Second registration fails/no-ops gracefully
+        assert register_agent_if_absent("archy", factory_func, desc) is False
+
+    def test_get_nonexistent_raises(self):
+        with pytest.raises(ValueError, match="Unknown agent type 'nonexistent'"):
+            get_agent_factory("nonexistent")
+
+    def test_reset_registry_for_tests(self):
+        desc = make_descriptor()
+
+        def factory_func(*args, **kwargs):
+            return StubURPAgent(descriptor=desc, *args, **kwargs)
+
+        register_agent("archy", factory_func, desc)
+        assert len(get_registered_agent_descriptors()) == 1
+
+        _reset_registry_for_tests()
+        assert len(get_registered_agent_descriptors()) == 0
+
+    def test_global_hooks(self):
+        desc = make_descriptor(agent_id="archy.v1", name="Archy Agent")
+        register_agent("archy", lambda *args, **kwargs: StubURPAgent(descriptor=desc, *args, **kwargs), desc)
+
+        pre_hook_calls: List[tuple] = []
+        post_hook_calls: List[tuple] = []
+
+        def my_pre_hook(name, *args, **kwargs):
+            pre_hook_calls.append((name, args, kwargs))
+
+        def my_post_hook(name, agent, *args, **kwargs):
+            post_hook_calls.append((name, agent, args, kwargs))
+
+        add_pre_create_hook(my_pre_hook)
+        add_post_create_hook(my_post_hook)
+
+        test_context = {"mode": "pipeline"}
+        agent = create_agent("archy", context=test_context)
+
+        # Verify pre-hook called before creation
+        assert len(pre_hook_calls) == 1
+        assert pre_hook_calls[0][0] == "archy"
+        assert pre_hook_calls[0][2]["context"] == test_context
+
+        # Verify post-hook called after creation
+        assert len(post_hook_calls) == 1
+        assert post_hook_calls[0][0] == "archy"
+        assert post_hook_calls[0][1] == agent
+        assert post_hook_calls[0][3]["context"] == test_context
 
 
 # ---------------------------------------------------------------------------
-# AgentKey Tests
+# 2. Instance-based AgentRegistry Class Tests
 # ---------------------------------------------------------------------------
 
-class TestAgentKey:
-    def test_key_equality(self):
-        k1 = AgentKey("archy", "module-a")
-        k2 = AgentKey("archy", "module-a")
-        assert k1 == k2
+class TestRegistryClass:
 
-    def test_key_inequality_different_type(self):
-        k1 = AgentKey("archy", "module-a")
-        k2 = AgentKey("librarian", "module-a")
-        assert k1 != k2
+    def test_empty_registry(self, registry):
+        assert registry.size == 0
+        assert not registry.contains("archy")
+        assert registry.get_registered_descriptors() == []
+        assert "AgentRegistry(size=0" in repr(registry)
 
-    def test_key_inequality_different_module(self):
-        k1 = AgentKey("archy", "module-a")
-        k2 = AgentKey("archy", "module-b")
-        assert k1 != k2
+    def test_register_and_get_factory(self, registry):
+        desc = make_descriptor(agent_id="librarian.v1", name="Librarian Agent")
 
-    def test_key_hashable(self):
-        """Keys must be usable as dict keys."""
-        k1 = AgentKey("archy", "module-a")
-        k2 = AgentKey("archy", "module-a")
-        d = {k1: "value"}
-        assert d[k2] == "value"
+        def factory_func(*args, **kwargs):
+            return StubURPAgent(descriptor=desc, *args, **kwargs)
 
-    def test_key_frozen(self):
-        """Keys are immutable."""
-        k = AgentKey("archy", "module-a")
-        with pytest.raises(AttributeError):
-            k.agent_type = "librarian"
+        registry.register("librarian", factory_func, desc)
 
-    def test_key_str_representation(self):
-        k = AgentKey("archy", "bms-monitor")
-        assert str(k) == "archy:bms-monitor"
+        assert registry.size == 1
+        assert registry.contains("librarian")
+        assert "librarian" in repr(registry)
 
+        factory = registry.get_factory("librarian")
+        assert factory.factory_func == factory_func
+        assert factory.descriptor == desc
 
-# ---------------------------------------------------------------------------
-# AgentHandle Tests
-# ---------------------------------------------------------------------------
+        descriptors = registry.get_registered_descriptors()
+        assert len(descriptors) == 1
+        assert descriptors[0] == desc
 
-class TestAgentHandle:
-    def test_handle_state_is_readonly(self, initialized_agent):
-        entry = AgentEntry(key=make_key(), agent=initialized_agent)
-        handle = AgentHandle(
-            entry=entry,
-            readiness_fn=lambda e: AgentReadiness.NOT_READY,
-        )
-        state = handle.state
-        assert isinstance(state, dict)
-        assert "agent_id" in state
-        assert "status" in state
+    def test_register_duplicate_raises(self, registry):
+        desc = make_descriptor()
 
-    def test_handle_readiness_delegates_to_fn(self, initialized_agent):
-        entry = AgentEntry(key=make_key(), agent=initialized_agent)
-        handle = AgentHandle(
-            entry=entry,
-            readiness_fn=lambda e: AgentReadiness.READY,
-        )
-        assert handle.readiness == AgentReadiness.READY
+        def factory_func(*args, **kwargs):
+            return StubURPAgent(descriptor=desc, *args, **kwargs)
 
-    def test_handle_key_and_runtime_id(self, initialized_agent):
-        key = make_key("librarian", "power-module")
-        entry = AgentEntry(key=key, agent=initialized_agent)
-        handle = AgentHandle(entry=entry, readiness_fn=lambda e: AgentReadiness.READY)
-        assert handle.key == key
-        assert isinstance(handle.runtime_id, str)
-        assert len(handle.runtime_id) > 0
+        registry.register("librarian", factory_func, desc)
 
-    @pytest.mark.asyncio
-    async def test_handle_send_delivers_to_mailbox(self, initialized_agent):
-        entry = AgentEntry(key=make_key(), agent=initialized_agent)
-        handle = AgentHandle(entry=entry, readiness_fn=lambda e: AgentReadiness.READY)
+        with pytest.raises(ValueError, match="already registered in this registry instance"):
+            registry.register("librarian", factory_func, desc)
 
-        msg = make_message("hello")
-        await handle.send(msg)
+    def test_register_if_absent(self, registry):
+        desc = make_descriptor()
 
-        assert initialized_agent.mailbox.qsize() == 1
-        received = await initialized_agent.mailbox.get()
-        assert received.payload == "hello"
+        def factory_func(*args, **kwargs):
+            return StubURPAgent(descriptor=desc, *args, **kwargs)
 
-    def test_handle_to_dict(self, initialized_agent):
-        entry = AgentEntry(key=make_key(), agent=initialized_agent)
-        handle = AgentHandle(entry=entry, readiness_fn=lambda e: AgentReadiness.READY)
-        d = handle.to_dict()
-        assert d["readiness"] == "READY"
-        assert d["reason"] is None
-        assert "runtime" in d
+        assert registry.register_if_absent("librarian", factory_func, desc) is True
+        assert registry.register_if_absent("librarian", factory_func, desc) is False
 
-    def test_handle_to_dict_not_ready_has_reason(self, initialized_agent):
-        entry = AgentEntry(key=make_key(), agent=initialized_agent)
-        handle = AgentHandle(entry=entry, readiness_fn=lambda e: AgentReadiness.NOT_READY)
-        d = handle.to_dict()
-        assert d["readiness"] == "NOT_READY"
-        assert d["reason"] is not None
+    def test_get_nonexistent_raises(self, registry):
+        with pytest.raises(ValueError, match="Unknown agent type 'nonexistent'"):
+            registry.get_factory("nonexistent")
 
+    def test_clear_registry(self, registry):
+        desc = make_descriptor()
 
-# ---------------------------------------------------------------------------
-# AgentRegistry Tests
-# ---------------------------------------------------------------------------
+        def factory_func(*args, **kwargs):
+            return StubURPAgent(descriptor=desc, *args, **kwargs)
 
-class TestRegistryRegister:
-    def test_register_and_get(self, registry, initialized_agent):
-        key = make_key()
-        handle = registry.register(key, initialized_agent)
-
-        assert handle is not None
-        assert handle.key == key
+        registry.register("librarian", factory_func, desc)
         assert registry.size == 1
 
-        # get() returns a handle for the same agent
-        retrieved = registry.get(key)
-        assert retrieved is not None
-        assert retrieved.key == key
+        registry.clear()
+        assert registry.size == 0
+        assert not registry.contains("librarian")
 
-    def test_register_duplicate_raises(self, registry, initialized_agent):
-        key = make_key()
-        registry.register(key, initialized_agent)
+    def test_scoped_hooks(self, registry):
+        desc = make_descriptor(agent_id="librarian.v1", name="Librarian Agent")
+        registry.register("librarian", lambda *args, **kwargs: StubURPAgent(descriptor=desc, *args, **kwargs), desc)
 
-        agent2 = StubURPAgent()
-        agent2.initialize(context={}, emit_callback=noop_emit)
+        pre_hook_calls: List[tuple] = []
+        post_hook_calls: List[tuple] = []
 
-        with pytest.raises(ValueError, match="already registered"):
-            registry.register(key, agent2)
+        def my_pre_hook(name, *args, **kwargs):
+            pre_hook_calls.append((name, args, kwargs))
 
-    def test_get_nonexistent_returns_none(self, registry):
-        result = registry.get(make_key("nonexistent", "nonexistent"))
-        assert result is None
+        def my_post_hook(name, agent, *args, **kwargs):
+            post_hook_calls.append((name, agent, args, kwargs))
 
-    def test_contains(self, registry, initialized_agent):
-        key = make_key()
-        assert not registry.contains(key)
-        registry.register(key, initialized_agent)
-        assert registry.contains(key)
+        registry.add_pre_create_hook(my_pre_hook)
+        registry.add_post_create_hook(my_post_hook)
+
+        test_context = {"isolated": True}
+        agent = registry.create_agent("librarian", context=test_context)
+
+        # Verify scoped pre-hook called before creation
+        assert len(pre_hook_calls) == 1
+        assert pre_hook_calls[0][0] == "librarian"
+        assert pre_hook_calls[0][2]["context"] == test_context
+
+        # Verify scoped post-hook called after creation
+        assert len(post_hook_calls) == 1
+        assert post_hook_calls[0][0] == "librarian"
+        assert post_hook_calls[0][1] == agent
+        assert post_hook_calls[0][3]["context"] == test_context
 
 
-class TestRegistryGetOrCreate:
-    def test_creates_new_when_not_exists(self, registry):
-        key = make_key()
-        factory_called = []
+# ---------------------------------------------------------------------------
+# 3. Agent Instantiation & Dynamic Parameter Forwarding Tests
+# ---------------------------------------------------------------------------
 
-        def factory(k):
-            factory_called.append(k)
-            return StubURPAgent()
+class TestFactoryInstantiation:
 
-        handle = registry.get_or_create(
-            key,
-            factory=factory,
-            context={"module": "test"},
-            emit_callback=noop_emit,
+    def test_create_agent_forwards_arguments(self, registry):
+        desc = make_descriptor(agent_id="ana.v1", name="ANA Agent")
+
+        def factory_func(context=None, emit_callback=None):
+            return StubURPAgent(descriptor=desc, context=context, emit_callback=emit_callback)
+
+        registry.register("ana", factory_func, desc)
+
+        # Dynamic args to forward to factory
+        test_context = {"project": "BMS"}
+        test_callback = lambda e: None
+
+        agent = registry.create_agent(
+            "ana",
+            context=test_context,
+            emit_callback=test_callback,
         )
 
-        assert len(factory_called) == 1
-        assert factory_called[0] == key
-        assert handle is not None
-        assert registry.size == 1
-
-    def test_returns_existing_without_calling_factory(self, registry, initialized_agent):
-        key = make_key()
-        registry.register(key, initialized_agent)
-        factory_called = []
-
-        def factory(k):
-            factory_called.append(k)
-            return StubURPAgent()
-
-        handle = registry.get_or_create(key, factory=factory)
-
-        assert len(factory_called) == 0  # factory NOT called
-        assert handle is not None
-        assert registry.size == 1  # no new agent created
-
-    def test_factory_receives_correct_key(self, registry):
-        key = AgentKey("librarian", "power-module")
-        received_keys = []
-
-        def factory(k):
-            received_keys.append(k)
-            return StubURPAgent()
-
-        registry.get_or_create(
-            key, factory=factory, context={}, emit_callback=noop_emit
-        )
-
-        assert received_keys[0] == key
-        assert received_keys[0].agent_type == "librarian"
-        assert received_keys[0].module_name == "power-module"
-
-
-class TestRegistryDiscovery:
-    def test_list_agents_all(self, registry):
-        for i in range(3):
-            agent = StubURPAgent()
-            agent.initialize(context={}, emit_callback=noop_emit)
-            registry.register(AgentKey("archy", f"module-{i}"), agent)
-
-        entries = registry.list_agents()
-        assert len(entries) == 3
-
-    def test_list_agents_by_type(self, registry):
-        for name in ["mod-a", "mod-b"]:
-            agent = StubURPAgent()
-            agent.initialize(context={}, emit_callback=noop_emit)
-            registry.register(AgentKey("archy", name), agent)
-
-        lib_agent = StubURPAgent()
-        lib_agent.initialize(context={}, emit_callback=noop_emit)
-        registry.register(AgentKey("librarian", "mod-a"), lib_agent)
-
-        archy_entries = registry.list_agents(agent_type="archy")
-        assert len(archy_entries) == 2
-
-        lib_entries = registry.list_agents(agent_type="librarian")
-        assert len(lib_entries) == 1
-
-    def test_get_agents_by_type(self, registry):
-        for name in ["mod-a", "mod-b"]:
-            agent = StubURPAgent()
-            agent.initialize(context={}, emit_callback=noop_emit)
-            registry.register(AgentKey("archy", name), agent)
-
-        handles = registry.get_agents_by_type("archy")
-        assert "mod-a" in handles
-        assert "mod-b" in handles
-        assert isinstance(handles["mod-a"], AgentHandle)
-
-    def test_list_empty_registry(self, registry):
-        assert registry.list_agents() == []
-        assert registry.size == 0
-
-
-class TestRegistryShutdown:
-    @pytest.mark.asyncio
-    async def test_shutdown_agent(self, registry):
-        key = make_key()
-        agent = StubURPAgent()
-        agent.initialize(context={}, emit_callback=noop_emit)
-        await agent.start()
-
-        registry.register(key, agent)
-        assert registry.size == 1
-
-        await registry.shutdown_agent(key)
-
-        assert registry.size == 0
-        assert registry.get(key) is None
-        assert agent._state.status == AgentStatus.TERMINATED.value
-
-    @pytest.mark.asyncio
-    async def test_shutdown_all(self, registry):
-        agents = []
-        for i in range(3):
-            agent = StubURPAgent()
-            agent.initialize(context={}, emit_callback=noop_emit)
-            await agent.start()
-            registry.register(AgentKey("archy", f"module-{i}"), agent)
-            agents.append(agent)
-
-        assert registry.size == 3
-
-        await registry.shutdown_all()
-
-        assert registry.size == 0
-        for agent in agents:
-            assert agent._state.status == AgentStatus.TERMINATED.value
-
-    @pytest.mark.asyncio
-    async def test_shutdown_nonexistent_is_noop(self, registry):
-        """Shutting down a non-registered key should not raise."""
-        await registry.shutdown_agent(make_key("nonexistent", "nonexistent"))
-
-    @pytest.mark.asyncio
-    async def test_shutdown_removes_from_registry(self, registry):
-        key = make_key()
-        agent = StubURPAgent()
-        agent.initialize(context={}, emit_callback=noop_emit)
-        await agent.start()
-        registry.register(key, agent)
-
-        await registry.shutdown_agent(key)
-        assert not registry.contains(key)
-
-
-class TestRegistryReadiness:
-    def test_initialized_agent_not_ready(self, registry, initialized_agent):
-        key = make_key()
-        handle = registry.register(key, initialized_agent)
-        # INITIALIZED state -> NOT_READY (agent hasn't been started)
-        assert handle.readiness == AgentReadiness.NOT_READY
-
-    @pytest.mark.asyncio
-    async def test_waiting_agent_is_ready(self, registry):
-        key = make_key()
-        agent = StubURPAgent()
-        agent.initialize(context={}, emit_callback=noop_emit)
-        await agent.start()
-
-        handle = registry.register(key, agent)
-        assert handle.readiness == AgentReadiness.READY
-
-        # Clean up
-        await registry.shutdown_agent(key)
-
-    @pytest.mark.asyncio
-    async def test_terminated_agent_readiness(self, registry):
-        key = make_key()
-        agent = StubURPAgent()
-        agent.initialize(context={}, emit_callback=noop_emit)
-        await agent.start()
-
-        handle = registry.register(key, agent)
-        assert handle.readiness == AgentReadiness.READY
-
-        await agent.shutdown()
-        # After shutdown, readiness should reflect terminated state
-        assert handle.readiness == AgentReadiness.TERMINATED
-
-
-class TestRegistryObservability:
-    def test_snapshot_empty(self, registry):
-        snap = registry.snapshot()
-        assert snap["agent_count"] == 0
-        assert snap["agents"] == {}
-
-    def test_snapshot_with_agents(self, registry):
-        for name in ["mod-a", "mod-b"]:
-            agent = StubURPAgent()
-            agent.initialize(context={}, emit_callback=noop_emit)
-            registry.register(AgentKey("archy", name), agent)
-
-        snap = registry.snapshot()
-        assert snap["agent_count"] == 2
-        assert "archy:mod-a" in snap["agents"]
-        assert "archy:mod-b" in snap["agents"]
-
-        agent_snap = snap["agents"]["archy:mod-a"]
-        assert "runtime_id" in agent_snap
-        assert "status" in agent_snap
-        assert "readiness" in agent_snap
-        assert "mailbox_size" in agent_snap
-        assert "created_at" in agent_snap
-
-    def test_repr(self, registry, initialized_agent):
-        registry.register(make_key(), initialized_agent)
-        r = repr(registry)
-        assert "AgentRegistry" in r
-        assert "size=1" in r
-
-
-class TestRegistrySendViaHandle:
-    @pytest.mark.asyncio
-    async def test_send_via_handle_reaches_agent_mailbox(self, registry):
-        key = make_key()
-        agent = StubURPAgent()
-        agent.initialize(context={}, emit_callback=noop_emit)
-
-        handle = registry.register(key, agent)
-        msg = make_message("integration-test")
-        await handle.send(msg)
-
-        assert agent.mailbox.qsize() == 1
-        received = await agent.mailbox.get()
-        assert received.payload == "integration-test"
-        assert received.type == "TEST_MSG"
+        assert isinstance(agent, StubURPAgent)
+        assert agent.descriptor == desc
+        assert agent.context == test_context
+        assert agent.emit_callback == test_callback

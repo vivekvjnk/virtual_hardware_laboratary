@@ -2,16 +2,17 @@
 
 ## 1. Purpose
 
-The **Agent Registry** provides a **state-aware interface over persistent URP agents**, enabling AOSM to:
+The **Agent Registry** serves as a **lightweight, factory-based registry for URP agents**, enabling:
 
-* discover agents
-* inspect their state
-* determine readiness
-* communicate via mailbox
+* global and scoped discovery of agent types/capabilities
+* clean registration of agent creator (factory) functions
+* decoupled, progressive instantiation of persistent agents
 
-It transforms agents from **function calls → long-lived processes**, while preserving:
+By transitioning from a stateful active-instance tracking container to a factory registry, we maintain:
 
-> **AOSM as the sole decision authority**
+> **AOSM as the sole decision and execution authority**
+
+State, lifetimes, and event loops are managed completely by the orchestrator or execution environment, eliminating implicit state tracking and authority leakage.
 
 ---
 
@@ -21,31 +22,27 @@ It transforms agents from **function calls → long-lived processes**, while pre
 graph TD
     subgraph "AOSM - Orchestrator"
         SM[State Machine Loop]
-        HANDLERS["State Handlers<br/>_handle_archy<br/>_handle_trigger_librarian<br/>etc."]
+        INSTANCES["Active Agent Instances<br/>archy_inst<br/>librarian_inst"]
     end
 
-    subgraph "Agent Registry - New Layer"
-        REG[AgentRegistry]
-        STORE["Registry Store<br/>Dict AgentKey → AgentEntry"]
-        HANDLE[AgentHandle]
+    subgraph "Agent Registry - Factory Layer"
+        REG[AgentRegistry Class]
+        GLOB["Global Registry Functions<br/>register_agent<br/>get_agent_factory"]
+        MAPS["Registry Store<br/>Dict name → AgentFactory"]
     end
 
     subgraph "URP Agents"
-        A1["ArchyURPAgent<br/>archy:module_A"]
-        A2["ArchyURPAgent<br/>archy:module_B"]
-        L1["LibrarianURPAgent<br/>librarian:module_A"]
+        A1["ArchyURPAgent"]
+        L1["LibrarianURPAgent"]
     end
 
-    SM --> HANDLERS
-    HANDLERS -->|"registry.get_or_create()"| REG
-    REG --> STORE
-    REG -->|"returns"| HANDLE
-    HANDLE -->|".send()"| A1
-    HANDLE -->|".send()"| A2
-    HANDLE -->|".send()"| L1
-    A1 -->|"emit()"| REG
-    A2 -->|"emit()"| REG
-    L1 -->|"emit()"| REG
+    SM -->|"1. register_agent()"| REG
+    REG --> MAPS
+    SM -->|"2. create_agent()"| REG
+    MAPS -->|"3. invoke factory_func"| REG
+    REG -->|"4. returns fresh instance"| INSTANCES
+    INSTANCES -->|"send/process"| A1
+    INSTANCES -->|"send/process"| L1
 ```
 
 ---
@@ -54,352 +51,211 @@ graph TD
 
 ### 3.1 Agent = Process (URP)
 
-Each agent is a persistent process with:
+Each agent is a persistent process with standard message-driven, asynchronous execution:
+* lifecycle status: `UNINITIALIZED`, `INITIALIZED`, `WAITING`, `PROCESSING`, `TERMINATED`
+* mailbox-driven message delivery
+* event-based telemetry emission
 
-* lifecycle state:
+### 3.2 Registry = Factory Database
 
-  ```
-  UNINITIALIZED → INITIALIZED → WAITING ↔ PROCESSING → TERMINATED
-  ```
-* mailbox-driven execution
-* event-based output
-
-### 3.2 Registry = Control Surface
-
-The registry is **not a container**.
+The registry is **entirely stateless with respect to active agent executions**.
 
 It:
-
-* tracks agent instances
-* exposes state
-* computes readiness
-* returns communication handles
+* maps agent type names (e.g. `"archy"`, `"librarian"`) to their factory creator callables and descriptors
+* acts as the single source of truth for available agent capabilities
 
 It does **not**:
-
-* trigger agents
-* decide workflows
-
----
-
-## 4. Identity Model
-
-Two distinct identities are maintained:
-
-### 4.1 Registry Identity (Semantic)
-
-```python
-@dataclass(frozen=True)
-class AgentKey:
-    agent_type: str       # e.g., "archy", "librarian"
-    module_name: str      # e.g., "bms-monitor-module"
-```
-
-* stable, immutable, hashable
-* human-meaningful (string representation: `"archy:bms-monitor-module"`)
-* used for lookup and orchestration
-* usable as `dict` key
-
-### 4.2 Runtime Identity (Opaque)
-
-```python
-runtime_id: str = uuid4()   # assigned per AgentEntry at registration
-```
-
-* unique per instance
-* used for tracing and observability
-* lives in `AgentEntry`, not `AgentKey`
+* manage active instances
+* track lifecycle transitions or readiness
+* execute agent loops or handle shutdowns
 
 ---
 
-## 5. Data Model
+## 4. Identity & Metadata Model
 
-### 5.1 AgentEntry (Internal)
-
-```python
-@dataclass
-class AgentEntry:
-    key: AgentKey
-    agent: AbstractURPAgent
-    runtime_id: str              # UUID, auto-generated
-    created_at: datetime         # UTC timestamp
-    metadata: Dict[str, Any]     # extensible metadata
-```
-
-Never exposed directly to AOSM — the `AgentHandle` provides the external interface.
-
-### 5.2 AgentHandle (External — AOSM-facing)
-
-The **only object AOSM interacts with**. Enforces:
-* communication strictly via mailbox
-* read-only state inspection
-* no direct mutation of agent internals
+The registry stores metadata of the agent types:
 
 ```python
-class AgentHandle:
-    async def send(message: MessageEnvelope) -> None   # mailbox delivery
-    
-    @property key -> AgentKey                          # semantic identity
-    @property runtime_id -> str                        # opaque runtime id
-    @property state -> Dict[str, Any]                  # read-only agent state
-    @property readiness -> AgentReadiness              # system-level readiness
-    @property status -> str                            # lifecycle status string
-    @property mailbox_size -> int                      # pending messages
-    
-    def to_dict() -> Dict[str, Any]                    # serializable snapshot
+class AgentFactory(NamedTuple):
+    factory_func: Callable[..., AbstractURPAgent]
+    descriptor: AgentDescriptor
 ```
 
-The `to_dict()` output matches the design's conceptual response shape:
-
-```python
-{
-    "key": "archy:bms-monitor-module",
-    "runtime": {
-        "agent_id": str,
-        "status": "WAITING",
-        "session_id": str,
-        "mailbox_size": 0
-    },
-    "readiness": "READY",
-    "reason": None
-}
-```
+* **`factory_func`**: The callable function responsible for instantiating the specific URP agent subclass with dynamic configuration, contexts, or callbacks.
+* **`descriptor` (`AgentDescriptor`)**: The standard URP descriptor carrying capabilities, name, agent ID, version, and accepted message types.
 
 ---
 
-## 6. Registry Interface
+## 5. Registry Interfaces
+
+We provide both a **global registry** (matching the openhands-sdk paradigm) and a scoped, object-oriented **`AgentRegistry` Class**.
+
+### 5.1 Global Registration API
+
+```python
+# Thread-safe global registration APIs
+def register_agent(name: str, factory_func: Callable[..., AbstractURPAgent], descriptor: AgentDescriptor) -> None
+def register_agent_if_absent(name: str, factory_func: Callable[..., AbstractURPAgent], descriptor: AgentDescriptor) -> bool
+def get_agent_factory(name: str) -> AgentFactory
+def get_registered_agent_descriptors() -> List[AgentDescriptor]
+def add_pre_create_hook(hook: Callable[[str, Any, Any], None]) -> None
+def add_post_create_hook(hook: Callable[[str, AbstractURPAgent, Any, Any], None]) -> None
+def create_agent(name: str, *args, **kwargs) -> AbstractURPAgent
+def _reset_registry_for_tests() -> None
+```
+
+### 5.2 Scoped `AgentRegistry` Class
+
+For isolated environments, multi-tenant execution, or scoped testing, the `AgentRegistry` class exposes:
 
 ```python
 class AgentRegistry:
-    # --- Registration ---
-    def register(key, agent, emit_callback?) -> AgentHandle
-    def get(key) -> Optional[AgentHandle]
-    def get_or_create(key, factory, context?, emit_callback?) -> AgentHandle
-
-    # --- Discovery ---
-    def list_agents(agent_type?) -> List[AgentEntry]
-    def get_agents_by_type(agent_type) -> Dict[str, AgentHandle]
-    def contains(key) -> bool
+    def __init__(self)
+    
+    def register(self, name: str, factory_func: Callable[..., AbstractURPAgent], descriptor: AgentDescriptor) -> None
+    def register_if_absent(self, name: str, factory_func: Callable[..., AbstractURPAgent], descriptor: AgentDescriptor) -> bool
+    def get_factory(self, name: str) -> AgentFactory
+    def get_registered_descriptors(self) -> List[AgentDescriptor]
+    def add_pre_create_hook(self, hook: Callable[[str, Any, Any], None]) -> None
+    def add_post_create_hook(self, hook: Callable[[str, AbstractURPAgent, Any, Any], None]) -> None
+    def create_agent(self, name: str, *args, **kwargs) -> AbstractURPAgent
+    
+    def contains(self, name: str) -> bool
+    def clear(self) -> None
     @property size -> int
-
-    # --- Lifecycle ---
-    async def shutdown_agent(key) -> None
-    async def shutdown_all() -> None
-
-    # --- Observability ---
-    def snapshot() -> Dict[str, Any]
 ```
 
-### 6.1 `get_or_create` — Primary Interaction Pattern
+### 5.3 Pre-create and Post-create Hooks
 
-This is the main method AOSM will use. It implements **progressive initialization**:
+Execution hooks allow intercepting agent construction seamlessly:
+* **Pre-create Hooks**: Registered callables with signature `(name: str, *args, **kwargs) -> None`. Executed *before* the factory function is called. Useful for logging, auditing configuration, or preparing workspace directories.
+* **Post-create Hooks**: Registered callables with signature `(name: str, agent: AbstractURPAgent, *args, **kwargs) -> None`. Executed *after* the agent is successfully instantiated. Useful for wire-tapping, adding monitoring, registering telemetry, or automatic starting of agent loops.
+
+Exceptions inside hooks are caught and logged gracefully via the module logger to prevent blocking the core instantiation workflow.
+
+---
+
+## 6. Example Use Cases
+
+### 6.1 Global Registry Example
+
+**Scenario**: Application-wide bootstrapping. A module registers its URP agent subclass factory during system initialization or import time. The main pipeline/orchestration engine can dynamically lookup and instantiate the agent without needing references passed through layers.
 
 ```python
-handle = registry.get_or_create(
-    key=AgentKey("archy", "bms-monitor-module"),
-    factory=lambda k: ArchyURPAgent(),           # called only if agent doesn't exist
-    context={"workspace": ws_manager, ...},       # passed to agent.initialize()
-    emit_callback=my_emit_fn,                     # wired into the agent
+# --- archy_agent.py (Registration during module initialization) ---
+from vhl_common.urp.agent_registry import register_agent
+from vhl_common.urp.data_types import AgentDescriptor
+
+archy_desc = AgentDescriptor(
+    agent_id="vhl.archy.v1",
+    name="Archy Architect",
+    version="1.0",
+    capabilities=["SCUD_GENERATION"],
+    accepted_message_types=["GENERATE_SCUD"]
+)
+
+def create_archy(context=None, emit_callback=None):
+    return ArchyURPAgent(descriptor=archy_desc, context=context, emit_callback=emit_callback)
+
+# Globally register the agent type
+register_agent("archy", create_archy, archy_desc)
+
+
+# --- aosm.py (Runtime retrieval & activation) ---
+from vhl_common.urp.agent_registry import get_agent_factory
+
+def run_archy_stage(workspace_ctx, telem_cb):
+    # Retrieve the global factory dynamically
+    factory = get_agent_factory("archy")
+    
+    # Instantiate agent instance with dynamic session-based context and callbacks
+    agent = factory.factory_func(context=workspace_ctx, emit_callback=telem_cb)
+    return agent
+```
+
+### 6.2 Scoped Registry Example
+
+**Scenario**: Multi-tenant pipelines, sandbox compilation execution, or unit test runners. Each execution session or sandbox creates an independent registry instance, enabling isolated, concurrent, and non-colliding custom factories (e.g. plugins registered dynamically by tenants or mock factories injected for specific test scenarios).
+
+```python
+# --- test_compilation.py (Isolated sandbox or testing execution) ---
+from vhl_common.urp.agent_registry import AgentRegistry
+from vhl_common.urp.data_types import AgentDescriptor
+
+def run_isolated_sandbox_test():
+    # Instantiate a clean, scoped registry
+    scoped_registry = AgentRegistry()
+    
+    plugin_desc = AgentDescriptor(
+        agent_id="sandbox.custom_compiler.v1",
+        name="Dynamic Compiler Plugin",
+        version="1.2",
+        capabilities=["COMPILE_CIRCUIT"],
+        accepted_message_types=["COMPILE"]
+    )
+    
+    # Register compile factory to only this scoped instance
+    scoped_registry.register(
+        "compiler",
+        lambda context=None, emit_callback=None: CustomCompilerAgent(plugin_desc, context, emit_callback),
+        plugin_desc
+    )
+    
+    # Create the agent cleanly within the scope
+    compiler_agent = scoped_registry.create_agent("compiler", context={"opt_level": 3})
+    assert compiler_agent.descriptor.name == "Dynamic Compiler Plugin"
+```
+
+---
+
+## 7. Progressive Instantiation Pattern
+
+Under this model, the orchestrator registers the factories once at startup and instantiates the agents on demand with dynamic parameters (e.g. workspace managers, database clients, or emit handlers):
+
+```python
+# 1. Register at startup
+register_agent("archy", lambda *args, **kwargs: ArchyURPAgent(*args, **kwargs), archy_descriptor)
+
+# 2. Instantiate progressively when entering corresponding state handler
+factory = get_agent_factory("archy")
+agent_instance = factory.factory_func(
+    context=workspace_context,
+    emit_callback=telem_callback
 )
 ```
 
-* If agent exists → returns existing handle (factory NOT called)
-* If agent doesn't exist → creates via factory, initializes, registers, returns handle
+---
 
-### 6.2 `shutdown_agent` / `shutdown_all`
+## 8. Design Constraints
 
-Graceful shutdown: calls the URP agent's `shutdown()` method, then deregisters from the store. Errors during shutdown are logged but do not propagate — the agent is always removed.
-
-### 6.3 `snapshot`
-
-Returns a serializable dict of the entire registry state, suitable for heartbeat/telemetry:
-
-```python
-{
-    "agent_count": 2,
-    "agents": {
-        "archy:bms-monitor-module": {
-            "runtime_id": "...",
-            "status": "WAITING",
-            "readiness": "READY",
-            "mailbox_size": 0,
-            "created_at": "2026-05-17T..."
-        },
-        ...
-    }
-}
-```
+* **Registry is stateless**: No internal tracking of live connections, event loops, or active handles.
+* **Decoupled execution**: State machines and orchestrators remain fully responsible for handling agent tasks and scheduling.
+* **Thread safety**: Registry maps are wrapped in a re-entrant lock (`RLock`) to prevent race conditions during concurrent registrations or lookup operations.
 
 ---
 
-## 7. Readiness Abstraction
+## 9. Implementation
 
-### 7.1 Design
-
-* Readiness is **system-level**, not agent-internal
-* Computed by the registry, not by the agent
-* Concentrated in a single method: `_compute_readiness()`
-
-Purpose:
-
-> Allow AOSM to decide *when an agent can be invoked*
-
-### 7.2 Current Implementation (V1 — Lifecycle-Only)
-
-```python
-class AgentReadiness(Enum):
-    READY        = "READY"         # can accept messages
-    NOT_READY    = "NOT_READY"     # exists but can't work
-    DEGRADED     = "DEGRADED"      # can work with reduced capability
-    TERMINATED   = "TERMINATED"    # shut down
-```
-
-Mapping from URP lifecycle state:
-
-| Agent Status | Readiness | Rationale |
-|:---|:---|:---|
-| `WAITING` | `READY` | Agent is idle, can accept messages |
-| `PROCESSING` | `NOT_READY` | Agent is busy |
-| `INITIALIZED` | `NOT_READY` | Agent not yet started |
-| `UNINITIALIZED` | `NOT_READY` | Agent not initialized |
-| `ERROR` | `NOT_READY` | Agent in error state |
-| `TERMINATING` | `TERMINATED` | Agent shutting down |
-| `TERMINATED` | `TERMINATED` | Agent shut down |
-
-### 7.3 Future Extension
-
-External dependency checks (e.g., SCUD exists, libraries resolved) will be added inside `_compute_readiness()`. The method contains a marked extension point:
-
-```python
-def _compute_readiness(self, entry: AgentEntry) -> AgentReadiness:
-    if status == WAITING:
-        # --- Future extension point ---
-        # if not self._check_external_dependencies(entry):
-        #     return AgentReadiness.DEGRADED
-        return AgentReadiness.READY
-```
-
-All readiness logic is **isolated and concentrated** in this single method.
-
----
-
-## 8. Interaction Model
-
-### AOSM → Registry → Agent
-
-```python
-key = AgentKey("archy", module_name)
-
-handle = registry.get_or_create(key, factory=create_archy, context={...})
-
-if handle.readiness == AgentReadiness.READY:
-    await handle.send(MessageEnvelope(...))
-```
-
-* AOSM decides **when**
-* Agent executes **how**
-* Registry exposes **what is possible**
-
----
-
-## 9. Initialization Strategy
-
-* Agents are **not globally initialized at startup**
-* Initialization is **progressive and dependency-driven** (via `get_or_create`)
-* Registry reflects partial availability of agents
-* Agents **persist across AOSM state transitions** (created in ARCHY, queryable in WAIT_FOR_ARCHY_HIL, reusable on retry)
-
----
-
-## 10. Design Constraints
-
-* Registry is **passive** (no control flow)
-* Agent state is **read-only externally**
-* Communication is **strictly via mailbox**
-* System remains **fully observable**
-* Single-threaded async (asyncio event loop) — no internal locking
-
-Aligned with:
-
-> **"Systems decide; agents propose"** 
-
----
-
-## 11. Implementation
-
-### 11.1 File Layout
+### 9.1 File Layout
 
 ```
 vhl-agent-backend/
 ├── vhl_common/urp/
-│   ├── abstract_urp.py          # URP base class (pre-existing)
-│   ├── data_types.py            # MessageEnvelope, EventEnvelope, etc. (pre-existing)
-│   ├── agent_key.py             # AgentKey, AgentReadiness, AgentEntry, AgentHandle
-│   └── agent_registry.py        # AgentRegistry class
+│   ├── abstract_urp.py          # URP agent base class
+│   ├── data_types.py            # AgentDescriptor, MessageEnvelope, etc.
+│   └── agent_registry.py        # Factory-based registry functions and class
 └── tests/urp/
-    ├── __init__.py
-    └── test_agent_registry.py   # 34 unit tests
+    └── test_agent_registry.py   # Factory registry test suite
 ```
 
-### 11.2 Dependencies
+### 9.2 Test Coverage
 
-The registry depends **only** on URP primitives:
+We maintain highly detailed tests covering:
+* **Global registry**: Validates safe registration, duplicates rejection, lookup, and cleanup.
+* **`AgentRegistry` class**: Validates scoped factory registration, contains checks, size, and clearing.
+* **Factory Instantiation**: Validates dynamic parameter forwarding, verifying custom contexts and emit callbacks are accurately supplied to the factory callable.
 
-* `abstract_urp.AbstractURPAgent`
-* `abstract_urp.AgentStatus`
-* `data_types.MessageEnvelope`
-* `data_types.EventEnvelope`
-
-No dependency on AOSM, workspace manager, LLM, or any agent implementation.
-
-### 11.3 Integration Status
-
-The registry is **implemented and tested but not yet integrated with AOSM**. Integration is deferred pending side-effect evaluation. The planned integration steps are:
-
-1. Add `self.registry = AgentRegistry()` in `AOSM.__init__`
-2. Replace inline agent creation in `_handle_archy` with `registry.get_or_create()`
-3. Replace inline creation in `_handle_trigger_librarian` similarly
-4. Derive `broadcast_agent_state()` from `registry.snapshot()`
-5. Call `await self.registry.shutdown_all()` in `_handle_close_project`
-
-### 11.4 Test Coverage
-
-34 unit tests covering:
-
-| Area | Tests | Coverage |
-|:---|:---|:---|
-| AgentKey identity | 6 | equality, hashing, immutability, str |
-| AgentHandle interface | 6 | state, readiness, send, serialization |
-| Registration | 4 | register, duplicate rejection, get, contains |
-| get_or_create | 3 | factory invocation, reuse, key forwarding |
-| Discovery | 4 | list all, filter by type, get_agents_by_type |
-| Shutdown | 4 | single, all, nonexistent key, deregistration |
-| Readiness | 3 | INITIALIZED→NOT_READY, WAITING→READY, TERMINATED |
-| Observability | 3 | snapshot, repr |
-| Mailbox delivery | 1 | end-to-end send via handle |
-
-Run with:
+To execute tests:
 ```bash
-.venv/bin/python -m pytest tests/urp/test_agent_registry.py -v
+.venv/bin/pytest tests/urp/test_agent_registry.py -v
 ```
-
----
-
-## 12. Summary
-
-The Agent Registry introduces:
-
-* persistent agents
-* explicit lifecycle visibility
-* system-level readiness abstraction
-* controlled interaction via handles
-
-While ensuring:
-
-* no authority leakage
-* no hidden state
-* no implicit assumptions
-
----
-
-This layer makes **agent existence, state, and eligibility explicit** — without taking over orchestration.
