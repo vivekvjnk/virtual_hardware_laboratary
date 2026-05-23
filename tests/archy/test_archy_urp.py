@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from archy.archy_agent.urp_archy import ArchyConfig, ArchyContext, ArchyURPAgent
 from archy.archy_agent.main import prepare_archy_workspace
-from vhl_common.urp.data_types import AgentContext, MessageEnvelope, EventEnvelope
+from vhl_common.urp.data_types import AgentContext, MessageEnvelope, EventEnvelope, AgentDescriptor
 
 from openhands.sdk import (
     LLM,
@@ -76,7 +76,15 @@ async def test_archy_urp_agent(workspace_manager, replay_llm):
         )
 
     # 3. Initialize Agent with Event Capturer
-    archy = ArchyURPAgent(llm=llm)
+    
+    descriptor = AgentDescriptor(
+        agent_id="vhl.archy.v1",
+        name="Archy SCUD Generator",
+        version="1.0",
+        capabilities=["SCUD_GENERATION", "SCUD_REFINEMENT"],
+        accepted_message_types=["BUILD_SCUD"]
+    )
+    archy = ArchyURPAgent(llm=llm,descriptor=descriptor)
     
     event_queue = asyncio.Queue()
     def emit_callback(event: EventEnvelope):

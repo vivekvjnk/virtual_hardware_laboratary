@@ -11,17 +11,17 @@ from vhl_protocol.models import BaseEvent, EventType, EventSource, SyncPayload, 
 from vhl_protocol.sync.client import SyncClient
 
 import uuid
-import base64
 from ana_agent.state_machine.mcp_manager import MCPManager
 from ana_agent.state_machine import ANADStateMachine
 from workspace.manager import WorkspaceManager
 
-from vhl_common.urp.data_types import AgentContext, MessageEnvelope, EventEnvelope
+from vhl_common.urp.data_types import AgentContext, MessageEnvelope, EventEnvelope, AgentDescriptor
+from vhl_common.urp.agent_registry import register_agent_if_absent, get_agent_factory
 
 from archy_agent.main import orchestrate_archy, prepare_archy_workspace
 from archy_agent.urp_archy import ArchyURPAgent, ArchyConfig
 
-from librarian_agent.agent import LibrarianAgent
+from librarian_agent.urp_librarian import LibrarianURPAgent
 from librarian_agent.stub import process_scud_stub
 from vhl_common.utils import handle_errors
 from vhl_common.project_state_manager.evaluators.project_creation_evaluator import ProjectCreationEvaluator
@@ -271,7 +271,11 @@ class AOSM:
             project_creation_evaluator.evaluate() # With this step, evaluator will commit a semantic operation to the semantic db. Based on the status of this operation, agent registry should compute the readiness of the Archy agent.
             # TODO: Archy agent _compute_readiness function should know the Operation Name and Agent ID of the Project Creation Operation in order to query the semantic db and determine if it's ready to run or not. This is because the project creation workflow may involve multiple steps and we want to ensure that all steps are completed before allowing Archy to run. 
             # Current implementation of ProjectCreationEvaluator uses hardcoded Agent ID and Operation Name(defined in the evaluator implementation code), so we can directly use those values in the Archy agent readiness function to check the status of the project creation workflow. Later, depending on the evolution of the evaluators, we can consider a standardized way to define and query these values.
+            
 
+            # Now initialize all the agents
+            self.register_agents(workspace_manager=self.workspace_manager)
+            
             # Store project root information in class variable
             self.project_root_info = self.workspace_manager.get_workspace_info()
             
@@ -302,6 +306,9 @@ class AOSM:
             try:
                 project_root = self.workspace_manager.load_project(project_id)
                 self.project_id = project_id
+                
+                # Initialize all the agents
+                self.register_agents(workspace_manager=self.workspace_manager)
                 
                 # Store project root information in class variable
                 self.project_root_info = self.workspace_manager.get_workspace_info()
@@ -357,6 +364,30 @@ class AOSM:
             projects = self.workspace_manager.list_projects()
             await self.web_socket_client.emit_projects_list(projects)
 
+    def register_agents(self, workspace_manager: WorkspaceManager):
+        """Registers Archy and Librarian agents for each module in the project."""
+
+        for module_name in workspace_manager.module_names:
+            archy_descriptor = AgentDescriptor(
+                agent_id=f"{module_name}.archy",
+                name=f"{module_name} Archy",
+                version="1.0",
+                capabilities=["SCUD_GENERATION", "SCUD_REFINEMENT"],
+                accepted_message_types=["BUILD_SCUD"]
+            )
+            register_agent_if_absent(descriptor=archy_descriptor,factory_func=ArchyURPAgent,name=f"{module_name}.archy")
+            
+            librarian_descriptor = AgentDescriptor(
+                agent_id=f"{module_name}.librarian",
+                name=f"{module_name} Librarian",
+                version="1.0",
+                capabilities=["LIBRARY_COMPONENT_RESOLUTION"],
+                accepted_message_types=["IMPORT_COMPONENTS", "FIND_COMPONENTS"]
+            )
+            register_agent_if_absent(descriptor=librarian_descriptor,factory_func=LibrarianURPAgent,name=f"{module_name}.librarian")
+
+
+ 
     async def _handle_idle(self, event: BaseEvent):
         """
         Default state of the system. Handles following events:
@@ -448,10 +479,10 @@ class AOSM:
         archy_agent = ArchyURPAgent()
 
         # Step 3: Define emit callback to capture Archy events and re-emit to VHL runtime
-        event_queue = asyncio.Queue()
+        archy_handle_event_queue = asyncio.Queue()
         def emit_callback(event: EventEnvelope):
             logger.info(f"[EVENT] Received {event.type} with payload {event.payload}")
-            event_queue.put_nowait(event)
+            archy_handle_event_queue.put_nowait(event)
 
         # Step 4: Prepare context and initialize Archy agent with context and emit callback
         module_name = self.current_message.get("module_name", "default_module")
@@ -468,6 +499,31 @@ class AOSM:
 
         self.update_agent_status("archy", archy_agent.state.status)
         # Trigger archy agent here
+        # Send Message (Mailbox-driven)
+        message = MessageEnvelope(
+            type="BUILD_SCUD",
+            payload="Please prepare the scud document.",
+            sender="test_suite",
+            receiver=archy_agent.descriptor.agent_id
+        )
+        await archy_agent.send(message)
+
+        # Wait for Completion Event (Verification)
+        # We wait for TASK_COMPLETED or TASK_FAILED
+        found_completion = False
+        timeout = 300 # 5 minutes for complex SCUD generation
+        start_time = asyncio.get_event_loop().time()
+        
+        while (asyncio.get_event_loop().time() - start_time) < timeout:
+            try:
+                event = await asyncio.wait_for(archy_handle_event_queue.get(), timeout=1.0)
+                if event.type == "TASK_COMPLETED":
+                    found_completion = True
+                    break
+            except asyncio.TimeoutError:
+                continue
+
+                
         self.update_agent_status("archy", archy_agent.state.status)
 
         

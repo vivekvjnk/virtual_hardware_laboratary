@@ -81,7 +81,7 @@ class ArchyURPAgent(AbstractURPAgent):
     Stateful version of the Archy SCUD generation agent, adhering to URP guidelines.
     """
 
-    def __init__(self, descriptor: Optional[AgentDescriptor] = None, llm: Optional[LLM] = None):
+    def __init__(self, descriptor: AgentDescriptor, llm: Optional[LLM] = None):
         if not descriptor:
             descriptor = AgentDescriptor(
                 agent_id="vhl.archy.v1",

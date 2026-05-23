@@ -22,8 +22,8 @@ import logging
 from threading import RLock
 from typing import Any, Callable, Dict, List, NamedTuple, Optional
 
-from .abstract_urp import AbstractURPAgent
-from .data_types import AgentDescriptor
+from vhl_common.urp.abstract_urp import AbstractURPAgent
+from vhl_common.urp.data_types import AgentDescriptor
 
 logger = logging.getLogger(__name__)
 
