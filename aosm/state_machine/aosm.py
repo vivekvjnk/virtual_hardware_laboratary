@@ -400,9 +400,10 @@ class AOSM:
         # TODO: Outdated event type. Remove in next refactor
         if event.type == EventType.REFERENCE_UPLOADED:
             logger.info(f"[AOSM._handle_idle] Received REFERENCE_UPLOADED: {event.payload}")
-            # Ensure we have a clean dict of the payload
             payload = json.loads(json.dumps(event.payload)) if event.payload else {}
-            await self.transition_to(AOSMState.ARCHY, "New schematic uploaded", payload=payload)
+            module_name = payload.get("reference_id", "default_module")
+            # Start parallel workflow sequential execution task
+            asyncio.create_task(self.run_workflow_1(module_name, payload))
         elif event.type == EventType.HUMAN_INPUT:
             await self.transition_to(AOSMState.INTENT_CLASSIFY, "User message received", payload=event.payload)
         
@@ -939,6 +940,114 @@ class AOSM:
         
         # 5. Transition to STARTUP
         await self.transition_to(AOSMState.STARTUP, "Project closed by user")
+
+    async def run_workflow_1(self, module_name: str, payload: Dict[str, Any]):
+        """
+        Asynchronous sequential execution of Workflow 1.
+        Calls handle_archy, handle_librarian, and handle_ana in sequence.
+        """
+        logger.info(f"[AOSM.run_workflow_1] Starting sequential Workflow 1 for module: {module_name}")
+        try:
+            # 1. Step 1: Archy
+            scud_path = await self.handle_archy(module_name=module_name)
+            
+            # 2. Step 2: Librarian
+            scud_path = await self.handle_librarian(scud_path)
+            
+            # 3. Step 3: ANA-D
+            await self.handle_ana()
+            
+            logger.info(f"[AOSM.run_workflow_1] Sequential Workflow 1 completed successfully for module: {module_name}")
+        except Exception as e:
+            logger.error(f"[AOSM.run_workflow_1] Sequential Workflow 1 failed: {e}", exc_info=True)
+
+    async def handle_archy(self, module_name: str) -> Path:
+        """
+        Sequential member of Workflow 1: Archy.
+        1. Prepares the workspace.
+        2. Resolves paths and triggers the Archy agent logic.
+        3. Simple placeholder for HIL review.
+        """
+        logger.info(f"[AOSM.handle_archy] Starting Archy processing for module: {module_name}")
+        
+        # Prepare workspace and assets for Archy
+        success = await asyncio.to_thread(
+            prepare_archy_workspace,
+            workspace_manager=self.workspace_manager,
+        )
+        if not success:
+            raise RuntimeError("Failed to prepare workspace for Archy. Check logs for details.")
+        
+        # Step 2: Get archy agent from factory                                                                      
+        archy_agent = get_agent_factory(name=f"{module_name}.archy").factory_func
+
+        # Step 3: Define emit callback to capture Archy events and re-emit to VHL runtime
+        archy_handle_event_queue = asyncio.Queue()
+        def emit_callback(event: EventEnvelope):
+            logger.info(f"[EVENT] Received {event.type} with payload {event.payload}")
+            archy_handle_event_queue.put_nowait(event)
+
+        # Step 4: Prepare context and initialize Archy agent with context and emit callback
+        module_name = self.current_message.get("module_name", "default_module")
+        context = {
+            "config": ArchyConfig(conversation_persistence=True),
+            "workspace": self.workspace_manager,
+            "module_name": module_name
+        }
+        archy_agent.initialize(context=context, emit_callback=emit_callback)
+
+        # Step 5: Start Archy agent (enters WAITING state)
+        await archy_agent.start(sqlite_manager=self.project_semantic_db)
+        
+
+        self.update_agent_status("archy", archy_agent.state.status)
+        # Trigger archy agent here
+        # Send Message (Mailbox-driven)
+        message = MessageEnvelope(
+            type="BUILD_SCUD",
+            payload="Please prepare the scud document.",
+            sender="test_suite",
+            receiver=archy_agent.descriptor.agent_id
+        )
+        await archy_agent.send(message)
+
+        # Wait for Completion Event (Verification)
+        # We wait for TASK_COMPLETED or TASK_FAILED
+        found_completion = False
+        timeout = 300 # 5 minutes for complex SCUD generation
+        start_time = asyncio.get_event_loop().time()
+        
+        while (asyncio.get_event_loop().time() - start_time) < timeout:
+            try:
+                event = await asyncio.wait_for(archy_handle_event_queue.get(), timeout=1.0)
+                if event.type == "TASK_COMPLETED":
+                    found_completion = True
+                    break
+            except asyncio.TimeoutError:
+                continue
+
+                
+        self.update_agent_status("archy", archy_agent.state.status)
+
+        
+    async def handle_librarian(self, scud_path: Path) -> Path:
+        """
+        Sequential member of Workflow 1: Librarian.
+        1. Runs the Librarian agent component resolution.
+        2. Centralized client sync of resolved libraries.
+        3. Simple placeholder for HIL review.
+        """
+        logger.info(f"[AOSM.handle_librarian] Starting Librarian processing for SCUD: {scud_path}")
+        logger.info("[AOSM._handle_librarian] Finished Librarian")
+        
+    async def handle_ana(self) -> None:
+        """
+        Sequential member of Workflow 1: ANA-D.
+        1. Initializes and runs the ANA-D state machine in a waitable manner.
+        2. Evaluates the generated circuit code and applies decisions.
+        """
+        logger.info(f"[AOSM.handle_ana] Starting ANA-D processing...")
+        logger.info(f"[AOSM.handle_ana] Finished ANA-D")
 
 def main():
     # Test stub

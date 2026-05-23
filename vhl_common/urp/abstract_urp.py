@@ -68,13 +68,13 @@ class AbstractURPAgent(ABC):
         
         self._state.status = AgentStatus.INITIALIZED.value
 
-    async def start(self) -> None:
+    async def start(self,*args, **kwargs) -> None:
         """Makes agent runnable. Enters WAITING state."""
         if self._state.status != AgentStatus.INITIALIZED.value:
             raise RuntimeError(f"Agent must be INITIALIZED to start. Current: {self._state.status}")
         
         # Check start preconditions
-        start_ok = await self._check_start_preconditions()
+        start_ok = await self._check_start_preconditions(*args, **kwargs)
         if not start_ok:
             self.emit(EventEnvelope(
                 type="AGENT_START_PRECONDITIONS_VIOLATED",

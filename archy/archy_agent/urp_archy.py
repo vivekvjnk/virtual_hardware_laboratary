@@ -22,6 +22,7 @@ from openhands.sdk import (
 )
 from openhands.sdk.context import Skill
 from openhands.tools.file_editor import FileEditorTool
+from vhl_common.project_state_manager.evaluators.project_creation_evaluator import AGENT_ID, OPERATION_NAME
 
 from vhl_common.urp.abstract_urp import AbstractURPAgent
 from vhl_common.urp.data_types import AgentDescriptor, MessageEnvelope
@@ -366,6 +367,23 @@ class ArchyURPAgent(AbstractURPAgent):
     def _conversation_callback(self, event: Event):
         if isinstance(event, LLMConvertibleEvent):
             self.llm_messages.append(event.to_llm_message())
+
+    def _check_start_preconditions(self, sqlite_manager) -> bool:
+        # Check if the last project creation evaluation passed successfully. This ensures that the project is in a good state before Archy starts processing messages. 
+        # Read the status of last project creation evaluation from the database using sqlite_manager. The relevant information is stored in the semantic_operations table where agent_id = PROJECT_CREATION_EVALUATOR and op_name = CREATE_PROJECT_EVAL. The evaluation is considered successful if there is an entry with status = "SUCCESS". If status is "FAILURE" or if there is no entry for this evaluation, then the preconditions are not met and Archy should not start.
+        try:
+            result = sqlite_manager.conn.execute(
+                "SELECT status FROM semantic_operations WHERE agent_id = ? AND op_name = ? ORDER BY id DESC LIMIT 1",
+                (AGENT_ID, OPERATION_NAME)
+            ).fetchone()
+            if result and result["status"] == "SUCCESS":
+                return True
+            else:
+                logger.warning(f"Preconditions check failed: Last project creation evaluation status is not SUCCESS. Result: {result}")
+                return False
+        except Exception as e:
+            logger.error(f"Error checking start preconditions: {e}")
+            return False
 
     async def process(self, message: MessageEnvelope) -> Any:
         """
