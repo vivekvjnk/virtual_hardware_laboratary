@@ -61,12 +61,16 @@ class AbstractURPAgent(ABC):
             raise RuntimeError(f"Cannot initialize agent in state: {self._state.status}")
         
         self.context = context
-        self._emit_callback = emit_callback
+        self.set_callback(emit_callback)
         
         # Allow child classes to perform specific initialization (e.g., loading prompts)
         self._on_initialize(context)
         
         self._state.status = AgentStatus.INITIALIZED.value
+    
+    def set_callback(self,emit_callback: Callable[['EventEnvelope'], None]) -> None:
+        """Allows resetting the emit callback, useful for testing or dynamic rebinding."""
+        self._emit_callback = emit_callback
 
     async def start(self,*args, **kwargs) -> None:
         """Makes agent runnable. Enters WAITING state."""
@@ -76,7 +80,7 @@ class AbstractURPAgent(ABC):
         # Check start preconditions
         start_ok = await self._check_start_preconditions(*args, **kwargs)
         if not start_ok:
-            self.emit(EventEnvelope(
+            await self.emit(EventEnvelope(
                 type="AGENT_START_PRECONDITIONS_VIOLATED",
                 payload={"reason": "Start preconditions check failed"},
                 source_agent_id=self.descriptor.agent_id
@@ -86,7 +90,7 @@ class AbstractURPAgent(ABC):
         self._state.status = AgentStatus.WAITING.value
         self._task = asyncio.create_task(self._lifecycle_loop())
         
-        self.emit(EventEnvelope(
+        await self.emit(EventEnvelope(
             type="AGENT_STARTED",
             payload={"session_id": self._state.session_id},
             source_agent_id=self.descriptor.agent_id
@@ -99,10 +103,10 @@ class AbstractURPAgent(ABC):
             
         await self.mailbox.put(message)
 
-    def emit(self, event: 'EventEnvelope') -> None:
+    async def emit(self, event: 'EventEnvelope') -> None:
         """Pushes output to runtime bus. Invariant 4: Outputs leave only through emit."""
         if self._emit_callback:
-            self._emit_callback(event)
+            await self._emit_callback(event)
 
     async def shutdown(self) -> None:
         """Graceful termination."""
@@ -116,7 +120,7 @@ class AbstractURPAgent(ABC):
             await self._task
             
         self._state.status = AgentStatus.TERMINATED.value
-        self.emit(EventEnvelope(
+        await self.emit(EventEnvelope(
             type="AGENT_TERMINATED",
             payload=None,
             source_agent_id=self.descriptor.agent_id
@@ -135,10 +139,15 @@ class AbstractURPAgent(ABC):
             try:
                 # 1. WAITING
                 self._state.status = AgentStatus.WAITING.value
-                
                 # 0.5s timeout to check mailbox periodically. If no messages, loop continues.
                 message = await asyncio.wait_for(self.mailbox.get(), timeout=MAILBOX_POLL_INTERVAL)
                 
+                # set last_task_outcome to None after getting a new message. 
+                while not self._state.outcome_acknowledged:
+                    await asyncio.sleep(0.1)  # Wait for acknowledgment before processing next message
+
+                self._state.last_task_outcome = None  # Reset last task outcome at the start of each loop iteration
+
                 try:
                     # Pre-condition Check: After a message is popped from the mailbox, call _check_preconditions.
                     pre_ok = await self._check_preconditions(message)
@@ -146,7 +155,9 @@ class AbstractURPAgent(ABC):
                     # If it returns False, do not transition to PROCESSING.
                     # Instead, emit an event of type TASK_PRECONDITIONS_VIOLATED, mark the task as done, and return the agent to the WAITING loop.
                     if not pre_ok:
-                        self.emit(EventEnvelope(
+                        self._state.last_task_outcome = "TASK_PRECONDITIONS_VIOLATED"
+                        self._state.outcome_acknowledged = False
+                        await self.emit(EventEnvelope(
                             type="TASK_PRECONDITIONS_VIOLATED",
                             payload={
                                 "message_id": message.message_id,
@@ -171,7 +182,9 @@ class AbstractURPAgent(ABC):
                     # 3. AUTO-EMIT FINAL RESULT
                     # If process() returns data, we treat it as a successful task completion.
                     if result is not None:
-                        self.emit(EventEnvelope(
+                        self._state.last_task_outcome = "TASK_COMPLETED"
+                        self._state.outcome_acknowledged = False
+                        await self.emit(EventEnvelope(
                             type="TASK_COMPLETED",
                             payload={
                                 "result": result, 
@@ -182,7 +195,9 @@ class AbstractURPAgent(ABC):
                         ))
                         
                 except PostconditionsViolatedError as e:
-                    self.emit(EventEnvelope(
+                    self._state.last_task_outcome = "TASK_POSTCONDITIONS_VIOLATED"
+                    self._state.outcome_acknowledged = False
+                    await self.emit(EventEnvelope(
                         type="TASK_POSTCONDITIONS_VIOLATED",
                         payload={
                             "error": str(e),
@@ -192,7 +207,9 @@ class AbstractURPAgent(ABC):
                         source_agent_id=self.descriptor.agent_id
                     ))
                 except Exception as e:
-                    self.emit(EventEnvelope(
+                    self._state.last_task_outcome = "TASK_FAILED"
+                    self._state.outcome_acknowledged = False
+                    await self.emit(EventEnvelope(
                         type="TASK_FAILED",
                         payload={
                             "error": str(e), 
@@ -269,5 +286,10 @@ class AbstractURPAgent(ABC):
             "agent_id": self.descriptor.agent_id,
             "status": self._state.status,
             "session_id": self._state.session_id,
-            "mailbox_size": self.mailbox.qsize()
+            "mailbox_size": self.mailbox.qsize(),
+            "last_task_outcome": self._state.last_task_outcome,
+            "outcome_acknowledged": self._state.outcome_acknowledged
         }
+    def acknowledge_outcome(self) -> None:
+        """Allows external systems (e.g., AOSM) to acknowledge that they've processed the last task outcome."""
+        self._state.outcome_acknowledged = True

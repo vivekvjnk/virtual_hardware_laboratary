@@ -38,7 +38,10 @@ class AgentState:
     session_id: str
     status: str = "INITIALIZED"
     internal_memory: Dict[str, Any] = field(default_factory=dict)
-
+    # Execution outcome of last processed message
+    last_task_outcome: Optional[str] = None
+    outcome_acknowledged: bool = True
+        
 @dataclass
 class AgentContext:
     workspace_handle: Any = None
