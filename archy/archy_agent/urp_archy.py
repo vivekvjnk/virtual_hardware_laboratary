@@ -368,7 +368,7 @@ class ArchyURPAgent(AbstractURPAgent):
         if isinstance(event, LLMConvertibleEvent):
             self.llm_messages.append(event.to_llm_message())
 
-    def _check_start_preconditions(self, sqlite_manager) -> bool:
+    async def _check_start_preconditions(self, sqlite_manager) -> bool:
         # Check if the last project creation evaluation passed successfully. This ensures that the project is in a good state before Archy starts processing messages. 
         # Read the status of last project creation evaluation from the database using sqlite_manager. The relevant information is stored in the semantic_operations table where agent_id = PROJECT_CREATION_EVALUATOR and op_name = CREATE_PROJECT_EVAL. The evaluation is considered successful if there is an entry with status = "SUCCESS". If status is "FAILURE" or if there is no entry for this evaluation, then the preconditions are not met and Archy should not start.
         try:

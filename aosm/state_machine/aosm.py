@@ -25,6 +25,7 @@ from librarian_agent.urp_librarian import LibrarianURPAgent
 from librarian_agent.stub import process_scud_stub
 from vhl_common.utils import handle_errors
 from vhl_common.project_state_manager.evaluators.project_creation_evaluator import ProjectCreationEvaluator
+from vhl_common.gate import GateRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +68,7 @@ class AOSM:
         self.sync_client = SyncClient(self.web_socket_client, self.workspace_manager)
         # mcp_endpoint = os.getenv("MCP_ENDPOINT", mcp_default)
         # self.mcp_manager = MCPManager(endpoint=mcp_endpoint)
-        
+        self.gate = GateRegistry.get("aosm_gate")
         
     async def start(self):
         """Starts AOSM and the WebSocket client."""
@@ -275,6 +276,7 @@ class AOSM:
 
             # Now initialize all the agents
             self.register_agents(workspace_manager=self.workspace_manager)
+            self.gate.register("HIL", self.hil_send)
             
             # Store project root information in class variable
             self.project_root_info = self.workspace_manager.get_workspace_info()
@@ -310,6 +312,9 @@ class AOSM:
                 # Initialize all the agents
                 self.register_agents(workspace_manager=self.workspace_manager)
                 
+                # Setup HIL GATE routes for the agents
+                self.gate.register("HIL", self.hil_send)
+
                 # Store project root information in class variable
                 self.project_root_info = self.workspace_manager.get_workspace_info()
                 
@@ -386,8 +391,12 @@ class AOSM:
             )
             register_agent_if_absent(descriptor=librarian_descriptor,factory_func=LibrarianURPAgent,name=f"{module_name}.librarian")
 
+    
+    async def hil_send(self, message: MessageEnvelope):
+        """Sends a message to a registered destination via GATE."""
+        logger.info(f"[AOSM.hil_send] Sending message via GATE: {message}")
+        pass
 
- 
     async def _handle_idle(self, event: BaseEvent):
         """
         Default state of the system. Handles following events:
@@ -979,16 +988,25 @@ class AOSM:
             raise RuntimeError("Failed to prepare workspace for Archy. Check logs for details.")
         
         # Step 2: Get archy agent from factory                                                                      
-        archy_agent = get_agent_factory(name=f"{module_name}.archy").factory_func
-
-        # Step 3: Define emit callback to capture Archy events and re-emit to VHL runtime
-        archy_handle_event_queue = asyncio.Queue()
-        def emit_callback(event: EventEnvelope):
+        factory = get_agent_factory(name=f"{module_name}.archy")
+        archy_agent = factory.factory_func(descriptor=factory.descriptor) 
+        
+        
+        async def emit_callback(event: EventEnvelope):
             logger.info(f"[EVENT] Received {event.type} with payload {event.payload}")
-            archy_handle_event_queue.put_nowait(event)
+            # If event.type is in ["TASK_POSTCONDITIONS_VIOLATED", "TASK_FAILED"]: send the event to GATE
+            # Construct MessageEnvelope object for GATE from EventEnvelope
+            receiver = "HIL"
+            message = MessageEnvelope(
+                type=event.type,
+                payload= event.payload,
+                sender=archy_agent.descriptor.agent_id,
+                receiver=receiver
+            )
+            logger.info(f"[emit_callback] Sending message to {receiver} via GATE: {message}")
+            await self.gate.send(message)
 
-        # Step 4: Prepare context and initialize Archy agent with context and emit callback
-        module_name = self.current_message.get("module_name", "default_module")
+        # Step 3: Prepare context and initialize Archy agent with context and emit callback
         context = {
             "config": ArchyConfig(conversation_persistence=True),
             "workspace": self.workspace_manager,
@@ -996,11 +1014,13 @@ class AOSM:
         }
         archy_agent.initialize(context=context, emit_callback=emit_callback)
 
-        # Step 5: Start Archy agent (enters WAITING state)
+        # Step 4: Start Archy agent (enters WAITING state)
         await archy_agent.start(sqlite_manager=self.project_semantic_db)
         
+        # Step 5: Register Archy's send function to GATE for message routing
+        self.gate.register(f"{module_name}.archy", archy_agent.send)
 
-        self.update_agent_status("archy", archy_agent.state.status)
+        self.update_agent_status("archy", archy_agent.state["status"])
         # Trigger archy agent here
         # Send Message (Mailbox-driven)
         message = MessageEnvelope(
@@ -1011,23 +1031,49 @@ class AOSM:
         )
         await archy_agent.send(message)
 
-        # Wait for Completion Event (Verification)
-        # We wait for TASK_COMPLETED or TASK_FAILED
-        found_completion = False
-        timeout = 300 # 5 minutes for complex SCUD generation
+        # Wait until Archy reaches SUCCESS (may involve multiple attempts / HIL cycles)
+        timeout = 300  # total budget (can be extended if needed)
+        poll_interval = 0.1
         start_time = asyncio.get_event_loop().time()
-        
+        found_completion = False
+
         while (asyncio.get_event_loop().time() - start_time) < timeout:
-            try:
-                event = await asyncio.wait_for(archy_handle_event_queue.get(), timeout=1.0)
-                if event.type == "TASK_COMPLETED":
-                    found_completion = True
+            
+            # --- Wait for one task completion ---
+            while (asyncio.get_event_loop().time() - start_time) < timeout:
+                state = archy_agent.state
+
+                if state["status"] == "WAITING" and archy_agent._state.last_task_outcome is not None:
                     break
-            except asyncio.TimeoutError:
+
+                await asyncio.sleep(poll_interval)
+
+            # Timeout check for inner wait
+            if archy_agent._state.last_task_outcome is None:
+                raise TimeoutError("Archy agent did not complete within timeout")
+
+            # --- Consume outcome ---
+            outcome = archy_agent._state.last_task_outcome
+            archy_agent.acknowledge_outcome()
+
+            # --- Decision logic ---
+            if outcome == "TASK_COMPLETED":
+                found_completion = True
+                break
+
+            elif outcome in ["TASK_POSTCONDITIONS_VIOLATED", "TASK_FAILED", "TASK_PRECONDITIONS_VIOLATED"]:
+                logger.warning(
+                    f"[AOSM.handle_archy] Archy returned {outcome}. Waiting for HIL resolution..."
+                )
+                # Do NOT break — continue outer loop
+                # Environment/HIL is expected to drive next message into agent
                 continue
 
+        # Final timeout check
+        if not found_completion:
+            raise TimeoutError("Archy did not reach SUCCESS within timeout")
                 
-        self.update_agent_status("archy", archy_agent.state.status)
+        self.update_agent_status("archy", archy_agent.state["status"])
 
         
     async def handle_librarian(self, scud_path: Path) -> Path:

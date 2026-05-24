@@ -101,7 +101,7 @@ async def test_archy_urp_agent(workspace_manager, replay_llm):
 
     # 4. Start Agent (Enters WAITING state)
     await archy.start()
-    assert archy.state.status == "WAITING"
+    assert archy.state["status"] == "WAITING"
 
     # 5. Send Message (Mailbox-driven)
     message = MessageEnvelope(
@@ -136,6 +136,6 @@ async def test_archy_urp_agent(workspace_manager, replay_llm):
 
     # 7. Shutdown Agent
     await archy.shutdown()
-    assert archy.state.status == "TERMINATED"
+    assert archy.state["status"] == "TERMINATED"
     logger.info("Archy URP regression test passed successfully.")
     

@@ -7,5 +7,5 @@ class AnaURPAgent(AbstractURPAgent):
     Ana URP Agent for Virtual Hardware Laboratory.
     Handles project creation, iteration management, and symbolic link setup specific to Ana.
     """
-    def __init__(self, workspace_manager: WorkspaceManager, debug: bool = False):
-        super().__init__(workspace_manager, debug)
+    def __init__(self, workspace_manager: WorkspaceManager):
+        super().__init__(workspace_manager)
