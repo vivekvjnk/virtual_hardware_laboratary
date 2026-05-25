@@ -472,71 +472,6 @@ class AOSM:
 
 
     # --- Agent nodes begin--- #    
-    # Archy
-    @handle_errors(on_error="_aosm_error_transition")
-    async def _handle_archy(self, event: BaseEvent):
-        logger.info(f"[AOSM._handle_archy] In ARCHY state...")
-        
-        # Step 1: Prepare workspace and assets for Archy
-        success = await asyncio.to_thread(
-                    prepare_archy_workspace,
-                    workspace_manager=self.workspace_manager,
-                )
-        if not success:
-            raise RuntimeError("Failed to prepare workspace for Archy. Check logs for details.")
-        
-        # Step 2: Initialize Archy URP Agent                                                                       
-        archy_agent = ArchyURPAgent()
-
-        # Step 3: Define emit callback to capture Archy events and re-emit to VHL runtime
-        archy_handle_event_queue = asyncio.Queue()
-        def emit_callback(event: EventEnvelope):
-            logger.info(f"[EVENT] Received {event.type} with payload {event.payload}")
-            archy_handle_event_queue.put_nowait(event)
-
-        # Step 4: Prepare context and initialize Archy agent with context and emit callback
-        module_name = self.current_message.get("module_name", "default_module")
-        context = {
-            "config": ArchyConfig(conversation_persistence=True),
-            "workspace": self.workspace_manager,
-            "module_name": module_name
-        }
-        archy_agent.initialize(context=context, emit_callback=emit_callback)
-
-        # Step 5: Start Archy agent (enters WAITING state)
-        await archy_agent.start()
-        
-
-        self.update_agent_status("archy", archy_agent.state.status)
-        # Trigger archy agent here
-        # Send Message (Mailbox-driven)
-        message = MessageEnvelope(
-            type="BUILD_SCUD",
-            payload="Please prepare the scud document.",
-            sender="test_suite",
-            receiver=archy_agent.descriptor.agent_id
-        )
-        await archy_agent.send(message)
-
-        # Wait for Completion Event (Verification)
-        # We wait for TASK_COMPLETED or TASK_FAILED
-        found_completion = False
-        timeout = 300 # 5 minutes for complex SCUD generation
-        start_time = asyncio.get_event_loop().time()
-        
-        while (asyncio.get_event_loop().time() - start_time) < timeout:
-            try:
-                event = await asyncio.wait_for(archy_handle_event_queue.get(), timeout=1.0)
-                if event.type == "TASK_COMPLETED":
-                    found_completion = True
-                    break
-            except asyncio.TimeoutError:
-                continue
-
-                
-        self.update_agent_status("archy", archy_agent.state.status)
-
-        
     # Librarian
     @handle_errors(on_error="_aosm_error_transition")
     async def _handle_trigger_librarian(self, event: BaseEvent):
@@ -965,7 +900,12 @@ class AOSM:
             
             # 3. Step 3: ANA-D
             await self.handle_ana()
-            
+            # send workflow 1 completion event to UI/runtime
+            await self.web_socket_client.emit_event(BaseEvent(
+                type=EventType.WORKFLOW_COMPLETED,
+                source=EventSource.VHL_AGENT_BACKEND,
+                payload={"workflow": "workflow_1", "module": module_name}
+            ))
             logger.info(f"[AOSM.run_workflow_1] Sequential Workflow 1 completed successfully for module: {module_name}")
         except Exception as e:
             logger.error(f"[AOSM.run_workflow_1] Sequential Workflow 1 failed: {e}", exc_info=True)
