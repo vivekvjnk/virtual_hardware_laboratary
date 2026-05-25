@@ -373,7 +373,7 @@ class ArchyURPAgent(AbstractURPAgent):
         # Read the status of last project creation evaluation from the database using sqlite_manager. The relevant information is stored in the semantic_operations table where agent_id = PROJECT_CREATION_EVALUATOR and op_name = CREATE_PROJECT_EVAL. The evaluation is considered successful if there is an entry with status = "SUCCESS". If status is "FAILURE" or if there is no entry for this evaluation, then the preconditions are not met and Archy should not start.
         try:
             result = sqlite_manager.conn.execute(
-                "SELECT status FROM semantic_operations WHERE agent_id = ? AND op_name = ? ORDER BY id DESC LIMIT 1",
+                "SELECT status FROM semantic_operations WHERE author = ? AND op_name = ? ORDER BY id DESC LIMIT 1",
                 (AGENT_ID, OPERATION_NAME)
             ).fetchone()
             if result and result["status"] == "SUCCESS":
