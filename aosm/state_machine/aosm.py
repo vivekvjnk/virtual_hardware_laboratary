@@ -25,7 +25,7 @@ from librarian_agent.urp_librarian import LibrarianURPAgent
 from librarian_agent.stub import process_scud_stub
 from vhl_common.utils import handle_errors
 from vhl_common.project_state_manager.evaluators.project_creation_evaluator import ProjectCreationEvaluator
-from vhl_common.gate import GateRegistry
+from vhl_common.gate import GateRegistry, HILTerminal
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +69,7 @@ class AOSM:
         # mcp_endpoint = os.getenv("MCP_ENDPOINT", mcp_default)
         # self.mcp_manager = MCPManager(endpoint=mcp_endpoint)
         self.gate = GateRegistry.get("aosm_gate")
+        self.hil_terminal = HILTerminal(self.gate)
         
     async def start(self):
         """Starts AOSM and the WebSocket client."""
@@ -80,6 +81,11 @@ class AOSM:
             await asyncio.to_thread(self.mcp_manager.ensure_server_running)
         self._main_loop_task = asyncio.create_task(self._main_loop())
         asyncio.create_task(self._heartbeat_loop())
+        
+        # Start HIL Terminal TCP server by default unless explicitly disabled
+        if os.environ.get("VHL_DISABLE_HIL_TERMINAL") != "true":
+            self.hil_terminal.start()
+            
         await self.broadcast_agent_state()
 
     async def broadcast_agent_state(self):
@@ -103,6 +109,10 @@ class AOSM:
         self.web_socket_client.remove_subscriber(self._handle_ws_event)
         if self._main_loop_task:
             self._main_loop_task.cancel()
+            
+        # Stop HIL Terminal input loop
+        await self.hil_terminal.stop()
+        
         await self.web_socket_client.stop()
 
     async def _handle_ws_event(self, event: BaseEvent):
@@ -276,7 +286,7 @@ class AOSM:
 
             # Now initialize all the agents
             self.register_agents(workspace_manager=self.workspace_manager)
-            self.gate.register("HIL", self.hil_send)
+            self.gate.register("HIL", self.hil_terminal.send)
             
             # Store project root information in class variable
             self.project_root_info = self.workspace_manager.get_workspace_info()
@@ -313,7 +323,7 @@ class AOSM:
                 self.register_agents(workspace_manager=self.workspace_manager)
                 
                 # Setup HIL GATE routes for the agents
-                self.gate.register("HIL", self.hil_send)
+                self.gate.register("HIL", self.hil_terminal.send)
 
                 # Store project root information in class variable
                 self.project_root_info = self.workspace_manager.get_workspace_info()
