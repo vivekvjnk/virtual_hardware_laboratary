@@ -667,97 +667,6 @@ class AOSM:
                         "scud_content": scud_content
                     }
                 ))
-
-    async def _handle_wait_for_archy_hil(self, event: BaseEvent):
-        logger.info(f"[AOSM._handle_wait_for_archy_hil] In WAIT_FOR_ARCHY_HIL state... Event: {event.type}")
-        
-        if event.type == EventType.STATE_TRANSITION:
-            # On entering state, notify user for review
-            scud_path = event.payload.get("scud_path") or self.current_message.get("scud_path")
-            scud_content = ""
-            logger.info(f"[AOSM._handle_wait_for_archy_hil] Attempting to read SCUD from: {scud_path}")
-            if scud_path and os.path.exists(scud_path):
-                try:
-                    with open(scud_path, "r") as f:
-                        scud_content = f.read()
-                    logger.info(f"[AOSM._handle_wait_for_archy_hil] Read SCUD content successfully. Length: {len(scud_content)}")
-                except Exception as e:
-                    logger.error(f"[AOSM._handle_wait_for_archy_hil] Failed to read SCUD at {scud_path}: {e}")
-            else:
-                logger.warning(f"[AOSM._handle_wait_for_archy_hil] scud_path is None or does not exist: {scud_path}")
-            
-            await self.web_socket_client.emit_event(BaseEvent(
-                type=EventType.HIL_REQUEST,
-                source=EventSource.VHL_AGENT_BACKEND,
-                payload={
-                    "reason": "ARCHY_REVIEW",
-                    "message": "Archy has finished schematic generation. Please review the generated SCUD.",
-                    "scud_content": scud_content,
-                    "scud_path": str(scud_path)
-                }
-            ))
-            
-        elif event.type == EventType.HUMAN_INPUT:
-            payload = event.payload or {}
-            action = payload.get("action")
-            
-            if action == "continue":
-                instructions = payload.get("instructions", "")
-                if instructions:
-                    self.current_message.setdefault("observations", []).append(f"User instructions from Archy HIL review: {instructions}")
-                logger.info("[AOSM._handle_wait_for_archy_hil] User chose CONTINUE. Transitioning to TRIGGER_LIBRARIAN")
-                await self.transition_to(AOSMState.TRIGGER_LIBRARIAN, "User accepted archy results")
-                
-            elif action == "retry":
-                instructions = payload.get("instructions", "")
-                logger.info(f"[AOSM._handle_wait_for_archy_hil] User chose RETRY with instructions: {instructions}")
-                
-                # Re-run archy
-                # We need image_id and image_path for archy
-                image_id = self.current_message.get("circuit_id")
-                image_path_str = self.current_message.get("image_path")
-                
-                if not image_id or not image_path_str:
-                    logger.error("[AOSM._handle_wait_for_archy_hil] Missing session data for Archy retry")
-                    await self.transition_to(AOSMState.ERROR_PRESENTED, "Missing session data for Archy retry")
-                    return
-                
-                image_path = Path(str(image_path_str))
-                
-                # wait self._run_archy with instructions - Wait, _run_archy currently doesn't take instructions?
-                # We'll just run it. If Archy is supposed to read from current observations, it might do that.
-                # Let's add the instructions to observations so Archy can conceptually pick it up if it reads them.
-                if instructions:
-                    self.current_message.setdefault("observations", []).append(f"User revision request for Archy: {instructions}")
-                
-                try:
-                     scud_path_res = await self._run_archy(str(image_id), image_path)
-                     if scud_path_res:
-                         self.current_message["scud_path"] = str(scud_path_res)
-                     else:
-                         raise ValueError("SCUD path not returned from Archy")
-                except Exception as e:
-                     logger.error(f"[AOSM._handle_wait_for_archy_hil] Archy retry failed: {e}")
-                     await self.transition_to(AOSMState.ERROR_PRESENTED, f"Archy retry failed: {e}")
-                     return
-                
-                # Re-emit HIL_REQUEST with updated content
-                scud_content = ""
-                sp_res = self.current_message.get("scud_path")
-                if sp_res and os.path.exists(str(sp_res)):
-                    with open(str(sp_res), "r") as f:
-                        scud_content = f.read()
-                
-                await self.web_socket_client.emit_event(BaseEvent(
-                    type=EventType.HIL_REQUEST,
-                    source=EventSource.VHL_AGENT_BACKEND,
-                    payload={
-                        "reason": "ARCHY_REVIEW",
-                        "message": "Archy has finished retrying generation. Please review the updated SCUD.",
-                        "scud_content": scud_content
-                    }
-                ))
-
     # --- State Handlers --- END
 
     async def _ana_deicsion_wait_and_transition(self, event, task_id, decision):
@@ -950,12 +859,13 @@ class AOSM:
         context = {
             "config": ArchyConfig(conversation_persistence=True),
             "workspace": self.workspace_manager,
+            "sqlite_manager": self.project_semantic_db,
             "module_name": module_name
         }
         archy_agent.initialize(context=context, emit_callback=emit_callback)
 
         # Step 4: Start Archy agent (enters WAITING state)
-        await archy_agent.start(sqlite_manager=self.project_semantic_db)
+        await archy_agent.start()
         
         # Step 5: Register Archy's send function to GATE for message routing
         self.gate.register(f"{module_name}.archy", archy_agent.send)
@@ -983,17 +893,18 @@ class AOSM:
             while (asyncio.get_event_loop().time() - start_time) < timeout:
                 state = archy_agent.state
 
-                if state["status"] == "WAITING" and archy_agent._state.last_task_outcome is not None:
+                # Waiting for User input. Simply continue the outer loop
+                if state["status"] == "WAITING" and state["last_task_outcome"] is not None:
                     break
 
                 await asyncio.sleep(poll_interval)
 
             # Timeout check for inner wait
-            if archy_agent._state.last_task_outcome is None:
+            if archy_agent.state["last_task_outcome"] is None:
                 raise TimeoutError("Archy agent did not complete within timeout")
 
             # --- Consume outcome ---
-            outcome = archy_agent._state.last_task_outcome
+            outcome = archy_agent.state["last_task_outcome"]
             archy_agent.acknowledge_outcome()
 
             # --- Decision logic ---

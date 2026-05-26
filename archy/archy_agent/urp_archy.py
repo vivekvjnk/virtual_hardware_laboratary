@@ -29,7 +29,7 @@ from vhl_common.urp.data_types import AgentDescriptor, MessageEnvelope
 import logging
 from vhl_common.utils import setup_dedicated_logger
 from workspace.manager import WorkspaceManager
-
+from vhl_common.project_state_manager import SQLiteManager
 
 
 from dataclasses import dataclass, field
@@ -74,6 +74,7 @@ class ArchyContext:
     # Required arguments
     module_name: str
     workspace: WorkspaceManager
+    sqlite_manager: SQLiteManager
     config: ArchyConfig = field(default=None)
 
 
@@ -96,6 +97,7 @@ class ArchyURPAgent(AbstractURPAgent):
         self.agent = None
         self.workspace_manager = None
         self.module_name = None
+        self.sqlite_manager = None
 
     def build_config(self, context:ArchyContext) -> ArchyConfig:
         """
@@ -313,7 +315,7 @@ class ArchyURPAgent(AbstractURPAgent):
         # Extract module-specific configuration from context
         self.module_name = context.module_name
         self.workspace_manager = context.workspace
-        
+        self.sqlite_manager = context.sqlite_manager
         # Optional arguments
         image_path = config.image_path
         system_boundary_path = config.system_boundary_path
@@ -368,22 +370,110 @@ class ArchyURPAgent(AbstractURPAgent):
         if isinstance(event, LLMConvertibleEvent):
             self.llm_messages.append(event.to_llm_message())
 
-    async def _check_start_preconditions(self, sqlite_manager) -> bool:
+    async def _check_start_preconditions(self) -> tuple[bool,str]:
         # Check if the last project creation evaluation passed successfully. This ensures that the project is in a good state before Archy starts processing messages. 
         # Read the status of last project creation evaluation from the database using sqlite_manager. The relevant information is stored in the semantic_operations table where agent_id = PROJECT_CREATION_EVALUATOR and op_name = CREATE_PROJECT_EVAL. The evaluation is considered successful if there is an entry with status = "SUCCESS". If status is "FAILURE" or if there is no entry for this evaluation, then the preconditions are not met and Archy should not start.
         try:
-            result = sqlite_manager.conn.execute(
+            cursor = self.sqlite_manager.conn.execute(
                 "SELECT status FROM semantic_operations WHERE author = ? AND op_name = ? ORDER BY id DESC LIMIT 1",
                 (AGENT_ID, OPERATION_NAME)
-            ).fetchone()
-            if result and result["status"] == "SUCCESS":
-                return True
+            )
+            row = cursor.fetchone()
+            if row and row["status"] == "SUCCESS":
+                return True, "Last project creation evaluation status is SUCCESS."
             else:
-                logger.warning(f"Preconditions check failed: Last project creation evaluation status is not SUCCESS. Result: {result}")
-                return False
+                status_val = row["status"] if row else "None"
+                msg = f"Preconditions check failed: Last project creation evaluation status is not SUCCESS (found: {status_val})."
+                logger.warning(msg)
+                return False, msg
         except Exception as e:
             logger.error(f"Error checking start preconditions: {e}")
-            return False
+            return False, f"Error checking start preconditions: {e}"
+    
+    async def _check_postconditions(self, message: MessageEnvelope, result: Any) -> tuple[bool, str]:
+        # Check if the module directory contains <module_name>.scud document. If not, return false with missing scud document as response message. If yes move to next step
+        #   1. Get the module path from workspace manager
+        if not self.workspace_manager or not self.module_name:
+            return False, "Workspace manager or module name is not initialized."
+        
+        module_paths = self.workspace_manager.module_paths
+        if self.module_name not in module_paths:
+            return False, f"Module '{self.module_name}' path not found in workspace manager."
+        
+        module_path = module_paths[self.module_name]
+        
+        #   2. Check if <module_name>.scud document is present in the module path directory 
+        scud_file_name = f"{self.module_name}.scud"
+        scud_file = module_path / scud_file_name
+        if not scud_file.exists():
+            return False, f"Missing scud document: {scud_file_name} is not present in module directory."
+         
+        # Check if <module_name>.scud document has 'IN_PROGRESS' string at the very end. If yes, return false with scud is still under construction as response message. If no, send true with scud construction complete as response message
+        try:
+            with open(scud_file, "r", encoding="utf-8") as f:
+                content = f.read().strip()
+            if content.endswith("IN_PROGRESS"):
+                return False, "SCUD is still under construction."
+        except Exception as e:
+            return False, f"Failed to read scud file: {e}"
+        
+        # Semantic operation section
+        # ------
+        # Capture 2 semantic operations under success case(scud file is present and 'IN_PROGRESS' string is not there in scud file)
+        try:
+            cursor = self.sqlite_manager.conn.execute(
+                "SELECT id FROM project_modules WHERE module_name = ?",
+                (self.module_name,)
+            )
+            row = cursor.fetchone()
+            if not row:
+                return False, f"Module '{self.module_name}' not found in project_modules database."
+            mod_id = row["id"]
+        except Exception as e:
+            return False, f"Database error fetching module ID: {e}"
+
+        try:
+            import hashlib
+            sha256_hash = hashlib.sha256()
+            with open(scud_file, "rb") as f:
+                for byte_block in iter(lambda: f.read(4096), b""):
+                    sha256_hash.update(byte_block)
+            checksum = sha256_hash.hexdigest()
+        except Exception as e:
+            return False, f"Failed to compute checksum for scud file: {e}"
+
+        try:
+            scud_file_path = str(scud_file.relative_to(self.workspace_manager.project_root))
+        except Exception:
+            scud_file_path = str(scud_file)
+
+        try:
+            self.sqlite_manager.insert_module_resource(
+                module_id=mod_id,
+                resource_name=scud_file_name,
+                file_path=scud_file_path,
+                resource_type="file",
+                description="Shared Circuit Understanding Document",
+                checksum=checksum
+            )
+        except Exception as e:
+            logger.error(f"Error inserting module resource: {e}")
+            return False, f"Failed to insert scud resource to database: {e}"
+
+        try:
+            self.workspace_manager.record_operation(
+                module_name=self.module_name,
+                op_name="SCUD_GENERATION",
+                author="ARCHY",
+                status="SUCCESS",
+                payload={"source": scud_file_path},
+                commit_message=f"ARCHY: SCUD File created for {self.module_name}"
+            )
+        except Exception as e:
+            logger.error(f"Error recording operation: {e}")
+            return False, f"Failed to record SCUD_GENERATION operation: {e}"
+
+        return True, "SCUD construction complete"
 
     async def process(self, message: MessageEnvelope) -> Any:
         """
@@ -412,7 +502,6 @@ class ArchyURPAgent(AbstractURPAgent):
 
         return {
             "response":response,
-            "status": "success",
             "module_name": self.module_name,
             "cost": self.llm.metrics.accumulated_cost
         }

@@ -19,6 +19,16 @@ class AgentStatus(Enum):
 
 class PostconditionsViolatedError(Exception):
     """Raised when post-condition verification fails."""
+    def __init__(self,result,message):
+        """
+        result: Agent execution result
+        message: Error message
+        """
+        self.result = result
+        super().__init__(message)
+
+class PreconditionsViolatedError(Exception):
+    """Raised when pre-condition verification fails."""
     pass
 
 class StartPreconditionsViolatedError(Exception):
@@ -72,20 +82,26 @@ class AbstractURPAgent(ABC):
         """Allows resetting the emit callback, useful for testing or dynamic rebinding."""
         self._emit_callback = emit_callback
 
-    async def start(self,*args, **kwargs) -> None:
+    async def start(self) -> None:
         """Makes agent runnable. Enters WAITING state."""
         if self._state.status != AgentStatus.INITIALIZED.value:
             raise RuntimeError(f"Agent must be INITIALIZED to start. Current: {self._state.status}")
         
         # Check start preconditions
-        start_ok = await self._check_start_preconditions(*args, **kwargs)
+        precond_res = await self._check_start_preconditions()
+        if isinstance(precond_res, tuple):
+            start_ok, result = precond_res
+        else:
+            start_ok = precond_res
+            result = "Start preconditions check failed" if not start_ok else "Start precondition check successful"
+            
         if not start_ok:
             await self.emit(EventEnvelope(
                 type="AGENT_START_PRECONDITIONS_VIOLATED",
-                payload={"reason": "Start preconditions check failed"},
+                payload={"reason": result},
                 source_agent_id=self.descriptor.agent_id
             ))
-            raise StartPreconditionsViolatedError("Start preconditions check failed")
+            raise StartPreconditionsViolatedError(f"Start preconditions check failed: {result}")
             
         self._state.status = AgentStatus.WAITING.value
         self._task = asyncio.create_task(self._lifecycle_loop())
@@ -106,7 +122,9 @@ class AbstractURPAgent(ABC):
     async def emit(self, event: 'EventEnvelope') -> None:
         """Pushes output to runtime bus. Invariant 4: Outputs leave only through emit."""
         if self._emit_callback:
-            await self._emit_callback(event)
+            res = self._emit_callback(event)
+            if res is not None and asyncio.iscoroutine(res):
+                await res
 
     async def shutdown(self) -> None:
         """Graceful termination."""
@@ -139,34 +157,30 @@ class AbstractURPAgent(ABC):
             try:
                 # 1. WAITING
                 self._state.status = AgentStatus.WAITING.value
+
+                # set last_task_outcome to None before getting a new message. 
+                while not self._state.outcome_acknowledged:
+                    await asyncio.sleep(0.3)  # Wait for acknowledgment before processing next message
+
                 # 0.5s timeout to check mailbox periodically. If no messages, loop continues.
                 message = await asyncio.wait_for(self.mailbox.get(), timeout=MAILBOX_POLL_INTERVAL)
                 
-                # set last_task_outcome to None after getting a new message. 
-                while not self._state.outcome_acknowledged:
-                    await asyncio.sleep(0.1)  # Wait for acknowledgment before processing next message
 
                 self._state.last_task_outcome = None  # Reset last task outcome at the start of each loop iteration
 
                 try:
                     # Pre-condition Check: After a message is popped from the mailbox, call _check_preconditions.
-                    pre_ok = await self._check_preconditions(message)
+                    precond_res = await self._check_preconditions(message)
+                    if isinstance(precond_res, tuple):
+                        pre_ok, pre_response = precond_res
+                    else:
+                        pre_ok = precond_res
+                        pre_response = "Preconditions check failed" if not pre_ok else "Precondition check successful"
                     
                     # If it returns False, do not transition to PROCESSING.
                     # Instead, emit an event of type TASK_PRECONDITIONS_VIOLATED, mark the task as done, and return the agent to the WAITING loop.
                     if not pre_ok:
-                        self._state.last_task_outcome = "TASK_PRECONDITIONS_VIOLATED"
-                        self._state.outcome_acknowledged = False
-                        await self.emit(EventEnvelope(
-                            type="TASK_PRECONDITIONS_VIOLATED",
-                            payload={
-                                "message_id": message.message_id,
-                                "correlation_id": message.correlation_id,
-                                "reason": "Preconditions check failed"
-                            },
-                            source_agent_id=self.descriptor.agent_id
-                        ))
-                        continue
+                        raise PreconditionsViolatedError(pre_response)
                     
                     # 2. PROCESSING
                     self._state.status = AgentStatus.PROCESSING.value
@@ -175,9 +189,14 @@ class AbstractURPAgent(ABC):
                     result = await self.process(message)
                     
                     # Post-condition Check: Inside the successful block of process(), right before emitting TASK_COMPLETED, invoke _check_postconditions.
-                    post_ok = await self._check_postconditions(message, result)
+                    postcond_res = await self._check_postconditions(message, result)
+                    if isinstance(postcond_res, tuple):
+                        post_ok, post_response = postcond_res
+                    else:
+                        post_ok = postcond_res
+                        post_response = "Postconditions check failed" if not post_ok else "Postcondition check successful"
                     if not post_ok:
-                        raise PostconditionsViolatedError("Postconditions check failed")
+                        raise PostconditionsViolatedError(result=result,message=f"Postconditions check failed: {post_response}")
                     
                     # 3. AUTO-EMIT FINAL RESULT
                     # If process() returns data, we treat it as a successful task completion.
@@ -200,12 +219,27 @@ class AbstractURPAgent(ABC):
                     await self.emit(EventEnvelope(
                         type="TASK_POSTCONDITIONS_VIOLATED",
                         payload={
+                            "result": e.result,
                             "error": str(e),
                             "message_id": message.message_id,
                             "correlation_id": message.correlation_id
                         },
                         source_agent_id=self.descriptor.agent_id
                     ))
+                except PreconditionsViolatedError as e:
+                    self._state.last_task_outcome = "TASK_PRECONDITIONS_VIOLATED"
+                    self._state.outcome_acknowledged = False
+                    await self.emit(EventEnvelope(
+                        type="TASK_PRECONDITIONS_VIOLATED",
+                        payload={
+                            "error": str(e),
+                            "reason": str(e),
+                            "message_id": message.message_id,
+                            "correlation_id": message.correlation_id,
+                        },
+                        source_agent_id=self.descriptor.agent_id
+                    ))
+
                 except Exception as e:
                     self._state.last_task_outcome = "TASK_FAILED"
                     self._state.outcome_acknowledged = False
@@ -248,29 +282,29 @@ class AbstractURPAgent(ABC):
     # OPTIONAL EXTENSION HOOKS
     # ---------------------------------------------------------
 
-    async def _check_start_preconditions(self, *args, **kwargs) -> bool:
+    async def _check_start_preconditions(self) -> bool:
         """
         Asynchronous verification hook executed before the agent starts.
         By default, it should return True. Child classes can override this to check
         essential environment readiness or dependencies before starting.
         """
-        return True
+        return True, "Start precondition check successful"
 
-    async def _check_preconditions(self, message: 'MessageEnvelope', *args, **kwargs) -> bool:
+    async def _check_preconditions(self, message: 'MessageEnvelope') -> tuple[bool,str]:
         """
         Asynchronous verification hook executed before a message is allowed to process.
         By default, it should return True. Child classes will override this to query
         database entries, check file-system matrices, or verify upstream dependencies.
         """
-        return True
+        return True, "Precondition check successful"
 
-    async def _check_postconditions(self, message: 'MessageEnvelope', result: Any, *args, **kwargs) -> bool:
+    async def _check_postconditions(self, message: 'MessageEnvelope', result: Any) -> tuple[bool,str]:
         """
         Asynchronous verification hook executed after process() completes successfully
         but before the final output state is committed or emitted.
         By default, it should return True.
         """
-        return True
+        return True, "Postcondition check successful"
 
     async def _on_shutdown(self) -> None:
         """Optional hook for child classes during shutdown."""

@@ -263,12 +263,19 @@ class WorkspaceManager:
             # Ensure .gitignore exists and ignores .vhl/ directory (SQLite DB)
             gitignore_path = self.project_root / ".gitignore"
             if not gitignore_path.exists():
-                gitignore_path.write_text(".vhl/\n")
+                gitignore_path.write_text(".vhl/\n.conversation/\n")
             else:
                 content = gitignore_path.read_text()
+                to_append = []
                 if ".vhl/" not in content:
+                    to_append.append(".vhl/")
+                if ".conversation/" not in content:
+                    to_append.append(".conversation/")
+
+                if to_append:
                     with open(gitignore_path, "a") as f:
-                        f.write("\n.vhl/\n")
+                        f.write("\n" + "\n".join(to_append) + "\n")
+                
 
             self.git.git.add_all()
             try:
