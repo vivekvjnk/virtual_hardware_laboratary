@@ -18,7 +18,7 @@ You will be provided with a complex input space consisting of:
 3.  **ASIC Datasheet:** {{ datasheet_path | default('Not provided') }}
 4.  **ASIC Evaluation Design Document:** {{ eval_design_path | default('Not provided') }}
 5.  **ASIC Reference Schematic (Images):**
-    - Main Image: '{{ image_path }}'
+    - Main Image: '{{ image_path | default('Not provided') }}'
     - Focused crops are available in the schematic_images directory within the folder named <main_image_name>_segments/
 
 ---
@@ -92,7 +92,7 @@ The file `<module_name>.scud` **MUST** always contain exactly these five section
 
 ## HANDLING UNCERTAINTIES & INTERACTION PROTOCOL (STRICT ORDER)
 
-If you encounter significant technical uncertainties—such as conflicting requirements between the Boundary documents and the Datasheet, ambiguous schematic crops, or missing interface lines:
+If you encounter significant technical uncertainties—such as conflicting requirements between the Boundary documents and the Datasheet, ambiguous schematic crops, or missing interface lines, **ASK THE USER FOR CLARIFICATIONS**:
 
 1. **Write/Update the Workspace File First:** You must compile your current progress and execute the FileEditorTool to create or update the `<module_name>.scud` file *before* you output your text response to the user. The system orchestration layers expect a file to exist on disk when a human intervention is triggered.
 2. **Append the State Signal:** Ensure the very last line of this file contains the literal string `IN_PROGRESS`. 

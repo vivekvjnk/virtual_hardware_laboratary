@@ -174,7 +174,7 @@ class ArchyURPAgent(AbstractURPAgent):
                         break
 
         if image_path is None:
-            raise ValueError(
+            logger.warning(
                 f"[build_context] No schematic image found for module '{context.module_name}' "
                 f"under {schematic_images_dir}. Run prepare_archy_workspace first."
             )
@@ -226,7 +226,7 @@ class ArchyURPAgent(AbstractURPAgent):
 
         # Step 3: Construct and return the ArchyConfig dataclass.
         config = ArchyConfig(
-            image_path=str(image_path.resolve()),
+            image_path=str(image_path.resolve()) if image_path is not None else None,
             system_boundary_path=system_boundary_path,
             module_boundary_path=module_boundary_path,
             datasheet_path=datasheet_path,
@@ -325,7 +325,7 @@ class ArchyURPAgent(AbstractURPAgent):
 
         if not all([self.module_name, self.workspace_manager, image_path]):
             logger.warning(f"[ArchyURPAgent] Missing required configuration in context: module_name, workspace, or image_path. Agent may fail if these are not provided in the first message.")
-            raise ValueError(f"Missing required configuration in context: module_name, workspace, or image_path: config={config}")
+            # raise ValueError(f"Missing required configuration in context: module_name, workspace, or image_path: config={config}")
         module_path = self.workspace_manager.module_paths[self.module_name]
         
         sys_prompt_kwargs = {
