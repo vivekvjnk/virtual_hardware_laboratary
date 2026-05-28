@@ -184,6 +184,7 @@ class ProjectStatus(str, Enum):
 class AgentStatus(str, Enum):
     RUNNING = "Running"
     IDLE = "Idle"
+    WAITING = "WAITING"
 
 class ProjectStatePayload(BaseModel):
     backend_status: ProjectStatus

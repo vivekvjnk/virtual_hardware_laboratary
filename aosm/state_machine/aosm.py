@@ -52,7 +52,8 @@ class AOSM:
         self.active_ana_sm: Optional[ANADStateMachine] = None
         self.ana_inbox: Optional[asyncio.Queue] = None
         self._main_loop_task: Optional[asyncio.Task] = None
-        self.project_id: Optional[str] = None
+        self.project_id = None
+        self.archy_agents = {}
         lib_default = "http://localhost:8082/sse"
         self.librarian_mcp_url = os.getenv("LIBRARIAN_MCP_URL", lib_default)
         self.mcp_manager = None
@@ -285,7 +286,7 @@ class AOSM:
             
 
             # Now initialize all the agents
-            self.register_agents(workspace_manager=self.workspace_manager)
+            await self.register_agents(workspace_manager=self.workspace_manager)
             self.gate.register("HIL", self.hil_terminal.send)
             
             # Store project root information in class variable
@@ -320,7 +321,7 @@ class AOSM:
                 self.project_id = project_id
                 
                 # Initialize all the agents
-                self.register_agents(workspace_manager=self.workspace_manager)
+                await self.register_agents(workspace_manager=self.workspace_manager)
                 
                 # Setup HIL GATE routes for the agents
                 self.gate.register("HIL", self.hil_terminal.send)
@@ -379,7 +380,7 @@ class AOSM:
             projects = self.workspace_manager.list_projects()
             await self.web_socket_client.emit_projects_list(projects)
 
-    def register_agents(self, workspace_manager: WorkspaceManager):
+    async def register_agents(self, workspace_manager: WorkspaceManager):
         """Registers Archy and Librarian agents for each module in the project."""
 
         for module_name in workspace_manager.module_names:
@@ -392,14 +393,78 @@ class AOSM:
             )
             register_agent_if_absent(descriptor=archy_descriptor,factory_func=ArchyURPAgent,name=f"{module_name}.archy")
             
-            librarian_descriptor = AgentDescriptor(
-                agent_id=f"{module_name}.librarian",
-                name=f"{module_name} Librarian",
-                version="1.0",
-                capabilities=["LIBRARY_COMPONENT_RESOLUTION"],
-                accepted_message_types=["IMPORT_COMPONENTS", "FIND_COMPONENTS"]
-            )
-            register_agent_if_absent(descriptor=librarian_descriptor,factory_func=LibrarianURPAgent,name=f"{module_name}.librarian")
+            # Step 2: Get archy agent from factory                                                                      
+            factory = get_agent_factory(name=f"{module_name}.archy")
+            archy_agent = factory.factory_func(descriptor=factory.descriptor) 
+            
+            
+            async def emit_callback(event: EventEnvelope):
+                logger.info(f"[EVENT] Received {event.type} with payload {event.payload}")
+                # If event.type is in ["TASK_POSTCONDITIONS_VIOLATED", "TASK_FAILED"]: send the event to GATE
+                # Construct MessageEnvelope object for GATE from EventEnvelope
+                receiver = "HIL"
+                message = MessageEnvelope(
+                    type=event.type,
+                    payload= event.payload,
+                    sender=archy_agent.descriptor.agent_id,
+                    receiver=receiver
+                )
+                logger.info(f"[emit_callback] Sending message to {receiver} via GATE: {message}")
+                await self.gate.send(message)
+
+            # Step 3: Prepare context and initialize Archy agent with context and emit callback
+            context = {
+                "config": ArchyConfig(conversation_persistence=True),
+                "workspace": self.workspace_manager,
+                "sqlite_manager": self.project_semantic_db,
+                "module_name": module_name
+            }
+            archy_agent.initialize(context=context, emit_callback=emit_callback)
+
+            logger.info("Starting Archy agent")
+            # Step 4: Start Archy agent (enters WAITING state)
+            await archy_agent.start()
+            
+            # Step 5: Register Archy's send function to GATE for message routing
+            self.gate.register(f"{module_name}.archy", archy_agent.send)
+
+            # Store the instantiated agent for subsequent state retrieval
+            self.archy_agents[module_name] = archy_agent
+
+            self.update_agent_status("archy", archy_agent.state["status"])
+
+            # ----Librarian setup----
+            # librarian_descriptor = AgentDescriptor(
+            #     agent_id=f"{module_name}.librarian",
+            #     name=f"{module_name} Librarian",
+            #     version="1.0",
+            #     capabilities=["LIBRARY_COMPONENT_RESOLUTION"],
+            #     accepted_message_types=["IMPORT_COMPONENTS", "FIND_COMPONENTS"]
+            # )
+            # register_agent_if_absent(descriptor=librarian_descriptor,factory_func=LibrarianURPAgent,name=f"{module_name}.librarian")
+
+            # # Step 2: Configure librarian agent
+            # factory = get_agent_factory(name=f"{module_name}.librarian")
+            # librarian = factory.factory_func(descriptor=factory.descriptor) 
+            
+
+            # # Step 3: Prepare context and initialize Archy agent with context and emit callback
+            # context = {
+            #     "config": ArchyConfig(conversation_persistence=True),
+            #     "workspace": self.workspace_manager,
+            #     "sqlite_manager": self.project_semantic_db,
+            #     "module_name": module_name
+            # }
+            # librarian.initialize(context=context, emit_callback=emit_callback)
+
+            # logger.info("Starting librarian agent")
+            # # Step 4: Start Archy agent (enters WAITING state)
+            # await librarian.start()
+            
+            # # Step 5: Register Archy's send function to GATE for message routing
+            # self.gate.register(f"{module_name}.archy", librarian.send)
+
+            # self.update_agent_status("librarian", librarian.state["status"])
 
     
     async def hil_send(self, message: MessageEnvelope):
@@ -788,6 +853,7 @@ class AOSM:
         
         # 3. Reset AOSM internal state
         self.project_id = None
+        self.archy_agents = {}
         self.project_root_info = None
         self.current_message = {
             "state_id": AOSMState.STARTUP,
@@ -846,42 +912,11 @@ class AOSM:
         if not success:
             raise RuntimeError("Failed to prepare workspace for Archy. Check logs for details.")
         
-        # Step 2: Get archy agent from factory                                                                      
-        factory = get_agent_factory(name=f"{module_name}.archy")
-        archy_agent = factory.factory_func(descriptor=factory.descriptor) 
+        # Step 2: Get active archy agent instance from local cache
+        archy_agent = self.archy_agents.get(module_name)
+        if not archy_agent:
+            raise RuntimeError(f"Archy agent for module '{module_name}' was not initialized at startup.")
         
-        
-        async def emit_callback(event: EventEnvelope):
-            logger.info(f"[EVENT] Received {event.type} with payload {event.payload}")
-            # If event.type is in ["TASK_POSTCONDITIONS_VIOLATED", "TASK_FAILED"]: send the event to GATE
-            # Construct MessageEnvelope object for GATE from EventEnvelope
-            receiver = "HIL"
-            message = MessageEnvelope(
-                type=event.type,
-                payload= event.payload,
-                sender=archy_agent.descriptor.agent_id,
-                receiver=receiver
-            )
-            logger.info(f"[emit_callback] Sending message to {receiver} via GATE: {message}")
-            await self.gate.send(message)
-
-        # Step 3: Prepare context and initialize Archy agent with context and emit callback
-        context = {
-            "config": ArchyConfig(conversation_persistence=True),
-            "workspace": self.workspace_manager,
-            "sqlite_manager": self.project_semantic_db,
-            "module_name": module_name
-        }
-        archy_agent.initialize(context=context, emit_callback=emit_callback)
-
-        # Step 4: Start Archy agent (enters WAITING state)
-        await archy_agent.start()
-        
-        # Step 5: Register Archy's send function to GATE for message routing
-        self.gate.register(f"{module_name}.archy", archy_agent.send)
-
-        self.update_agent_status("archy", archy_agent.state["status"])
-        # Trigger archy agent here
         # Send Message (Mailbox-driven)
         message = MessageEnvelope(
             type="BUILD_SCUD",
@@ -893,7 +928,7 @@ class AOSM:
 
         # Wait until Archy reaches SUCCESS (may involve multiple attempts / HIL cycles)
         timeout = 300  # total budget (can be extended if needed)
-        poll_interval = 0.1
+        poll_interval = 1
         start_time = asyncio.get_event_loop().time()
         found_completion = False
 

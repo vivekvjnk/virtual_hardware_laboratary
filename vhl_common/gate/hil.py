@@ -101,7 +101,7 @@ class HILTerminal:
             f"   Type:   {msg_type}\n"
             f"   CorrID: {correlation_id}\n"
             f"   Payload:\n{payload}\n"
-            f"   Message: \n{payload["result"]["content"][0].text}"
+            # f"   Message: \n{payload["result"]["content"][0].text}"
             f"──────────────────────────────────────────────────\n"
         )
 
