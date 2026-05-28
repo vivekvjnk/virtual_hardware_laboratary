@@ -176,7 +176,7 @@ graph TD
 
 If a migration is requested, follow this sequence:
 
-1. **Refactor URP Data Types**: Make sure `MessageEnvelope` and `EventEnvelope` are fully serializable if moving to a multi-process architecture.
+1. **Refactor URP Data Types**: Make sure `MessageEnvelope` is fully serializable if moving to a multi-process architecture.
 2. **Reimplement `AbstractURPAgent` using Threads**:
    * Swap `asyncio.Queue` for `queue.Queue`.
    * Swap `asyncio.Event` for `threading.Event`.

@@ -14,7 +14,7 @@ def cleanup_gate_registry():
 def mock_message():
     return MessageEnvelope(
         type="QUERY",
-        payload={"data": "test"},
+        payload={"text": "test"},
         sender="sender_id",
         receiver="receiver_id"
     )

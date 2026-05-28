@@ -6,7 +6,7 @@ Defines the composite identity, readiness, entry, and handle types
 that form the data layer of the Agent Registry.
 
 These types are intentionally decoupled from any orchestration logic (AOSM)
-and depend only on the URP primitives (AbstractURPAgent, MessageEnvelope, EventEnvelope).
+and depend only on the URP primitives (AbstractURPAgent, MessageEnvelope).
 
 Design constraints (from agent_registry_design.md):
   - Registry is passive (no control flow)
@@ -23,7 +23,7 @@ from enum import Enum
 from typing import Any, Callable, Dict, Optional
 
 from .abstract_urp import AbstractURPAgent, AgentStatus
-from .data_types import MessageEnvelope, EventEnvelope
+from .data_types import MessageEnvelope
 
 logger = logging.getLogger(__name__)
 

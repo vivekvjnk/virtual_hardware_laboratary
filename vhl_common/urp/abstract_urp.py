@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from enum import Enum
 from typing import Any, Callable, Dict, Optional
 
-from .data_types import AgentDescriptor, AgentContext, AgentState, MessageEnvelope, EventEnvelope
+from .data_types import AgentDescriptor, AgentContext, AgentState, MessageEnvelope
 MAILBOX_POLL_INTERVAL = 0.5  # seconds
 
 class AgentStatus(Enum):
@@ -56,7 +56,7 @@ class AbstractURPAgent(ABC):
         
         # Internal Runtime hooks
         self.context: Optional['AgentContext'] = None
-        self._emit_callback: Optional[Callable[['EventEnvelope'], None]] = None
+        self._emit_callback: Optional[Callable[['MessageEnvelope'], None]] = None
         self._shutdown_event = asyncio.Event()
         self._task: Optional[asyncio.Task] = None
 
@@ -64,7 +64,7 @@ class AbstractURPAgent(ABC):
     # LIFECYCLE CONTRACT (URP Section 4)
     # ---------------------------------------------------------
 
-    def initialize(self, context, emit_callback: Callable[['EventEnvelope'], None]) -> None:
+    def initialize(self, context, emit_callback: Callable[['MessageEnvelope'], None]) -> None:
         """Runs exactly once. Binds dependencies and event bus."""
         # Invariant 1: Initialize exactly once
         if self._state.status != AgentStatus.UNINITIALIZED.value:
@@ -78,7 +78,7 @@ class AbstractURPAgent(ABC):
         
         self._state.status = AgentStatus.INITIALIZED.value
     
-    def set_callback(self,emit_callback: Callable[['EventEnvelope'], None]) -> None:
+    def set_callback(self,emit_callback: Callable[['MessageEnvelope'], None]) -> None:
         """Allows resetting the emit callback, useful for testing or dynamic rebinding."""
         self._emit_callback = emit_callback
 
@@ -96,20 +96,20 @@ class AbstractURPAgent(ABC):
             result = "Start preconditions check failed" if not start_ok else "Start precondition check successful"
             
         if not start_ok:
-            await self.emit(EventEnvelope(
+            await self.emit(MessageEnvelope(
                 type="AGENT_START_PRECONDITIONS_VIOLATED",
-                payload={"reason": result},
-                source_agent_id=self.descriptor.agent_id
+                payload={"reason": result,"text": result},
+                sender=self.descriptor.agent_id
             ))
             raise StartPreconditionsViolatedError(f"Start preconditions check failed: {result}")
             
         self._state.status = AgentStatus.WAITING.value
         self._task = asyncio.create_task(self._lifecycle_loop())
         
-        await self.emit(EventEnvelope(
+        await self.emit(MessageEnvelope(
             type="AGENT_STARTED",
-            payload={"session_id": self._state.session_id},
-            source_agent_id=self.descriptor.agent_id
+            payload={"session_id": self._state.session_id, "text": "Agent has started successfully."},
+            sender=self.descriptor.agent_id
         ))
 
     async def send(self, message: 'MessageEnvelope') -> None:
@@ -119,7 +119,7 @@ class AbstractURPAgent(ABC):
             
         await self.mailbox.put(message)
 
-    async def emit(self, event: 'EventEnvelope') -> None:
+    async def emit(self, event: 'MessageEnvelope') -> None:
         """Pushes output to runtime bus. Invariant 4: Outputs leave only through emit."""
         if self._emit_callback:
             res = self._emit_callback(event)
@@ -138,10 +138,10 @@ class AbstractURPAgent(ABC):
             await self._task
             
         self._state.status = AgentStatus.TERMINATED.value
-        await self.emit(EventEnvelope(
+        await self.emit(MessageEnvelope(
             type="AGENT_TERMINATED",
-            payload=None,
-            source_agent_id=self.descriptor.agent_id
+            payload={   "text": "Agent has terminated successfully."},
+            sender=self.descriptor.agent_id
         ))
 
     # ---------------------------------------------------------
@@ -203,54 +203,68 @@ class AbstractURPAgent(ABC):
                     if result is not None:
                         self._state.last_task_outcome = "TASK_COMPLETED"
                         self._state.outcome_acknowledged = False
-                        await self.emit(EventEnvelope(
+                        
+                        if (isinstance(result, dict) and 
+                            "content" in result and 
+                            isinstance(result["content"], list) and 
+                            len(result["content"]) > 0 and 
+                            hasattr(result["content"][0], "text")):
+                            text_output = result["content"][0].text
+                        else:
+                            text_output = "Task completed successfully."
+
+                        await self.emit(MessageEnvelope(
                             type="TASK_COMPLETED",
                             payload={
-                                "result": result, 
-                                "message_id": message.message_id,
-                                "correlation_id": message.correlation_id
+                                "result": result,
+                                "text": text_output
                             },
-                            source_agent_id=self.descriptor.agent_id
+                            sender=self.descriptor.agent_id,
+                            correlation_id=message.correlation_id,
+                            message_id=message.message_id
                         ))
                         
                 except PostconditionsViolatedError as e:
                     self._state.last_task_outcome = "TASK_POSTCONDITIONS_VIOLATED"
                     self._state.outcome_acknowledged = False
-                    await self.emit(EventEnvelope(
+                    await self.emit(MessageEnvelope(
                         type="TASK_POSTCONDITIONS_VIOLATED",
                         payload={
                             "result": e.result,
                             "error": str(e),
-                            "message_id": message.message_id,
-                            "correlation_id": message.correlation_id
+                            "text": str(e)
                         },
-                        source_agent_id=self.descriptor.agent_id
+                        sender=self.descriptor.agent_id,
+                        message_id= message.message_id,
+                        correlation_id= message.correlation_id
                     ))
                 except PreconditionsViolatedError as e:
                     self._state.last_task_outcome = "TASK_PRECONDITIONS_VIOLATED"
                     self._state.outcome_acknowledged = False
-                    await self.emit(EventEnvelope(
+                    await self.emit(MessageEnvelope(
                         type="TASK_PRECONDITIONS_VIOLATED",
                         payload={
                             "error": str(e),
                             "reason": str(e),
-                            "message_id": message.message_id,
-                            "correlation_id": message.correlation_id,
+                            "text": str(e)
                         },
-                        source_agent_id=self.descriptor.agent_id
+                        sender=self.descriptor.agent_id,
+                        message_id= message.message_id,
+                        correlation_id= message.correlation_id
                     ))
 
                 except Exception as e:
                     self._state.last_task_outcome = "TASK_FAILED"
                     self._state.outcome_acknowledged = False
-                    await self.emit(EventEnvelope(
+                    await self.emit(MessageEnvelope(
                         type="TASK_FAILED",
                         payload={
-                            "error": str(e), 
-                            "message_id": message.message_id,
-                            "correlation_id": message.correlation_id
+                            "error": str(e),
+                            "text": str(e)
                         },
-                        source_agent_id=self.descriptor.agent_id
+                        sender=self.descriptor.agent_id,
+                        message_id= message.message_id,
+                        correlation_id= message.correlation_id
                     ))
                 finally:
                     self.mailbox.task_done()

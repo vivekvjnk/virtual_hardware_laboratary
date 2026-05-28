@@ -232,7 +232,7 @@ class ArchyURPAgent(AbstractURPAgent):
             datasheet_path=datasheet_path,
             eval_design_path=eval_design_path,
         )
-
+        logger.debug(f"[ArchyURPAgent.build_context] Constructed ArchyConfig: {config}")
         return config
 
     def _on_initialize(self, context:ArchyContext) -> None:
@@ -258,7 +258,7 @@ class ArchyURPAgent(AbstractURPAgent):
             raise ValueError(f"Invalid configuration for ArchyURPAgent: {e}")
 
         config = self.build_config(context=context)
-        logger.info(f"Built config for Archy: {config}")
+        logger.info(f"[ArchyURPAgent._on_initialize] Built config for Archy: {config}")
 
         # Agent-sdk Agent setup -- Begin
 
@@ -298,7 +298,7 @@ class ArchyURPAgent(AbstractURPAgent):
             with open(skills_path, "r") as f:
                 strategic_doc_reader_content = f.read()
         else:
-            logger.warning(f"Skill file not found at {skills_path}")
+            logger.warning(f"[ArchyURPAgent._on_initialize] Skill file not found at {skills_path}")
 
         agent_context = OpenHandsAgentContext(
             skills=[
@@ -324,7 +324,7 @@ class ArchyURPAgent(AbstractURPAgent):
         eval_design_path = config.eval_design_path
 
         if not all([self.module_name, self.workspace_manager, image_path]):
-            logger.warning(f"[ArchyURPAgent] Missing required configuration in context: module_name, workspace, or image_path. Agent may fail if these are not provided in the first message.")
+            logger.warning(f"[ArchyURPAgent._on_initialize] Missing required configuration in context: module_name, workspace, or image_path. Agent may fail if these are not provided in the first message.")
             # raise ValueError(f"Missing required configuration in context: module_name, workspace, or image_path: config={config}")
         module_path = self.workspace_manager.module_paths[self.module_name]
         
@@ -337,7 +337,7 @@ class ArchyURPAgent(AbstractURPAgent):
             "datasheet_path": datasheet_path,
             "eval_design_path": eval_design_path,
         }
-        logger.info(f"System prompt kwargs: {sys_prompt_kwargs}")
+        logger.info(f"[ArchyURPAgent._on_initialize] System prompt kwargs: {sys_prompt_kwargs}")
 
         # Agent setup
         self.agent = Agent(
@@ -481,8 +481,12 @@ class ArchyURPAgent(AbstractURPAgent):
         """
         logger.debug(f"[ArchyURPAgent:{self.descriptor.agent_id}] Received message: {message}")
 
-        # payload is now the raw message input, nothing more.
-        user_msg = message.payload
+        # Check if payload dictionary contains 'text' key. If yes, use the value of 'text' key as user message. If no, raise value error with appropriate message. This ensures that the agent receives the user message in expected format.
+        if not isinstance(message.payload, dict) or "text" not in message.payload:
+            error_msg = "Invalid message payload format. Expected a dictionary with a 'text' key."
+            logger.error(error_msg)
+            raise ValueError(error_msg) 
+        user_msg = message.payload["text"]
 
         # Conversation object is initialized only once during startup.
         self.conversation.send_message(

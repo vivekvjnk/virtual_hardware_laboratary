@@ -15,13 +15,13 @@ from ana_agent.state_machine.mcp_manager import MCPManager
 from ana_agent.state_machine import ANADStateMachine
 from workspace.manager import WorkspaceManager
 
-from vhl_common.urp.data_types import AgentContext, MessageEnvelope, EventEnvelope, AgentDescriptor
+from vhl_common.urp.data_types import AgentContext, MessageEnvelope, AgentDescriptor
 from vhl_common.urp.agent_registry import register_agent_if_absent, get_agent_factory
 
 from archy_agent.main import orchestrate_archy, prepare_archy_workspace
 from archy_agent.urp_archy import ArchyURPAgent, ArchyConfig
 
-from librarian_agent.urp_librarian import LibrarianURPAgent
+from librarian_agent.urp_librarian import LibrarianURPAgent, LibrarianConfig
 from librarian_agent.stub import process_scud_stub
 from vhl_common.utils import handle_errors
 from vhl_common.project_state_manager.evaluators.project_creation_evaluator import ProjectCreationEvaluator
@@ -53,7 +53,7 @@ class AOSM:
         self.ana_inbox: Optional[asyncio.Queue] = None
         self._main_loop_task: Optional[asyncio.Task] = None
         self.project_id = None
-        self.archy_agents = {}
+        self._agents = {}
         lib_default = "http://localhost:8082/sse"
         self.librarian_mcp_url = os.getenv("LIBRARIAN_MCP_URL", lib_default)
         self.mcp_manager = None
@@ -384,32 +384,25 @@ class AOSM:
         """Registers Archy and Librarian agents for each module in the project."""
 
         for module_name in workspace_manager.module_names:
+            archy_agent_id = f"{module_name}.archy"
+            librarian_agent_id = f"{module_name}.librarian"
+            # ----Archy setup----
             archy_descriptor = AgentDescriptor(
-                agent_id=f"{module_name}.archy",
+                agent_id=archy_agent_id,
                 name=f"{module_name} Archy",
                 version="1.0",
                 capabilities=["SCUD_GENERATION", "SCUD_REFINEMENT"],
                 accepted_message_types=["BUILD_SCUD"]
             )
-            register_agent_if_absent(descriptor=archy_descriptor,factory_func=ArchyURPAgent,name=f"{module_name}.archy")
+            register_agent_if_absent(descriptor=archy_descriptor,factory_func=ArchyURPAgent,name=archy_agent_id)
             
             # Step 2: Get archy agent from factory                                                                      
-            factory = get_agent_factory(name=f"{module_name}.archy")
+            factory = get_agent_factory(name=archy_agent_id)
             archy_agent = factory.factory_func(descriptor=factory.descriptor) 
             
             
-            async def emit_callback(event: EventEnvelope):
-                logger.info(f"[EVENT] Received {event.type} with payload {event.payload}")
-                # If event.type is in ["TASK_POSTCONDITIONS_VIOLATED", "TASK_FAILED"]: send the event to GATE
-                # Construct MessageEnvelope object for GATE from EventEnvelope
-                receiver = "HIL"
-                message = MessageEnvelope(
-                    type=event.type,
-                    payload= event.payload,
-                    sender=archy_agent.descriptor.agent_id,
-                    receiver=receiver
-                )
-                logger.info(f"[emit_callback] Sending message to {receiver} via GATE: {message}")
+            async def emit_callback(message: MessageEnvelope):
+                logger.debug(f"[EVENT] Received {message.type} with payload {message.payload}")
                 await self.gate.send(message)
 
             # Step 3: Prepare context and initialize Archy agent with context and emit callback
@@ -426,45 +419,45 @@ class AOSM:
             await archy_agent.start()
             
             # Step 5: Register Archy's send function to GATE for message routing
-            self.gate.register(f"{module_name}.archy", archy_agent.send)
+            self.gate.register(archy_agent_id, archy_agent.send)
 
             # Store the instantiated agent for subsequent state retrieval
-            self.archy_agents[module_name] = archy_agent
+            self._agents[archy_agent_id] = archy_agent
 
             self.update_agent_status("archy", archy_agent.state["status"])
 
             # ----Librarian setup----
-            # librarian_descriptor = AgentDescriptor(
-            #     agent_id=f"{module_name}.librarian",
-            #     name=f"{module_name} Librarian",
-            #     version="1.0",
-            #     capabilities=["LIBRARY_COMPONENT_RESOLUTION"],
-            #     accepted_message_types=["IMPORT_COMPONENTS", "FIND_COMPONENTS"]
-            # )
-            # register_agent_if_absent(descriptor=librarian_descriptor,factory_func=LibrarianURPAgent,name=f"{module_name}.librarian")
+            librarian_descriptor = AgentDescriptor(
+                agent_id=librarian_agent_id,
+                name=f"{module_name} Librarian",
+                version="1.0",
+                capabilities=["LIBRARY_COMPONENT_RESOLUTION"],
+                accepted_message_types=["IMPORT_COMPONENTS", "FIND_COMPONENTS"]
+            )
+            register_agent_if_absent(descriptor=librarian_descriptor,factory_func=LibrarianURPAgent,name=librarian_agent_id)
 
             # # Step 2: Configure librarian agent
-            # factory = get_agent_factory(name=f"{module_name}.librarian")
-            # librarian = factory.factory_func(descriptor=factory.descriptor) 
+            factory = get_agent_factory(name=f"{module_name}.librarian")
+            librarian = factory.factory_func(descriptor=factory.descriptor) 
             
 
             # # Step 3: Prepare context and initialize Archy agent with context and emit callback
-            # context = {
-            #     "config": ArchyConfig(conversation_persistence=True),
-            #     "workspace": self.workspace_manager,
-            #     "sqlite_manager": self.project_semantic_db,
-            #     "module_name": module_name
-            # }
-            # librarian.initialize(context=context, emit_callback=emit_callback)
+            context = {
+                "config": LibrarianConfig(conversation_persistence=True),
+                "workspace": self.workspace_manager,
+                "sqlite_manager": self.project_semantic_db,
+                "module_name": module_name
+            }
+            librarian.initialize(context=context, emit_callback=emit_callback)
 
-            # logger.info("Starting librarian agent")
-            # # Step 4: Start Archy agent (enters WAITING state)
-            # await librarian.start()
+            logger.info("Starting librarian agent")
+            # Step 4: Start Archy agent (enters WAITING state)
+            await librarian.start()
             
             # # Step 5: Register Archy's send function to GATE for message routing
-            # self.gate.register(f"{module_name}.archy", librarian.send)
-
-            # self.update_agent_status("librarian", librarian.state["status"])
+            self.gate.register(librarian_agent_id, librarian.send)
+            self._agents[librarian_agent_id] = librarian
+            self.update_agent_status("librarian", librarian.state["status"])
 
     
     async def hil_send(self, message: MessageEnvelope):
@@ -853,7 +846,7 @@ class AOSM:
         
         # 3. Reset AOSM internal state
         self.project_id = None
-        self.archy_agents = {}
+        self._agents = {}
         self.project_root_info = None
         self.current_message = {
             "state_id": AOSMState.STARTUP,
@@ -913,14 +906,14 @@ class AOSM:
             raise RuntimeError("Failed to prepare workspace for Archy. Check logs for details.")
         
         # Step 2: Get active archy agent instance from local cache
-        archy_agent = self.archy_agents.get(module_name)
+        archy_agent = self._agents.get(f"{module_name}.archy")
         if not archy_agent:
             raise RuntimeError(f"Archy agent for module '{module_name}' was not initialized at startup.")
         
         # Send Message (Mailbox-driven)
         message = MessageEnvelope(
             type="BUILD_SCUD",
-            payload="Please prepare the scud document.",
+            payload={"text": "Please prepare the scud document."},
             sender="test_suite",
             receiver=archy_agent.descriptor.agent_id
         )

@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from archy.archy_agent.urp_archy import ArchyConfig, ArchyContext, ArchyURPAgent
 from archy.archy_agent.main import prepare_archy_workspace
-from vhl_common.urp.data_types import AgentContext, MessageEnvelope, EventEnvelope, AgentDescriptor
+from vhl_common.urp.data_types import AgentContext, MessageEnvelope, AgentDescriptor
 
 from openhands.sdk import (
     LLM,
@@ -87,7 +87,7 @@ async def test_archy_urp_agent(workspace_manager, replay_llm):
     archy = ArchyURPAgent(llm=llm,descriptor=descriptor)
     
     event_queue = asyncio.Queue()
-    def emit_callback(event: EventEnvelope):
+    def emit_callback(event: MessageEnvelope):
         logger.info(f"[EVENT] Received {event.type} with payload {event.payload}")
         event_queue.put_nowait(event)
 
@@ -106,7 +106,7 @@ async def test_archy_urp_agent(workspace_manager, replay_llm):
     # 5. Send Message (Mailbox-driven)
     message = MessageEnvelope(
         type="BUILD_SCUD",
-        payload="Please prepare the scud document.",
+        payload={"text": "Please prepare the scud document."},
         sender="test_suite",
         receiver=archy.descriptor.agent_id
     )

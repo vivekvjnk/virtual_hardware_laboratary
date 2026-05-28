@@ -10,7 +10,7 @@ The URP defines a foundational execution model for VHL agents, emphasizing a min
 *   **Initialize Once**: Dependencies (LLM, tools, workspace) are injected at startup.
 *   **Mailbox-Driven**: All communication enters through an asynchronous mailbox.
 *   **Stateful Execution**: Internal state persists across message processing cycles.
-*   **Event-Based Output**: Agents do not return values directly; they emit `EventEnvelope` objects to a runtime bus.
+*   **Event-Based Output**: Agents do not return values directly; they emit `MessageEnvelope` objects to a runtime bus.
 *   **Addressable Identity**: Each agent has a globally unique ID and a set of advertised capabilities.
 
 ---

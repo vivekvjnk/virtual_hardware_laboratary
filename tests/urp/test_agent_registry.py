@@ -9,7 +9,7 @@ import pytest
 from typing import Any, Callable, Optional, List
 
 from vhl_common.urp.abstract_urp import AbstractURPAgent
-from vhl_common.urp.data_types import AgentDescriptor, EventEnvelope
+from vhl_common.urp.data_types import AgentDescriptor
 from vhl_common.urp.agent_registry import (
     AgentFactory,
     AgentRegistry,

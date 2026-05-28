@@ -9,7 +9,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from vhl_common.urp.abstract_urp import AbstractURPAgent, PostconditionsViolatedError, StartPreconditionsViolatedError
-from vhl_common.urp.data_types import AgentDescriptor, MessageEnvelope, EventEnvelope
+from vhl_common.urp.data_types import AgentDescriptor, MessageEnvelope
 
 
 class HookableURPAgent(AbstractURPAgent):
@@ -58,7 +58,7 @@ async def test_hooks_default_pass():
     agent = HookableURPAgent(descriptor=desc)
     
     events = asyncio.Queue()
-    def emit_callback(event: EventEnvelope):
+    def emit_callback(event: MessageEnvelope):
         events.put_nowait(event)
         
     agent.initialize(context=None, emit_callback=emit_callback)
@@ -70,7 +70,7 @@ async def test_hooks_default_pass():
     
     message = MessageEnvelope(
         type="TEST_MSG",
-        payload="hello",
+        payload={"text":"hello"},
         sender="test_suite",
         receiver="test.agent"
     )
@@ -81,7 +81,7 @@ async def test_hooks_default_pass():
     event = await asyncio.wait_for(events.get(), timeout=2.0)
     assert event.type == "TASK_COMPLETED"
     assert event.payload["result"] == {"status": "processed", "payload": "hello"}
-    assert event.payload["message_id"] == message.message_id
+    assert event.message_id == message.message_id
     
     assert agent.process_called is True
     assert agent.state["status"] == "WAITING"
@@ -106,7 +106,7 @@ async def test_precondition_fails():
     agent = HookableURPAgent(descriptor=desc, pre_hook=pre_hook)
     
     events = asyncio.Queue()
-    def emit_callback(event: EventEnvelope):
+    def emit_callback(event: MessageEnvelope):
         events.put_nowait(event)
         
     agent.initialize(context=None, emit_callback=emit_callback)
@@ -118,7 +118,7 @@ async def test_precondition_fails():
     
     message = MessageEnvelope(
         type="TEST_MSG",
-        payload="hello",
+        payload={"text":"hello"},
         sender="test_suite",
         receiver="test.agent"
     )
@@ -130,7 +130,7 @@ async def test_precondition_fails():
     # Wait for precondition violation event
     event = await asyncio.wait_for(events.get(), timeout=2.0)
     assert event.type == "TASK_PRECONDITIONS_VIOLATED"
-    assert event.payload["message_id"] == message.message_id
+    assert event.message_id == message.message_id
     assert event.payload["reason"] == "Preconditions check failed"
     
     # Verify processing was skipped and state remained WAITING
@@ -157,7 +157,7 @@ async def test_precondition_raises_exception():
     agent = HookableURPAgent(descriptor=desc, pre_hook=pre_hook)
     
     events = asyncio.Queue()
-    def emit_callback(event: EventEnvelope):
+    def emit_callback(event: MessageEnvelope):
         events.put_nowait(event)
         
     agent.initialize(context=None, emit_callback=emit_callback)
@@ -169,7 +169,7 @@ async def test_precondition_raises_exception():
     
     message = MessageEnvelope(
         type="TEST_MSG",
-        payload="hello",
+        payload={"text":"hello"},
         sender="test_suite",
         receiver="test.agent"
     )
@@ -180,7 +180,7 @@ async def test_precondition_raises_exception():
     event = await asyncio.wait_for(events.get(), timeout=2.0)
     assert event.type == "TASK_FAILED"
     assert "Database connection failure" in event.payload["error"]
-    assert event.payload["message_id"] == message.message_id
+    assert event.message_id == message.message_id
     
     assert agent.process_called is False
     assert agent.state["status"] == "WAITING"
@@ -205,7 +205,7 @@ async def test_postcondition_fails():
     agent = HookableURPAgent(descriptor=desc, post_hook=post_hook)
     
     events = asyncio.Queue()
-    def emit_callback(event: EventEnvelope):
+    def emit_callback(event: MessageEnvelope):
         events.put_nowait(event)
         
     agent.initialize(context=None, emit_callback=emit_callback)
@@ -217,7 +217,7 @@ async def test_postcondition_fails():
     
     message = MessageEnvelope(
         type="TEST_MSG",
-        payload="hello",
+        payload={"text":"hello"},
         sender="test_suite",
         receiver="test.agent"
     )
@@ -228,7 +228,7 @@ async def test_postcondition_fails():
     event = await asyncio.wait_for(events.get(), timeout=2.0)
     assert event.type == "TASK_POSTCONDITIONS_VIOLATED"
     assert "Postconditions check failed" in event.payload["error"]
-    assert event.payload["message_id"] == message.message_id
+    assert event.message_id == message.message_id
     
     assert agent.process_called is True
     assert agent.state["status"] == "WAITING"
@@ -253,7 +253,7 @@ async def test_postcondition_raises_exception():
     agent = HookableURPAgent(descriptor=desc, post_hook=post_hook)
     
     events = asyncio.Queue()
-    def emit_callback(event: EventEnvelope):
+    def emit_callback(event: MessageEnvelope):
         events.put_nowait(event)
         
     agent.initialize(context=None, emit_callback=emit_callback)
@@ -265,7 +265,7 @@ async def test_postcondition_raises_exception():
     
     message = MessageEnvelope(
         type="TEST_MSG",
-        payload="hello",
+        payload={"text":"hello"},
         sender="test_suite",
         receiver="test.agent"
     )
@@ -276,7 +276,7 @@ async def test_postcondition_raises_exception():
     event = await asyncio.wait_for(events.get(), timeout=2.0)
     assert event.type == "TASK_FAILED"
     assert "Missing field in validation output" in event.payload["error"]
-    assert event.payload["message_id"] == message.message_id
+    assert event.message_id == message.message_id
     
     assert agent.process_called is True
     assert agent.state["status"] == "WAITING"
@@ -301,7 +301,7 @@ async def test_start_precondition_fails():
     agent = HookableURPAgent(descriptor=desc, start_hook=start_hook)
     
     events = asyncio.Queue()
-    def emit_callback(event: EventEnvelope):
+    def emit_callback(event: MessageEnvelope):
         events.put_nowait(event)
         
     agent.initialize(context=None, emit_callback=emit_callback)
@@ -336,7 +336,7 @@ async def test_start_precondition_raises_exception():
     agent = HookableURPAgent(descriptor=desc, start_hook=start_hook)
     
     events = asyncio.Queue()
-    def emit_callback(event: EventEnvelope):
+    def emit_callback(event: MessageEnvelope):
         events.put_nowait(event)
         
     agent.initialize(context=None, emit_callback=emit_callback)

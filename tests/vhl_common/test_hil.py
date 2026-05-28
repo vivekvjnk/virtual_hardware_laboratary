@@ -44,7 +44,7 @@ async def test_hil_receive_message():
         # Send message to HIL via GATE
         message = MessageEnvelope(
             type="TEST_TYPE",
-            payload="Hello from agent",
+            payload={"text": "Hello from agent"},
             sender="test.agent",
             receiver="HIL",
             correlation_id="corr-123"
@@ -101,7 +101,7 @@ async def test_hil_interactive_loop_valid_input():
         assert isinstance(sent_msg, MessageEnvelope)
         assert sent_msg.sender == "HIL"
         assert sent_msg.receiver == "test.agent"
-        assert sent_msg.payload == "Hello back!"
+        assert sent_msg.payload == {"text": "Hello back!"}
         assert sent_msg.type == "HUMAN_RESPONSE"
         
         writer.close()

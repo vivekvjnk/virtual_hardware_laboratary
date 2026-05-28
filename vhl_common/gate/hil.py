@@ -194,7 +194,7 @@ class HILTerminal:
                 # Wrap the message in MessageEnvelope and send via GATE
                 message = MessageEnvelope(
                     type="HUMAN_RESPONSE",
-                    payload=message_content,
+                    payload={"text": message_content},
                     sender=self.name,
                     receiver=receiver
                 )

@@ -26,7 +26,7 @@ Mandatory parameters provided during initialization via `context.configuration`:
 - `datasheet_path` (Optional): Path to the main IC's datasheet.
 - `eval_design_path` (Optional): Path to the manufacturer's evaluation design guide.
 
-### 3.3 Outputs (EventEnvelope)
+### 3.3 Outputs (MessageEnvelope)
 - `AGENT_STARTED`: Emitted when the agent enters the `WAITING` state.
 - `TASK_COMPLETED`: Emitted upon successful generation/update of the SCUD, containing the final LLM response and cost metrics.
 - `TASK_FAILED`: Emitted if an error occurs during processing (e.g., missing documents or tool failures).
