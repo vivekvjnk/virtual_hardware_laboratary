@@ -119,55 +119,55 @@ class WorkspaceManager:
             if circuit_name:
                 self.circuit_name = circuit_name
             logger.info(f"[WorkspaceManager.load_project] Recovered state from SQLite. Modules: {self.project_modules}")
-        else:
-            # Fallback for legacy projects
-            logger.warning(f"[WorkspaceManager.load_project] No SQLite state found. Falling back to legacy recovery.")
-            manifest_path = self.project_root / f"{project_id}_manifest.json"
-            if manifest_path.exists():
-                try:
-                    with open(manifest_path, 'r') as f:
-                        manifest_data = json.load(f)
-                        self.project_modules = list(manifest_data.get("modules", {}).keys())
-                except Exception as e:
-                    logger.error(f"[WorkspaceManager.load_project] Failed to read manifest file: {e}")
+        # else:
+        #     # Fallback for legacy projects
+        #     logger.warning(f"[WorkspaceManager.load_project] No SQLite state found. Falling back to legacy recovery.")
+        #     manifest_path = self.project_root / f"{project_id}_manifest.json"
+        #     if manifest_path.exists():
+        #         try:
+        #             with open(manifest_path, 'r') as f:
+        #                 manifest_data = json.load(f)
+        #                 self.project_modules = list(manifest_data.get("modules", {}).keys())
+        #         except Exception as e:
+        #             logger.error(f"[WorkspaceManager.load_project] Failed to read manifest file: {e}")
             
-            if not self.project_modules:
-                self.project_modules = [d.name for d in self.project_root.iterdir() if d.is_dir() and (d / "Iterations").exists()]
+        #     if not self.project_modules:
+        #         self.project_modules = [d.name for d in self.project_root.iterdir() if d.is_dir() and (d / "Iterations").exists()]
                 
-            # Reconstruct circuit name
-            scud_files = list(self.project_root.glob("*.scud"))
-            if not scud_files:
-                for module in (["main_module"] + [m for m in self.project_modules if m != "main_module"]):
-                    module_path = self.project_root / module
-                    if module_path.exists():
-                        scud_files = list(module_path.glob("*.scud"))
-                        if scud_files:
-                            break
-            if scud_files:
-                self.set_circuit_name(scud_files[0].stem)
+        #     # Reconstruct circuit name
+        #     scud_files = list(self.project_root.glob("*.scud"))
+        #     if not scud_files:
+        #         for module in (["main_module"] + [m for m in self.project_modules if m != "main_module"]):
+        #             module_path = self.project_root / module
+        #             if module_path.exists():
+        #                 scud_files = list(module_path.glob("*.scud"))
+        #                 if scud_files:
+        #                     break
+        #     if scud_files:
+        #         self.set_circuit_name(scud_files[0].stem)
             
-            # Immediate Upgrade
-            logger.info(f"[WorkspaceManager.load_project] Upgrading legacy project to Semantic Ledger.")
-            if self.circuit_name:
-                self.db.upsert_project_setting("circuit_name", self.circuit_name)
-            for m_name in self.project_modules:
-                self.db.insert_project_module(m_name, "WORKER", m_name, "Inferred from legacy project")
-            # Commit baseline to Git if repo exists, else init
-            if not self.git.git.is_repo():
-                self.git.git.init_repo()
-            response = self.git.git.add_all()
-            logger.info(f"[WorkspaceManager.load_project] Added existing project files to Git staging area.\nGit response: {response}")
-            try:
-                self.record_operation(
-                    module_name="root",
-                    op_name="INITIALIZE",
-                    author="WORKSPACE_MANAGER",
-                    status="SUCCESS",
-                    payload={"message": "Legacy project upgraded to Semantic Ledger"},
-                    commit_message="INITIALIZE: Semantic Ledger Upgrade"
-                )
-            except Exception as e:
-                logger.warning(f"[WorkspaceManager.load_project] Failed to record upgrade operation: {e}")
+        #     # Immediate Upgrade
+        #     logger.info(f"[WorkspaceManager.load_project] Upgrading legacy project to Semantic Ledger.")
+        #     if self.circuit_name:
+        #         self.db.upsert_project_setting("circuit_name", self.circuit_name)
+        #     for m_name in self.project_modules:
+        #         self.db.insert_project_module(m_name, "WORKER", m_name, "Inferred from legacy project")
+        #     # Commit baseline to Git if repo exists, else init
+        #     if not self.git.git.is_repo():
+        #         self.git.git.init_repo()
+        #     response = self.git.git.add_all()
+        #     logger.info(f"[WorkspaceManager.load_project] Added existing project files to Git staging area.\nGit response: {response}")
+        #     try:
+        #         self.record_operation(
+        #             module_name="root",
+        #             op_name="INITIALIZE",
+        #             author="WORKSPACE_MANAGER",
+        #             status="SUCCESS",
+        #             payload={"message": "Legacy project upgraded to Semantic Ledger"},
+        #             commit_message="INITIALIZE: Semantic Ledger Upgrade"
+        #         )
+        #     except Exception as e:
+        #         logger.warning(f"[WorkspaceManager.load_project] Failed to record upgrade operation: {e}")
 
 
         # 4. Reconstruct iteration info
