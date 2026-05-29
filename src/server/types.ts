@@ -51,6 +51,8 @@ export type EventType =
     | "SYNC_COMPLETE"
     | "SYNC_ERROR"
     | "AGENT_HEALTH"
+    | "MESSAGE_TO_AGENT"
+    | "MESSAGE_FROM_AGENT"
 
 import { ROLE_WEBUI, ROLE_AGENT_BACKEND, ROLE_RUNTIME } from "./roles.js";
 
@@ -60,6 +62,7 @@ export interface AgentMessage {
     artifact_id: string | null
     timestamp: string // ISO-8601
     source: typeof ROLE_WEBUI | typeof ROLE_AGENT_BACKEND | typeof ROLE_RUNTIME
+    target?: typeof ROLE_WEBUI | typeof ROLE_AGENT_BACKEND | typeof ROLE_RUNTIME
     payload: any
 }
 

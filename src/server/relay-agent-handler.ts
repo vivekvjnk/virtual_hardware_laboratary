@@ -44,7 +44,34 @@ export class RelayAgentHandler implements AgentHandler {
             this.handleIdentify(msg.payload?.role, send)
             return
         }
-
+        // Superset case. If role is any one of the identified ones, check if the message has `target`. If target is specified, route based on that. Otherwise use the legacy routing based on role and message type.
+        if ("target" in msg && msg.target) {
+            const target = msg.target
+            if (target === ROLE_AGENT_BACKEND) {
+                if (RelayAgentHandler.agentClient) {
+                    console.debug(`[Websocket Relay] Routing message to Agent backend based on target: ${msg.type}`)
+                    RelayAgentHandler.agentClient(msg)
+                } else {
+                    send({ type: "ERROR", payload: { message: "No agent client connected", scope: "target_routing", severity: "error" } } as any)
+                }
+            }
+            else if (target === ROLE_RUNTIME) {
+                if (RelayAgentHandler.runtimeClient) {
+                    console.debug(`[Websocket Relay] Routing message to VHL Runtime based on target: ${msg.type}`)
+                    RelayAgentHandler.runtimeClient(msg)
+                } else {
+                    send({ type: "ERROR", payload: { message: "No runtime client connected", scope: "target_routing", severity: "error" } } as any)
+                }
+            }
+            else if (target === ROLE_WEBUI) {
+                console.debug(`[Websocket Relay] Routing message to WebUI clients based on target: ${msg.type}`)
+                RelayAgentHandler.uiClients.forEach(uiSend => uiSend(msg));
+            }
+            else {
+                send({ type: "ERROR", payload: { message: `Invalid target specified: ${target}`, scope: "target_routing", severity: "error" } } as any)
+            }
+            return
+        }    
         if (this.role === ROLE_WEBUI) {
             // UI (WebUI) -> Agent (Backend)
             if (RelayAgentHandler.agentClient) {
