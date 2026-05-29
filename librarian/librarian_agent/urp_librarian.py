@@ -20,6 +20,9 @@ from openhands.sdk import (
 from openhands.tools.file_editor import FileEditorTool
 from openhands.tools.terminal import TerminalTool
 
+from vhl_common.project_state_manager.evaluators.project_creation_evaluator import AGENT_ID as PROJECT_CREATE_AGENT_ID, OPERATION_NAME as PROJECT_CREATE_OPERATION_NAME
+from archy_agent.archy_evaluator import AGENT_ID as ARCHY_AGENT_ID, OPERATION_NAME as ARCHY_OPERATION_NAME
+
 from vhl_common.urp.abstract_urp import AbstractURPAgent
 from vhl_common.urp.data_types import AgentDescriptor, MessageEnvelope
 from vhl_common.utils import setup_dedicated_logger
@@ -77,7 +80,9 @@ class LibrarianURPAgent(AbstractURPAgent):
         self.llm_messages = []
         self.scud_path = None
         self.library_path = None
-    
+        self.sqlite_manager: SQLiteManager = None
+        self.workspace_manager: WorkspaceManager = None
+        
     def build_config(self, context: LibrarianContext) -> LibrarianConfig:
         """
         Builds the LibrarianConfig from the provided context.
@@ -117,12 +122,13 @@ class LibrarianURPAgent(AbstractURPAgent):
 
         config = self.build_config(context=context)
         self.scud_path = config.scud_path
-        workspace_manager = context.workspace
-        
+        self.workspace_manager = context.workspace
+        self.sqlite_manager = context.sqlite_manager
+
 
         # Derive library path from workspace
         # Based on LibrarianAgent.process_scud: library_path = os.path.join(self.working_dir,"lib/imports/")
-        self.library_path = str(workspace_manager.project_root / "lib" / "imports")
+        self.library_path = str(self.workspace_manager.project_root / "lib" / "imports")
 
         # Setup LLM
         if not self.llm:
@@ -177,9 +183,9 @@ class LibrarianURPAgent(AbstractURPAgent):
         # Setup Conversation
         self.conversation = Conversation(
             agent=self.agent,
-            workspace=str(workspace_manager.project_root),
+            workspace=str(self.workspace_manager.project_root),
             callbacks=[self._conversation_callback],
-            persistence_dir=str(workspace_manager.project_root / ".conversation") if config.conversation_persistence else None
+            persistence_dir=str(self.workspace_manager.project_root / ".conversation") if config.conversation_persistence else None
         )
 
     def _conversation_callback(self, event: Event):
@@ -216,7 +222,46 @@ class LibrarianURPAgent(AbstractURPAgent):
         }
 
     async def _check_start_preconditions(self) -> tuple[bool,str]:
-        return True, ""
+        # Check if the last project creation evaluation passed successfully. This ensures that the project is in a good state before Archy starts processing messages. 
+        # Read the status of last project creation evaluation from the database using sqlite_manager. The relevant information is stored in the semantic_operations table where agent_id = PROJECT_CREATION_EVALUATOR and op_name = CREATE_PROJECT_EVAL. The evaluation is considered successful if there is an entry with status = "SUCCESS". If status is "FAILURE" or if there is no entry for this evaluation, then the preconditions are not met and Archy should not start.
+        try:
+            cursor = self.sqlite_manager.conn.execute(
+                "SELECT status FROM semantic_operations WHERE author = ? AND op_name = ? ORDER BY id DESC LIMIT 1",
+                (PROJECT_CREATE_AGENT_ID, PROJECT_CREATE_OPERATION_NAME)
+            )
+            row = cursor.fetchone()
+            if row and row["status"] == "SUCCESS":
+                return True, "Last project creation evaluation status is SUCCESS."
+            else:
+                status_val = row["status"] if row else "None"
+                msg = f"Preconditions check failed: Last project creation evaluation status is not SUCCESS (found: {status_val})."
+                logger.warning(msg)
+                return False, msg
+        except Exception as e:
+            logger.error(f"Error checking start preconditions: {e}")
+            return False, f"Error checking start preconditions: {e}"
+    
+    async def _check_preconditions(self, message: MessageEnvelope) -> tuple[bool,str]:
+        """
+        Check if Archy operation status is SUCCESS or not
+        """
+        try:
+            cursor = self.sqlite_manager.conn.execute(
+                "SELECT status FROM semantic_operations WHERE author = ? AND op_name = ? ORDER BY id DESC LIMIT 1",
+                (ARCHY_AGENT_ID, ARCHY_OPERATION_NAME)
+            )
+            row = cursor.fetchone()
+            if row and row["status"] == "SUCCESS":
+                return True, "Archy operation status is SUCCESS."
+            else:
+                status_val = row["status"] if row else "None"
+                msg = f"Preconditions check failed: Archy operation status is not SUCCESS (found: {status_val})."
+                logger.warning(msg)
+                return False, msg
+        except Exception as e:
+            logger.error(f"Error checking start preconditions: {e}")
+            return False, f"Error checking start preconditions: {e}"
+    
 if __name__ == "__main__":
     # Example usage (simplified)
     # This would normally be handled by the URP runtime

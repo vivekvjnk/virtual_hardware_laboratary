@@ -320,6 +320,7 @@ class AOSM:
             try:
                 project_root = self.workspace_manager.load_project(project_id)
                 self.project_id = project_id
+                self.project_semantic_db = self.workspace_manager.sqlite_db
                 
                 # Initialize all the agents
                 await self.register_agents(workspace_manager=self.workspace_manager)
@@ -497,6 +498,25 @@ class AOSM:
                     type=EventType.ERROR,
                     source=EventSource.VHL_AGENT_BACKEND,
                     payload={"message": "Project not ready for synthesis. Please upload schematic first."}
+                ))
+        
+        elif event.type == EventType.MESSAGE_TO_AGENT:
+            logger.info(f"[AOSM._handle_idle] Received MESSAGE_TO_AGENT: {event.payload}")
+            # Expected structure of payload: {"target_agent": "agent_id", "message": MessageEnvelope}
+            # Typical example for message from webui:
+            # {"target_agent": "module1.librarian", "message": {"type": "RESOLVE_COMPONENTS", "payload": {"text": "Import all components related to power supply"}}}
+            payload = event.payload or {}
+            target_agent = payload.get("target_agent")
+            message_data = payload.get("message", {})
+            if target_agent and message_data:
+                message = MessageEnvelope(**message_data)
+                await self.gate.send(message, destination=target_agent)
+            else:
+                logger.error("[AOSM._handle_idle] Invalid MESSAGE_TO_AGENT payload: missing target_agent or message")
+                await self.web_socket_client.emit_event(BaseEvent(
+                    type=EventType.ERROR,
+                    source=EventSource.VHL_AGENT_BACKEND,
+                    payload={"message": "Invalid MESSAGE_TO_AGENT payload: missing target_agent or message"}
                 ))
     
     async def _handle_present_result(self, event: BaseEvent):
@@ -877,7 +897,7 @@ class AOSM:
             archy_evaluator.evaluate() # This will commit an operation to the semantic db which can            
             
             # 2. Step 2: Librarian
-            scud_path = await self.handle_librarian(scud_path)
+            await self.handle_librarian(scud_path)
             
             # 3. Step 3: ANA-D
             await self.handle_ana()

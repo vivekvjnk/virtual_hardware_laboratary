@@ -77,6 +77,9 @@ class EventType(str, Enum):
     # Dev Server
     DEV_SERVER_READY = "DEV_SERVER_READY"
 
+    # Agent events 
+    MESSAGE_TO_AGENT = "MESSAGE_TO_AGENT"
+    MESSAGE_FROM_AGENT = "MESSAGE_FROM_AGENT"
 class BaseEvent(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     
@@ -85,6 +88,7 @@ class BaseEvent(BaseModel):
     artifact_id: Optional[str] = None
     timestamp: str = Field(default_factory=lambda: datetime.utcnow().isoformat() + "Z") # ISO-8601
     source: EventSource
+    target: Optional[EventSource] = None
     payload: Optional[Dict[str, Any]] = Field(default_factory=dict)
 
 # Payload models
