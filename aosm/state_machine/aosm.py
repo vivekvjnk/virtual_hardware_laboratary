@@ -462,11 +462,6 @@ class AOSM:
             self.update_agent_status("librarian", librarian.state["status"])
 
     
-    async def hil_send(self, message: MessageEnvelope):
-        """Sends a message to a registered destination via GATE."""
-        logger.info(f"[AOSM.hil_send] Sending message via GATE: {message}")
-        pass
-
     async def _handle_idle(self, event: BaseEvent):
         """
         Default state of the system. Handles following events:
@@ -509,8 +504,10 @@ class AOSM:
             target_agent = payload.get("target_agent")
             message_data = payload.get("message", {})
             if target_agent and message_data:
-                message = MessageEnvelope(**message_data)
-                await self.gate.send(message, destination=target_agent)
+                msg_payload = {"text": message_data}
+
+                message = MessageEnvelope(type="MESSAGE_TO_AGENT", payload=msg_payload,sender="vhl_webui",receiver=target_agent)
+                await self.gate.send(message=message)
             else:
                 logger.error("[AOSM._handle_idle] Invalid MESSAGE_TO_AGENT payload: missing target_agent or message")
                 await self.web_socket_client.emit_event(BaseEvent(
@@ -561,32 +558,6 @@ class AOSM:
 
 
     # --- Agent nodes begin--- #    
-    # Librarian
-    @handle_errors(on_error="_aosm_error_transition")
-    async def _handle_trigger_librarian(self, event: BaseEvent):
-        logger.info(f"[AOSM._handle_trigger_librarian] In TRIGGER_LIBRARIAN state...")
-        scud_path_str = self.current_message.get("scud_path")
-        if not scud_path_str:
-            logger.error("[AOSM._handle_trigger_librarian] Missing scud_path in current_message")
-            await self.transition_to(AOSMState.ERROR_PRESENTED, "Missing session data for Librarian")
-            return
-
-        scud_path = Path(str(scud_path_str))
-        
-        # Trigger Librarian Agent
-        await self._run_librarian(scud_path)
-        
-        # Workflow 1.1: Sync lib/imports from VHL runtime to Agent backend
-        if self.project_id:
-            # Sync Library using centralized client
-            await self.sync_client.sync_library(self.project_id)
-            logger.info(f"[AOSM._handle_trigger_librarian] Librarian and Sync completed. Transitioning to WAIT_FOR_LIBRARIAN_HIL")
-
-            # Transition to WAIT_FOR_LIBRARIAN_HIL to let human review librarian results
-            await self.transition_to(AOSMState.WAIT_FOR_LIBRARIAN_HIL, "Component resolution completed. Waiting for HIL review.", payload={"scud_path": str(scud_path)})
-        else:
-            raise ValueError(f"Project id is null : {self.project_id}")
-    
     # ANA
     @handle_errors(on_error="_aosm_error_transition")
     async def _handle_trigger_ana(self, event: BaseEvent):
@@ -625,7 +596,6 @@ class AOSM:
             logger.info(f"[AOSM._handle_trigger_ana] Received event: {event.type}")
     
     # --- Agent nodes end--- #
-
     async def _handle_wait_for_ana(self, event: BaseEvent):
 
         if event.type == EventType.ANA_NOTIFY:
@@ -689,73 +659,6 @@ class AOSM:
         if event.type == EventType.HUMAN_INPUT:
              await self.transition_to(AOSMState.TRIGGER_ANA, "Clarification received")
 
-    async def _handle_wait_for_librarian_hil(self, event: BaseEvent):
-        logger.info(f"[AOSM._handle_wait_for_librarian_hil] In WAIT_FOR_LIBRARIAN_HIL state...")
-        
-        if event.type == EventType.STATE_TRANSITION:
-            # On entering state, notify user for review
-            scud_path = event.payload.get("scud_path")
-            scud_content = ""
-            if scud_path and os.path.exists(scud_path):
-                with open(scud_path, "r") as f:
-                    scud_content = f.read()
-            
-            await self.web_socket_client.emit_event(BaseEvent(
-                type=EventType.HIL_REQUEST,
-                source=EventSource.VHL_AGENT_BACKEND,
-                payload={
-                    "reason": "LIBRARIAN_REVIEW",
-                    "message": "Librarian has finished component resolution. Please review the updated SCUD.",
-                    "scud_content": scud_content
-                }
-            ))
-            
-        elif event.type == EventType.HUMAN_INPUT:
-            payload = event.payload or {}
-            action = payload.get("action")
-            
-            if action == "continue":
-                instructions = payload.get("instructions", "")
-                if instructions:
-                    self.current_message.setdefault("observations", []).append(f"User instructions from Librarian HIL review: {instructions}")
-                logger.info("[AOSM._handle_wait_for_librarian_hil] User chose CONTINUE. Transitioning to TRIGGER_ANA")
-                await self.transition_to(AOSMState.TRIGGER_ANA, "User accepted librarian results")
-                
-            elif action == "retry":
-                instructions = payload.get("instructions", "")
-                logger.info(f"[AOSM._handle_wait_for_librarian_hil] User chose RETRY with instructions: {instructions}")
-                
-                # Re-run librarian
-                scud_path = self.current_message.get("scud_path") # We should store this
-                if not scud_path:
-                    # Try to find it again? Or store it in transition
-                    # For now, let's assume we can get it from workspace manager
-                    project_root = self.workspace_manager.project_root
-                    image_id = self.current_message.get("circuit_id")
-                    scud_path = project_root / f"{image_id}.scud"
-
-                await self._run_librarian(scud_path, instructions=instructions)
-                
-                # Wait for sync again?
-                if self.project_id:
-                     # Sync Library using centralized client
-                     await self.sync_client.sync_library(self.project_id)
-                
-                # Re-emit HIL_REQUEST with updated content
-                scud_content = ""
-                if os.path.exists(scud_path):
-                    with open(scud_path, "r") as f:
-                        scud_content = f.read()
-                
-                await self.web_socket_client.emit_event(BaseEvent(
-                    type=EventType.HIL_REQUEST,
-                    source=EventSource.VHL_AGENT_BACKEND,
-                    payload={
-                        "reason": "LIBRARIAN_REVIEW",
-                        "message": "Librarian has finished retrying component resolution. Please review the updated SCUD.",
-                        "scud_content": scud_content
-                    }
-                ))
     # --- State Handlers --- END
 
     async def _ana_deicsion_wait_and_transition(self, event, task_id, decision):
@@ -783,71 +686,6 @@ class AOSM:
             await self.transition_to(AOSMState.PRESENT_RESULT, payload=event.payload)
         except Exception as e:
             logger.error(f"Background wait failed: {e}")
-
-    # ----ARCHY-----
-    #TODO(V0.2): 
-    # 1. Support for Design document based bootstrapping 
-    #   - Parse detailed design document provided by user
-    #   - Design document may include image + textual description + component preferences
-    #   - Output of this stage is still a SCUD, but with richer information for the downstream modules to work with
-    async def _run_archy(self, module_name: str, image_path: Path):
-        """Logic for ARCHY: Invocating Archy agent."""
-        logger.info(f"[AOSM._run_archy] Triggering Archy agent invocation for module: {module_name}")
-        
-        project_root = self.workspace_manager.project_root
-        
-        # Resolve segments path
-        image_segments_path = image_path.parent / f"{image_path.stem}_segments"
-
-        try:
-            self.update_agent_status("archy", AgentStatus.RUNNING)
-            scud_path = await asyncio.to_thread(
-                orchestrate_archy, 
-                workspace_path=project_root, 
-                module_name=module_name,
-                image_path=image_path,
-                image_segments_path=image_segments_path
-            )
-            self.update_agent_status("archy", AgentStatus.IDLE)
-            logger.info(f"[AOSM._run_archy] Archy completed successfully. SCUD generated at: {scud_path}")
-            return scud_path
-        except Exception as e:
-            self.update_agent_status("archy", AgentStatus.IDLE)
-            raise e
-
-    async def _run_librarian(self, scud_path: Path, instructions: str = None):
-        """Logic for triggering Librarian Agent to resolve components."""
-        logger.info(f"[AOSM._run_librarian] Triggering Librarian Agent for SCUD: {scud_path} (Instructions: {instructions})")
-        if os.environ.get("STUBS") == "true":
-            logger.info("[AOSM._run_librarian] Running Librarian in STUB mode")
-            self.update_agent_status("librarian", AgentStatus.RUNNING)
-            # Stub mode: Load deterministic component list from JSON
-            components = None
-            mock_json_path =  Path("./tests/Mocks/components.json")
-            if mock_json_path.exists():
-                import json
-                with open(mock_json_path, "r") as f:
-                    components = json.load(f)
-                    logger.info(f"[AOSM._run_librarian] Stub mode: Loaded components from {mock_json_path}: {components}")
-            else:
-                raise ValueError(f"[AOSM._run_librarian] Mock JSON not found at: {mock_json_path}. Current working directory: {Path.cwd()}")
-                
-            await asyncio.to_thread(process_scud_stub, str(scud_path), components=components, instructions=instructions)
-            self.update_agent_status("librarian", AgentStatus.IDLE)
-        
-        else:
-            try:
-                librarian = LibrarianAgent(mcp_url=self.librarian_mcp_url, working_dir=self.workspace_manager.project_root)
-                # process_scud involves network/LLM, run in thread
-                self.update_agent_status("librarian", AgentStatus.RUNNING)
-                await asyncio.to_thread(librarian.process_scud, str(scud_path), instructions=instructions)
-                self.update_agent_status("librarian", AgentStatus.IDLE)
-                logger.info(f"[AOSM._run_librarian] Librarian Agent completed successfully")
-            except Exception as e:
-                self.update_agent_status("librarian", AgentStatus.IDLE)
-                logger.error(f"[AOSM._run_librarian] Librarian Agent failed: {e}", exc_info=True)
-                # We proceed even if Librarian fails, but log the error
-                
     async def _handle_close_project(self, event: BaseEvent):
         """Global handler for closing the current project."""
         logger.info(f"[AOSM._handle_close_project] Closing project {self.project_id}")
@@ -892,12 +730,12 @@ class AOSM:
         logger.info(f"[AOSM.run_workflow_1] Starting sequential Workflow 1 for module: {module_name}")
         try:
             # 1. Step 1: Archy
-            scud_path = await self.handle_archy(module_name=module_name)
+            await self.handle_archy(module_name=module_name)
             archy_evaluator = ArchyEvaluator(self.project_semantic_db)
             archy_evaluator.evaluate() # This will commit an operation to the semantic db which can            
             
             # 2. Step 2: Librarian
-            await self.handle_librarian(scud_path)
+            await self.handle_librarian(module_name=module_name)
             
             # 3. Step 3: ANA-D
             await self.handle_ana()
@@ -929,7 +767,7 @@ class AOSM:
             raise RuntimeError("Failed to prepare workspace for Archy. Check logs for details.")
         
         # Step 2: Get active archy agent instance from local cache
-        archy_agent = self._agents.get(f"{module_name}.archy")
+        archy_agent: ArchyURPAgent = self._agents.get(f"{module_name}.archy")
         if not archy_agent:
             raise RuntimeError(f"Archy agent for module '{module_name}' was not initialized at startup.")
         
@@ -937,13 +775,13 @@ class AOSM:
         message = MessageEnvelope(
             type="BUILD_SCUD",
             payload={"text": "Please prepare the scud document."},
-            sender="test_suite",
+            sender="orchestrator",
             receiver=archy_agent.descriptor.agent_id
         )
         await archy_agent.send(message)
 
         # Wait until Archy reaches SUCCESS (may involve multiple attempts / HIL cycles)
-        timeout = 300  # total budget (can be extended if needed)
+        timeout = 600  # total budget (can be extended if needed)
         poll_interval = 1
         start_time = asyncio.get_event_loop().time()
         found_completion = False
@@ -987,17 +825,77 @@ class AOSM:
                 
         self.update_agent_status("archy", archy_agent.state["status"])
 
-        
-    async def handle_librarian(self, scud_path: Path) -> Path:
+    async def handle_librarian(self, module_name: str) -> Path:
         """
         Sequential member of Workflow 1: Librarian.
         1. Runs the Librarian agent component resolution.
         2. Centralized client sync of resolved libraries.
         3. Simple placeholder for HIL review.
         """
-        logger.info(f"[AOSM.handle_librarian] Starting Librarian processing for SCUD: {scud_path}")
-        logger.info("[AOSM._handle_librarian] Finished Librarian")
+        logger.info(f"[AOSM.handle_librarian] Starting Librarian processing for module: {module_name}")
+            # Step 2: Get active archy agent instance from local cache
+        librarian_agent: LibrarianURPAgent = self._agents.get(f"{module_name}.librarian")
+        if not librarian_agent:
+            raise RuntimeError(f"Librarian agent for module '{module_name}' was not initialized at startup.")
         
+        # Send Message (Mailbox-driven)
+        message = MessageEnvelope(
+            type="RESOLVE_COMPONENTS",
+            payload={"text": "Hello Librarian, project is set up! Please read the .scud document and import non trivial components."},
+            sender="orchestrator",
+            receiver=librarian_agent.descriptor.agent_id
+        )
+        await self.gate.send(message=message)
+        
+        self.update_agent_status("librarian", librarian_agent.state["status"])
+        # Wait until Librarian reaches SUCCESS (may involve multiple attempts / HIL cycles)
+        timeout = 600  # total budget (can be extended if needed)
+        poll_interval = 1
+        start_time = asyncio.get_event_loop().time()
+        found_completion = False
+
+        while (asyncio.get_event_loop().time() - start_time) < timeout:
+            
+            # --- Wait for one task completion ---
+            while (asyncio.get_event_loop().time() - start_time) < timeout:
+                state = librarian_agent.state
+
+                # Waiting for User input. Simply continue the outer loop
+                if state["status"] == "WAITING" and state["last_task_outcome"] is not None:
+                    break
+
+                await asyncio.sleep(poll_interval)
+
+            # Timeout check for inner wait
+            if librarian_agent.state["last_task_outcome"] is None:
+                raise TimeoutError("Librarian agent did not complete within timeout")
+
+            # --- Consume outcome ---
+            outcome = librarian_agent.state["last_task_outcome"]
+            librarian_agent.acknowledge_outcome()
+
+            # --- Decision logic ---
+            if outcome == "TASK_COMPLETED":
+                found_completion = True
+                break
+
+            elif outcome in ["TASK_POSTCONDITIONS_VIOLATED", "TASK_FAILED", "TASK_PRECONDITIONS_VIOLATED"]:
+                logger.warning(
+                    f"[AOSM.handle_librarian] Librarian returned {outcome}. Waiting for HIL resolution..."
+                )
+                # Do NOT break — continue outer loop
+                # Environment/HIL is expected to drive next message into agent
+                continue
+
+        # Final timeout check
+        if not found_completion:
+            raise TimeoutError("Librarian did not reach SUCCESS within timeout")
+                
+        self.update_agent_status("librarian", librarian_agent.state["status"])
+
+        logger.info("[AOSM._handle_librarian] Finished Librarian")
+
+
     async def handle_ana(self) -> None:
         """
         Sequential member of Workflow 1: ANA-D.

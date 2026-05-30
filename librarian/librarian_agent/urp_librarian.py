@@ -96,11 +96,12 @@ class LibrarianURPAgent(AbstractURPAgent):
             raise ValueError(f"[LibrarianURPAgent.build_config] Module path not found for module: {context.module_name}")
         scud_files = list(module_path.glob("*.scud"))
         if not scud_files:
-            logger.warning(f"[LibrarianURPAgent.build_config] No .scud file found in module directory: {module_path}")
+            logger.warning(f"[LibrarianURPAgent.build_config] No .scud file found in module directory: {module_path}. Setting scud_path to <module_name>.scud by default.")
+            scud_path = str(module_path / f"{context.module_name}.scud")
         if len(scud_files) > 1:
             logger.warning(f"[LibrarianURPAgent.build_config] Multiple .scud files found in module directory: {module_path}. Using the first one: {scud_files[0]}")
 
-        scud_path = str(scud_files[0]) if scud_files else None  # Take the first .scud file found
+        scud_path = str(scud_files[0]) if scud_files else scud_path
         config = LibrarianConfig(
             conversation_persistence=config_data.conversation_persistence if hasattr(config_data, "conversation_persistence") else True,
             mcp_url=config_data.mcp_url if hasattr(config_data, "mcp_url") else "http://localhost:8082/sse",
@@ -198,7 +199,7 @@ class LibrarianURPAgent(AbstractURPAgent):
         """
         logger.info(f"[LibrarianURPAgent] Received message: {message}")
         
-        user_message = message.payload
+        user_message = message.payload["text"]
 
         
         self.conversation.send_message(
