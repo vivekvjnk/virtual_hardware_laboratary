@@ -28,7 +28,7 @@ from vhl_common.urp.data_types import AgentDescriptor, MessageEnvelope
 from vhl_common.utils import setup_dedicated_logger
 from workspace.manager import WorkspaceManager
 from vhl_common.project_state_manager import SQLiteManager
-
+from vhl_protocol.sync.client import SyncClient
 
 # Setup dedicated logger for librarian
 logger = setup_dedicated_logger("librarian_agent", "librarian_agent.log")
@@ -57,6 +57,7 @@ class LibrarianContext:
     module_name: str
     workspace: WorkspaceManager
     sqlite_manager: SQLiteManager
+    sync_manager: SyncClient = field(default=None)
     config: LibrarianConfig = field(default_factory=LibrarianConfig)
 
 class LibrarianURPAgent(AbstractURPAgent):
@@ -82,7 +83,9 @@ class LibrarianURPAgent(AbstractURPAgent):
         self.library_path = None
         self.sqlite_manager: SQLiteManager = None
         self.workspace_manager: WorkspaceManager = None
-        
+        self.sync_manager: SyncClient = None
+        self.module_name = None
+
     def build_config(self, context: LibrarianContext) -> LibrarianConfig:
         """
         Builds the LibrarianConfig from the provided context.
@@ -125,7 +128,8 @@ class LibrarianURPAgent(AbstractURPAgent):
         self.scud_path = config.scud_path
         self.workspace_manager = context.workspace
         self.sqlite_manager = context.sqlite_manager
-
+        self.sync_manager = context.sync_manager
+        self.module_name = context.module_name
 
         # Derive library path from workspace
         # Based on LibrarianAgent.process_scud: library_path = os.path.join(self.working_dir,"lib/imports/")
@@ -263,6 +267,101 @@ class LibrarianURPAgent(AbstractURPAgent):
             logger.error(f"Error checking start preconditions: {e}")
             return False, f"Error checking start preconditions: {e}"
     
+    async def _check_postconditions(self, message: MessageEnvelope, result: Any) -> tuple[bool,str]:
+        """
+        1. Synchronize library after successful execution of Librarian agent.
+        2. Validate if <project_root>/lib directory has been updated. No strict validation, simply check if there are any files created 
+        3. Validate if the .scud file has been updated with component mapping section
+            - scud file can be found inside the module directory in workspace. 
+            - create new method in workspace manager
+                - use git client in workspace manager to find the new changes made in .scud file
+                - return the changes as raw string
+            - check if the changes contain "Library Mapping" section. Use simple string match(not exact match, check without case sensitivity and ignore special characters and spaces) to validate if the section is added in the .scud file. No need to validate the content of the section for now.
+        4. If validations are failure, simply return False with appropriate message. The orchestration layer will decide the next step based on the False return value from postconditions check.
+        5. If validations are successful call self.workspace_manager.record_operation() 
+            - op_name : "LIBRARY_UPDATE"
+            - author: self.descriptor.agent_id
+            - status: "SUCCESS"
+            - payload: {"library_updated": True/False, "scud_updated": True/False}
+            - commit_message: "Library update by Librarian agent" (for successful update)
+        6. Return True with appropriate message if all validations are successful.
+        """
+        # 1. Synchronize library after successful execution of Librarian agent.
+        if self.sync_manager:
+            try:
+                await self.sync_manager.sync_library(self.workspace_manager.project_name)
+                logger.info(f"[LibrarianURPAgent._check_postconditions] Sync completed.")
+            except Exception as e:
+                logger.warning(f"[LibrarianURPAgent._check_postconditions] sync_library call failed: {e}")
+        else:
+            logger.warning(f"[LibrarianURPAgent._check_postconditions] sync_manager is not initialized.")
+
+        # 2. Validate if <project_root>/lib directory has been updated. No strict validation, simply check if there are any files created 
+        lib_dir = self.workspace_manager.project_root / "lib"
+        library_updated = False
+        if lib_dir.exists():
+            for root, _, files in os.walk(lib_dir):
+                if files:
+                    library_updated = True
+                    break
+
+        if not library_updated:
+            msg = "Postconditions check failed: No files created in lib directory."
+            logger.warning(msg)
+            return False, msg
+
+        # 3. Validate if the .scud file has been updated with component mapping section
+        if not self.module_name:
+            msg = "Postconditions check failed: module_name not set on agent."
+            logger.warning(msg)
+            return False, msg
+
+        module_path = self.workspace_manager.module_paths.get(self.module_name)
+        if not module_path:
+            msg = f"Postconditions check failed: Module path not found for module '{self.module_name}'."
+            logger.warning(msg)
+            return False, msg
+
+        scud_files = list(module_path.glob("*.scud"))
+        if not scud_files:
+            msg = f"Postconditions check failed: No .scud file found in module directory '{module_path}'."
+            logger.warning(msg)
+            return False, msg
+
+        scud_file = scud_files[0]
+        try:
+            changes = self.workspace_manager.get_file_changes(scud_file)
+        except Exception as e:
+            msg = f"Postconditions check failed: Failed to read scud file changes: {e}"
+            logger.warning(msg)
+            return False, msg
+
+        target = "librarymapping"
+        cleaned_changes = "".join(c for c in changes.lower() if c.isalnum())
+        scud_updated = target in cleaned_changes
+
+        if not scud_updated:
+            msg = "Postconditions check failed: 'Library Mapping' section not found in .scud file changes."
+            logger.warning(msg)
+            return False, msg
+
+        # 5. If validations are successful call self.workspace_manager.record_operation()
+        try:
+            self.workspace_manager.record_operation(
+                module_name=self.module_name,
+                op_name="LIBRARY_UPDATE",
+                author=self.descriptor.agent_id,
+                status="SUCCESS",
+                payload={"library_updated": library_updated, "scud_updated": scud_updated},
+                commit_message="Library update by Librarian agent"
+            )
+        except Exception as e:
+            logger.error(f"Failed to record LIBRARY_UPDATE operation: {e}")
+            return False, f"Failed to record LIBRARY_UPDATE operation: {e}"
+
+        # 6. Return True with appropriate message if all validations are successful.
+        return True, "Postconditions check passed: Library updated and SCUD file updated with Library Mapping."        
+
 if __name__ == "__main__":
     # Example usage (simplified)
     # This would normally be handled by the URP runtime

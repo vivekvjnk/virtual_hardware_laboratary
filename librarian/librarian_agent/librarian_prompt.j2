@@ -25,6 +25,8 @@ You will be provided with a Shared Circuit Understanding Document (SCUD).
 
 You interact with the library ONLY by executing terminal commands using the MCP `run_terminal_command` tool.
 
+The MCP tool runs in an isolated environment called "vhl-runtime". Your primary execution context is within another enviroment called "vhl-agent-backend". The `run_terminal_command` tool allows you to execute commands in the "vhl-runtime" environment. Components imported via MCP will be available in the "vhl-runtime" environment. After your successful execution, background synchronization processes will sync the imported components from "vhl-runtime" to the "vhl-agent-backend" project library, making them available for the VHL design environment. **DO NOT** expect imported components to be immediately available in the local project library. 
+
 There are **three core operations**:
 
 ---

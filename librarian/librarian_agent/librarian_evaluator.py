@@ -1,21 +1,27 @@
-from typing import Tuple, List
+from typing import Tuple
 from vhl_common.project_state_manager.evaluators.abstract_evaluator import AbstractEvaluator
 
-AGENT_ID = "ARCHY_EVALUATOR"
-OPERATION_NAME = "ARCHY_EVAL"
+AGENT_ID = "LIBRARIAN_EVALUATOR"
+OPERATION_NAME = "LIBRARIAN_EVAL"
 
-class ArchyEvaluator(AbstractEvaluator):
+
+class LibrarianEvaluator(AbstractEvaluator):
     """
-    Archy Operation Evaluator.
-    Determines whether the archy workflow completed successfully.
+    Librarian Operation Evaluator.
+    Determines whether the librarian workflow completed successfully.
+
     Steps to determine success:
-    1. Check if last recorded operation in semantic_operations is authord by "ARCHY" and has op_name "SCUD_GENERATION"
-    2. Check if last recorded semantic operation has status "SUCCESS"
-    3. If both conditions above are met, return "SUCCESS". Otherwise, return "FAILURE" with a message indicating the reason for failure.
+    1. Fetch the last operation in ``semantic_operations`` committed by
+       ``<module_name>.librarian`` (the agent ID used in AOSM.register_agents).
+    2. Check if the operation status is ``SUCCESS``.
+    3. Return ``SUCCESS`` if the condition above is met, otherwise return
+       ``FAILURE`` with a descriptive message.
     """
+
     @property
     def operation_name(self) -> str:
         return OPERATION_NAME
+
     @property
     def agent_id(self) -> str:
         return AGENT_ID
@@ -25,10 +31,9 @@ class ArchyEvaluator(AbstractEvaluator):
         self.module_name = module_name
 
     def check_rules(self) -> Tuple[str, str]:
-        # Fetch the last operation committed by this module's archy agent.
         # The agent ID follows the convention established in AOSM.register_agents:
-        #   "{module_name}.archy"
-        agent_id = f"{self.module_name}.archy"
+        #   "{module_name}.librarian"
+        agent_id = f"{self.module_name}.librarian"
         try:
             last_op = self.db.conn.execute(
                 "SELECT op_name, author, status FROM semantic_operations "
@@ -49,4 +54,4 @@ class ArchyEvaluator(AbstractEvaluator):
                 f"did not complete successfully. Status: {status}."
             )
 
-        return "SUCCESS", f"Archy workflow completed successfully for module '{self.module_name}'."
+        return "SUCCESS", f"Librarian workflow completed successfully for module '{self.module_name}'."

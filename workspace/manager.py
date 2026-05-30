@@ -875,6 +875,27 @@ class WorkspaceManager:
         logger.info(f"[WorkspaceManager.record_operation] Recorded {op_name} for {module_name} with status {status}. Snapshot ID: {snapshot_id}")
         return snapshot_id
 
+    def get_file_changes(self, file_path: Union[str, Path]) -> str:
+        """
+        Runs git diff HEAD on the specified file and returns the diff output as a raw string.
+        """
+        if not self.git:
+            raise RuntimeError("Project not loaded. Git persistence not initialized.")
+        
+        path = Path(file_path)
+        if path.is_absolute():
+            try:
+                path = path.relative_to(self.project_root)
+            except ValueError:
+                pass
+        
+        try:
+            diff_output = self.git.git._run_git(["diff", "HEAD", str(path)])
+            return diff_output
+        except Exception as e:
+            logger.error(f"Error running git diff for file {file_path}: {e}")
+            return ""
+
     def _build_operation(self, row) -> Operation:
         """Internal builder to convert DB rows into Operation objects."""
         snapshot_id = row["artifact_ref_id"]

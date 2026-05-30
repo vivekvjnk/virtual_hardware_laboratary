@@ -464,7 +464,7 @@ class ArchyURPAgent(AbstractURPAgent):
             self.workspace_manager.record_operation(
                 module_name=self.module_name,
                 op_name="SCUD_GENERATION",
-                author="ARCHY",
+                author=self.descriptor.agent_id,
                 status="SUCCESS",
                 payload={"source": scud_file_path},
                 commit_message=f"ARCHY: SCUD File created for {self.module_name}"

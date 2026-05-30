@@ -26,6 +26,7 @@ from librarian_agent.stub import process_scud_stub
 from vhl_common.utils import handle_errors
 from vhl_common.project_state_manager.evaluators.project_creation_evaluator import ProjectCreationEvaluator
 from archy.archy_agent.archy_evaluator import ArchyEvaluator
+from librarian.librarian_agent.librarian_evaluator import LibrarianEvaluator
 from vhl_common.gate import GateRegistry, HILTerminal
 
 logger = logging.getLogger(__name__)
@@ -280,7 +281,7 @@ class AOSM:
 
             # Evaluate project creation success and update semantic db with the result. 
             self.project_semantic_db = self.workspace_manager.sqlite_db
-            project_creation_evaluator = ProjectCreationEvaluator(self.project_semantic_db)
+            project_creation_evaluator = ProjectCreationEvaluator(db=self.project_semantic_db) # Module name is not relevant for project creation evaluator as of now since it only checks for the presence of a baseline snapshot in the db which is created during project creation workflow. We can consider refactoring this later to remove the module_name dependency from the evaluator if it continues to be irrelevant for its logic.
             project_creation_evaluator.evaluate() # With this step, evaluator will commit a semantic operation to the semantic db. Based on the status of this operation, agent registry should compute the readiness of the Archy agent.
             # TODO: 
             # Current implementation of ProjectCreationEvaluator uses hardcoded Agent ID and Operation Name(defined in the evaluator implementation code), so we can directly use those values in the Archy agent readiness function to check the status of the project creation workflow. Later, depending on the evolution of the evaluators, we can consider a standardized way to define and query these values.
@@ -448,7 +449,8 @@ class AOSM:
                 "config": LibrarianConfig(conversation_persistence=True),
                 "workspace": self.workspace_manager,
                 "sqlite_manager": self.project_semantic_db,
-                "module_name": module_name
+                "module_name": module_name,
+                "sync_manager": self.sync_client
             }
             librarian.initialize(context=context, emit_callback=emit_callback)
 
@@ -731,12 +733,13 @@ class AOSM:
         try:
             # 1. Step 1: Archy
             await self.handle_archy(module_name=module_name)
-            archy_evaluator = ArchyEvaluator(self.project_semantic_db)
+            archy_evaluator = ArchyEvaluator(self.project_semantic_db, module_name=module_name)
             archy_evaluator.evaluate() # This will commit an operation to the semantic db which can            
             
             # 2. Step 2: Librarian
             await self.handle_librarian(module_name=module_name)
-            
+            librarian_evaluator = LibrarianEvaluator(self.project_semantic_db, module_name=module_name)
+            librarian_evaluator.evaluate()
             # 3. Step 3: ANA-D
             await self.handle_ana()
             # send workflow 1 completion event to UI/runtime

@@ -43,6 +43,7 @@ def test_record_operation_success(workspace_setup):
     snapshot_id = manager.record_operation(
         module_name="test_module",
         op_name="ARCHY",
+        author="SYSTEM",
         status="SUCCESS",
         payload=payload,
         commit_message="Test commit"
@@ -62,9 +63,9 @@ def test_query_operations_filtering(workspace_setup):
     manager, _ = workspace_setup
     
     # Record multiple operations
-    manager.record_operation("m1", "ARCHY", "SUCCESS", {}, "C1")
-    manager.record_operation("m1", "LIBRARIAN", "FAILURE", {}, "C2")
-    manager.record_operation("m2", "ARCHY", "SUCCESS", {}, "C3")
+    manager.record_operation("m1", "ARCHY", "SYSTEM", "SUCCESS", {}, "C1")
+    manager.record_operation("m1", "LIBRARIAN", "SYSTEM", "FAILURE", {}, "C2")
+    manager.record_operation("m2", "ARCHY", "SYSTEM", "SUCCESS", {}, "C3")
     
     # Query by module
     m1_ops = manager.query_operations(module_name="m1")
@@ -84,8 +85,8 @@ def test_query_operations_filtering(workspace_setup):
 def test_get_last_operation(workspace_setup):
     manager, _ = workspace_setup
     
-    manager.record_operation("m1", "ARCHY", "SUCCESS", {"id": 1}, "C1")
-    manager.record_operation("m1", "ARCHY", "SUCCESS", {"id": 2}, "C2")
+    manager.record_operation("m1", "ARCHY", "SYSTEM", "SUCCESS", {"id": 1}, "C1")
+    manager.record_operation("m1", "ARCHY", "SYSTEM", "SUCCESS", {"id": 2}, "C2")
     
     last_archy = manager.get_last_operation("m1", "ARCHY")
     assert last_archy.payload == {"id": 2}
@@ -93,7 +94,7 @@ def test_get_last_operation(workspace_setup):
 def test_debug_query(workspace_setup):
     manager, _ = workspace_setup
     
-    manager.record_operation("m1", "ARCHY", "SUCCESS", {}, "C1")
+    manager.record_operation("m1", "ARCHY", "SYSTEM", "SUCCESS", {}, "C1")
     
     rows = manager._query("SELECT * FROM semantic_operations")
     assert len(rows) == 1
@@ -175,6 +176,7 @@ def test_record_operation_no_changes(workspace_setup):
     snapshot_id = manager.record_operation(
         module_name="test_module",
         op_name="IDLE_OP",
+        author="SYSTEM",
         status="SUCCESS",
         payload={"msg": "nothing changed"},
         commit_message="Commit without changes"
@@ -222,5 +224,25 @@ def test_create_project_inside_another_repo(tmp_path):
     assert manager.git.git.is_repo()
     
     # Verify we can record an operation (which involves git add/commit)
-    snapshot_id = manager.record_operation("m1", "INIT", "SUCCESS", {}, "Test")
+    snapshot_id = manager.record_operation("m1", "INIT", "SYSTEM", "SUCCESS", {}, "Test")
     assert snapshot_id > 0
+
+def test_get_file_changes(workspace_setup):
+    manager, _ = workspace_setup
+    
+    # Create a test file
+    test_file = manager.project_root / "test.scud"
+    test_file.write_text("initial content")
+    
+    # Commit it so it's tracked and part of HEAD
+    manager.git.git.add_all()
+    manager.git.git.commit("initial commit")
+    
+    # Modify the file
+    test_file.write_text("initial content\nLibrary Mapping:\n- comp1\n- comp2")
+    
+    # Check changes
+    changes = manager.get_file_changes(test_file)
+    assert "Library Mapping" in changes
+    assert "comp1" in changes
+
