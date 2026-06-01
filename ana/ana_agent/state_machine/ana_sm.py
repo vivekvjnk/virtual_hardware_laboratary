@@ -73,7 +73,6 @@ class ANADStateMachine:
         self.transition_table = {
             State.INIT: State.OBSERVE,
             State.OBSERVE: State.AUTHORIZE,
-            State.PREPARE_FIX: State.TRIGGER_W1,
             State.TRIGGER_W1: State.TRIGGER_W2,
             State.TRIGGER_W2: State.INIT,
             State.PREPARE_HIL: State.HIL_WAIT,
@@ -98,7 +97,6 @@ class ANADStateMachine:
             State.INIT: self._handle_init,
             State.OBSERVE: self._handle_observe,
             State.AUTHORIZE: self._handle_authorize,
-            State.PREPARE_FIX: self._handle_prepare_fix,
             State.TRIGGER_W1: self._handle_trigger_w1,
             State.TRIGGER_W2: self._handle_trigger_w2,
             State.PREPARE_HIL: self._handle_prepare_hil,
@@ -149,11 +147,6 @@ class ANADStateMachine:
     async def _handle_init(self, message: Dict[str, Any]) -> Dict[str, Any]:
         logger.info(f"[ANADStateMachine._handle_init] State: INIT. Triggered from: {message.get('from_state_id')}")
         logger.debug(f"[ANADStateMachine._handle_init] Message: {message}")
-        
-        # Workflow 2/3: Synchronize Stable and Library
-        # Removed workflow 2
-        # No updates are allowed in Library in ANAD-SM. So no need to sync Library here
-        # Stable circuit is AOSM concern. Not ANAD-SM responsibility
         
         result_msg = message.copy()
         
@@ -306,7 +299,7 @@ class ANADStateMachine:
 
         if vap_decision == "REJECT":
             if error_class == "LOCAL" and auto_fix_count < self.max_auto_fixes:
-                proposed_next = State.PREPARE_FIX
+                proposed_next = State.TRIGGER_W1
             else:
                 err_msg = "VAP detected non-local error" if error_class != "LOCAL" else "VAP failed repeated auto-fix attempts for local error"
                 result_msg["hil_wait_packet"] = {"reason":"ANA_HIL_REQUIRED", "message": err_msg}
@@ -332,13 +325,6 @@ class ANADStateMachine:
         result_msg["proposed_next_state"] = proposed_next
         return result_msg
 
-    async def _handle_prepare_fix(self, message: Dict[str, Any]) -> Dict[str, Any]:
-        logger.info(f"[ANADStateMachine._handle_prepare_fix] State: PREPARE_FIX. Triggered from: {message.get('from_state_id')}")
-        logger.debug(f"[ANADStateMachine._handle_prepare_fix] Message: {message}")
-        
-        result_msg = message.copy()
-        result_msg["state_id"] = State.PREPARE_FIX
-        return result_msg
 
     async def _handle_trigger_w1(self, message: Dict[str, Any]) -> Dict[str, Any]:
         logger.info(f"[ANADStateMachine._handle_trigger_w1] State: TRIGGER_W1. Triggered from: {message.get('from_state_id')}")
@@ -382,7 +368,7 @@ class ANADStateMachine:
                     library_path = library_path,
                 )
             elif len(observations)>0 and previous_iter_dir:
-                logger.info("[ANADStateMachine._handle_trigger_w1] ANA-W1 in error correction mode (triggered from PREPARE_FIX).")
+                logger.info("[ANADStateMachine._handle_trigger_w1] ANA-W1 in error correction mode.")
                 await asyncio.to_thread(
                     run_ana_w1_agent,
                     workspace=str(current_iter_dir),
@@ -394,7 +380,7 @@ class ANADStateMachine:
                     library_path = library_path,
                 )
             else:
-                logger.info("[ANADStateMachine._handle_trigger_w1] ANA-W1 in synthesis mode (not triggered from PREPARE_FIX).")
+                logger.info("[ANADStateMachine._handle_trigger_w1] ANA-W1 in synthesis mode.")
                 await asyncio.to_thread(
                     run_ana_w1_agent,
                     workspace=str(current_iter_dir),
