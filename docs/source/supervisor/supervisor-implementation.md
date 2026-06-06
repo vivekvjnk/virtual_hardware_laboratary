@@ -331,7 +331,7 @@ Only Supervisor may acknowledge outcomes.
 
 ---
 
-# Phase 10: Runtime Supervision
+# Phase 10: Runtime Supervision [COMPLETED]
 
 Add periodic monitoring task.
 
@@ -369,7 +369,7 @@ AOSM uses this for UI telemetry.
 
 ---
 
-# Phase 11: System State Enforcement
+# Phase 11: System State Enforcement [COMPLETED]
 
 Introduce:
 
@@ -395,7 +395,7 @@ Controllers remain unaware of system state.
 
 ---
 
-# Phase 12: HIL Routing Ownership
+# Phase 12: HIL Routing Ownership [COMPLETED]
 
 Move HIL coordination from AOSM.
 
@@ -461,7 +461,7 @@ No orphaned agents exist.
 
 ---
 
-## Milestone 6
+## Milestone 6 [COMPLETED]
 
 Supervisor becomes the sole control plane.
 
