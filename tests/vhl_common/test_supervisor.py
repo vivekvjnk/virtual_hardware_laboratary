@@ -1,3 +1,4 @@
+import asyncio
 import pytest
 from vhl_common.supervisor import (
     Supervisor,
@@ -13,7 +14,7 @@ from vhl_common.supervisor import (
     InvalidSupervisorStateError,
 )
 from vhl_common.supervisor.controllers import AbstractController, DefaultController
-from vhl_common.urp.data_types import AgentDescriptor, ProcessResult, LastTaskOutcome
+from vhl_common.urp.data_types import AgentDescriptor, ProcessResult, LastTaskOutcome, MessageEnvelope
 from vhl_common.urp.abstract_urp import AbstractURPAgent
 
 
@@ -73,8 +74,9 @@ async def test_supervisor_skeleton_defaults():
     assert supervisor.register_controller(None) is None
     assert supervisor.get_system_state() == {}
 
-    # Methods that are asynchronous stubs
-    assert await supervisor.send("agent-1", None) is None
+    # Methods that are asynchronous stubs or raise AgentNotFoundError on non-existent agents
+    with pytest.raises(AgentNotFoundError):
+        await supervisor.send("agent-1", None)
 
 
 @pytest.mark.asyncio
@@ -367,4 +369,107 @@ async def test_supervisor_acknowledge_outcome():
     # Error case
     with pytest.raises(AgentNotFoundError):
         supervisor.acknowledge_outcome("non-existent")
+
+
+@pytest.mark.asyncio
+async def test_supervisor_send_success():
+    """Verify that Supervisor.send routes the message to the correct agent."""
+    supervisor = Supervisor()
+    descriptor = AgentDescriptor(
+        agent_id="test-agent",
+        name="Test Agent",
+        version="1.0",
+        capabilities=["TEST_CAP"],
+        accepted_message_types=["TEST_MSG"]
+    )
+    agent = DummyURPAgent(descriptor=descriptor)
+    supervisor.attach_agent(agent)
+
+    envelope = MessageEnvelope(
+        type="TEST_MSG",
+        payload={"foo": "bar"},
+        sender="ctrl-a",
+        receiver="test-agent"
+    )
+
+    await supervisor.send("test-agent", envelope)
+    # The message should enter the agent's mailbox
+    assert agent.mailbox.qsize() == 1
+    received = await agent.mailbox.get()
+    assert received is envelope
+
+
+@pytest.mark.asyncio
+async def test_supervisor_process_outcomes():
+    """Verify that process_outcomes routes pending outcomes and acknowledges them."""
+    supervisor = Supervisor()
+    descriptor = AgentDescriptor(
+        agent_id="test-agent",
+        name="Test Agent",
+        version="1.0",
+        capabilities=["TEST_CAP"],
+        accepted_message_types=["TEST_MSG"]
+    )
+    agent = DummyURPAgent(descriptor=descriptor)
+    supervisor.attach_agent(agent)
+
+    # Register custom controller
+    ctrl_a = MockController("ctrl-a", 10)
+    supervisor.register_controller(ctrl_a)
+    await supervisor.claim("ctrl-a", "test-agent")
+
+    # Simulate an unacknowledged outcome
+    agent._state.last_task_outcome = LastTaskOutcome.TASK_COMPLETED
+    agent._state.outcome_acknowledged = False
+
+    # Process outcomes
+    await supervisor.process_outcomes()
+
+    # Yield control to let the route task run
+    await asyncio.sleep(0.01)
+
+    # Verify active controller handled the outcome
+    assert len(ctrl_a.outcomes_handled) == 1
+    assert ctrl_a.outcomes_handled[0] == ("test-agent", LastTaskOutcome.TASK_COMPLETED)
+
+    # Verify outcome got acknowledged on the agent
+    assert agent.state["outcome_acknowledged"] is True
+
+
+@pytest.mark.asyncio
+async def test_supervisor_background_monitoring_loop():
+    """Verify background outcome monitoring runs periodically and routes outcomes."""
+    supervisor = Supervisor()
+    descriptor = AgentDescriptor(
+        agent_id="test-agent",
+        name="Test Agent",
+        version="1.0",
+        capabilities=["TEST_CAP"],
+        accepted_message_types=["TEST_MSG"]
+    )
+    agent = DummyURPAgent(descriptor=descriptor)
+    supervisor.attach_agent(agent)
+
+    ctrl_a = MockController("ctrl-a", 10)
+    supervisor.register_controller(ctrl_a)
+    await supervisor.claim("ctrl-a", "test-agent")
+
+    # Start the monitoring loop with very small interval
+    supervisor.start(interval=0.01)
+
+    # Simulate unacknowledged outcome
+    agent._state.last_task_outcome = LastTaskOutcome.TASK_COMPLETED
+    agent._state.outcome_acknowledged = False
+
+    # Wait a bit for background execution
+    await asyncio.sleep(0.05)
+
+    # Verify outcome routed and acknowledged
+    assert len(ctrl_a.outcomes_handled) == 1
+    assert ctrl_a.outcomes_handled[0] == ("test-agent", LastTaskOutcome.TASK_COMPLETED)
+    assert agent.state["outcome_acknowledged"] is True
+
+    # Stop the loop
+    await supervisor.stop()
+    assert supervisor._monitor_task is None
 

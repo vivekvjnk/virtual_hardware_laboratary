@@ -1,3 +1,4 @@
+import asyncio
 from typing import Any, Dict
 from datetime import datetime
 from vhl_common.urp.abstract_urp import AbstractURPAgent
@@ -22,10 +23,68 @@ class Supervisor:
         # Mapping from agent_id -> controller_id -> ControlClaim
         self._claims: Dict[str, Dict[str, ControlClaim]] = {}
 
+        # Background supervision & outcome routing task state
+        self._routing_agents = set()
+        self._monitor_task = None
+        self._monitor_interval = 0.1
+
         # Invariant 5: DefaultController governs every unclaimed agent.
         # This controller is automatically attached during Supervisor initialization.
         self._default_controller = DefaultController()
         self.register_controller(self._default_controller)
+
+    def start(self, interval: float = 0.1) -> None:
+        """Start the background outcome monitoring loop."""
+        self._monitor_interval = interval
+        if self._monitor_task is None or self._monitor_task.done():
+            self._monitor_task = asyncio.create_task(self._run_monitoring_loop())
+
+    async def stop(self) -> None:
+        """Stop the background outcome monitoring loop."""
+        if self._monitor_task and not self._monitor_task.done():
+            self._monitor_task.cancel()
+            try:
+                await self._monitor_task
+            except asyncio.CancelledError:
+                pass
+        self._monitor_task = None
+
+    async def _run_monitoring_loop(self) -> None:
+        while True:
+            try:
+                await self.process_outcomes()
+            except Exception:
+                pass
+            await asyncio.sleep(self._monitor_interval)
+
+    async def process_outcomes(self) -> None:
+        """Inspect all registered agents and route any pending outcomes to their active controllers."""
+        for agent_id, record in list(self._agents.items()):
+            if agent_id in self._routing_agents:
+                continue
+
+            try:
+                state = record.agent.state
+                outcome = state.get("last_task_outcome")
+                acknowledged = state.get("outcome_acknowledged")
+
+                if outcome is not None and not acknowledged:
+                    self._routing_agents.add(agent_id)
+                    asyncio.create_task(self._route_and_acknowledge(agent_id, record, outcome))
+            except Exception:
+                pass
+
+    async def _route_and_acknowledge(self, agent_id: str, record: AgentRecord, outcome: Any) -> None:
+        try:
+            active_controller_id = record.active_controller
+            controller = self._controllers.get(active_controller_id)
+            if controller:
+                await controller.handle_outcome(agent_id, outcome)
+            self.acknowledge_outcome(agent_id)
+        except Exception:
+            pass
+        finally:
+            self._routing_agents.discard(agent_id)
 
     def attach_agent(self, agent: AbstractURPAgent) -> None:
         """Attach an active agent to the Supervisor registry."""
@@ -59,6 +118,7 @@ class Supervisor:
         del self._agents[agent_id]
         if agent_id in self._claims:
             del self._claims[agent_id]
+        self._routing_agents.discard(agent_id)
 
     def get_agent(self, agent_id: str) -> AbstractURPAgent:
         """Get the active agent instance by its ID."""
@@ -204,7 +264,10 @@ class Supervisor:
 
     async def send(self, agent_id: str, message: Any) -> None:
         """Route a message to an agent on behalf of its active controller."""
-        pass
+        if agent_id not in self._agents:
+            raise AgentNotFoundError(f"Agent with ID '{agent_id}' not found.")
+        agent = self._agents[agent_id].agent
+        await agent.send(message)
 
     def get_system_state(self) -> dict:
         """Get the system-wide operational state telemetry."""

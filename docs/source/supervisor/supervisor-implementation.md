@@ -127,7 +127,7 @@ This controller should be automatically attached during Supervisor initializatio
 
 ---
 
-# Phase 5: Controller Arbitration
+# Phase 5: Controller Arbitration [COMPLETED]
 
 Introduce:
 
@@ -161,9 +161,14 @@ Arbitration rule:
 Highest Priority Claim Wins
 ```
 
+**Implementation Details**:
+* Developed priority-based arbitration logic inside `Supervisor.claim()` and `Supervisor.release()`.
+* Implemented deterministic tie-breakers (using controller alphabetical IDs) if priorities match.
+* Integrated transition callbacks (`on_acquired` and `on_released`) triggered upon controller hand-offs.
+
 ---
 
-# Phase 6: Outcome Monitoring Loop
+# Phase 6: Outcome Monitoring Loop [COMPLETED]
 
 Create a background supervision task.
 
@@ -200,9 +205,14 @@ Move all outcome consumption logic here.
 
 Remove all outcome polling from AOSM.
 
+**Implementation Details**:
+* Added `process_outcomes()` async method on the `Supervisor` which iterates through all registered agents and detects unacknowledged outcomes.
+* Added a background task initialized via `Supervisor.start(interval)` and stopped via `await Supervisor.stop()` to periodically execute the `process_outcomes` method.
+* Built concurrency protections utilizing a tracking set (`_routing_agents`) to prevent race conditions during active callback processing.
+
 ---
 
-# Phase 7: Agent Messaging API
+# Phase 7: Agent Messaging API [COMPLETED]
 
 Add:
 
@@ -222,6 +232,10 @@ Controller → Agent
 routing.
 
 Controllers never access agents directly.
+
+**Implementation Details**:
+* Implemented `Supervisor.send()` which accepts messages and asynchronously forwards them into the specific target agent's mailbox via `agent.send()`.
+* Raises `AgentNotFoundError` if the targeted `agent_id` is not registered.
 
 ---
 
