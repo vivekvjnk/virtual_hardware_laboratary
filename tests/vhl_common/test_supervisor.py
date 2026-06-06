@@ -14,7 +14,7 @@ from vhl_common.supervisor import (
     InvalidSupervisorStateError,
 )
 from vhl_common.supervisor.controllers import AbstractController, DefaultController
-from vhl_common.urp.data_types import AgentDescriptor, ProcessResult, LastTaskOutcome, MessageEnvelope
+from vhl_common.urp.data_types import AgentDescriptor, AgentStatus, ProcessResult, LastTaskOutcome, MessageEnvelope
 from vhl_common.urp.abstract_urp import AbstractURPAgent
 
 
@@ -72,7 +72,7 @@ async def test_supervisor_skeleton_defaults():
     # Methods that are synchronous stubs or handled gracefully
     assert supervisor.attach_agent(None) is None
     assert supervisor.register_controller(None) is None
-    assert supervisor.get_system_state() == {}
+    assert supervisor.get_system_state() == {"agents": {}, "supervisor_state": "NORMAL"}
 
     # Methods that are asynchronous stubs or raise AgentNotFoundError on non-existent agents
     with pytest.raises(AgentNotFoundError):
@@ -472,4 +472,123 @@ async def test_supervisor_background_monitoring_loop():
     # Stop the loop
     await supervisor.stop()
     assert supervisor._monitor_task is None
+
+
+@pytest.mark.asyncio
+async def test_supervisor_phase10_runtime_supervision():
+    """Verify Phase 10: Runtime Supervision requirements (get_system_state tracking WAITING, PROCESSING, etc.)"""
+    supervisor = Supervisor(context_id="test_gate")
+    
+    descriptor = AgentDescriptor(
+        agent_id="agent-telemetry",
+        name="Telemetry Agent",
+        version="1.0",
+        capabilities=["TELEMETRY"],
+        accepted_message_types=["TEST"]
+    )
+    agent = DummyURPAgent(descriptor=descriptor)
+    agent._state.status = AgentStatus.WAITING
+    
+    supervisor.attach_agent(agent)
+    
+    state = supervisor.get_system_state()
+    assert state["supervisor_state"] == "NORMAL"
+    assert "agent-telemetry" in state["agents"]
+    assert state["agents"]["agent-telemetry"]["status"].value == "WAITING" if hasattr(state["agents"]["agent-telemetry"]["status"], "value") else state["agents"]["agent-telemetry"]["status"] == "WAITING"
+    assert state["agents"]["agent-telemetry"]["active_controller"] == "default_controller"
+    
+    # Update agent state simulating processing
+    agent._state.status = AgentStatus.PROCESSING
+    
+    state_updated = supervisor.get_system_state()
+    assert state_updated["agents"]["agent-telemetry"]["status"] == "PROCESSING"
+
+
+@pytest.mark.asyncio
+async def test_supervisor_phase11_system_state_enforcement():
+    """Verify Phase 11: System State Enforcement (MAINTENANCE/SHUTDOWN)."""
+    supervisor = Supervisor(context_id="test_gate")
+    
+    # 1. Normal state should work
+    assert supervisor.state == SupervisorState.NORMAL
+    
+    descriptor = AgentDescriptor(
+        agent_id="agent-system-state",
+        name="System State Agent",
+        version="1.0",
+        capabilities=["STATE"],
+        accepted_message_types=["TEST"]
+    )
+    agent = DummyURPAgent(descriptor=descriptor)
+    supervisor.attach_agent(agent)
+    
+    controller = MockController("test-controller", 10)
+    supervisor.register_controller(controller)
+    
+    # Claim should succeed in NORMAL
+    assert await supervisor.claim(controller.controller_id, "agent-system-state") is True
+    
+    # 2. Transition to MAINTENANCE
+    supervisor.state = SupervisorState.MAINTENANCE
+    
+    # Should reject new claims
+    controller2 = MockController("test-controller-2", 20)
+    supervisor.register_controller(controller2)
+    with pytest.raises(ControlClaimError, match="Cannot claim agents while supervisor is in MAINTENANCE state."):
+        await supervisor.claim(controller2.controller_id, "agent-system-state")
+        
+    # Should still allow sending messages
+    await supervisor.send("agent-system-state", MessageEnvelope(type="TEST", payload={}, sender="tester", receiver="agent-system-state"))
+    
+    # 3. Transition to SHUTDOWN
+    supervisor.state = SupervisorState.SHUTDOWN
+    
+    # Should reject sending messages
+    with pytest.raises(ControlClaimError, match="Cannot send messages while supervisor is in SHUTDOWN state."):
+        await supervisor.send("agent-system-state", MessageEnvelope(type="TEST", payload={}, sender="tester", receiver="agent-system-state"))
+
+
+@pytest.mark.asyncio
+async def test_supervisor_phase12_hil_migration():
+    """Verify Phase 12: HIL routing is handled by Supervisor/Gate without AOSM."""
+    supervisor = Supervisor(context_id="test_gate_hil")
+    
+    # HILTerminal should be attached to Supervisor
+    assert hasattr(supervisor, "hil_terminal")
+    assert supervisor.hil_terminal.gate == supervisor.gate
+    
+    descriptor = AgentDescriptor(
+        agent_id="agent-hil-test",
+        name="HIL Test Agent",
+        version="1.0",
+        capabilities=["HIL"],
+        accepted_message_types=["TEST"]
+    )
+    agent = DummyURPAgent(descriptor=descriptor)
+    supervisor.attach_agent(agent)
+    
+    # Agent egress callback should route to supervisor.route_egress
+    message = MessageEnvelope(
+        type="HUMAN_INQUIRY",
+        payload={"text": "Question for HIL"},
+        sender="agent-hil-test",
+        receiver="HIL"
+    )
+    
+    # Track messages hitting HIL
+    hil_received = []
+    async def mock_hil_send(msg: MessageEnvelope):
+        hil_received.append(msg)
+        
+    supervisor.gate.register("HIL", mock_hil_send)
+    
+    # When agent emits, it goes to Gate -> HIL receiver
+    await agent.emit(message)
+    
+    # Yield to let async tasks process
+    await asyncio.sleep(0.05)
+    
+    assert len(hil_received) == 1
+    assert hil_received[0].type == "HUMAN_INQUIRY"
+    assert hil_received[0].receiver == "HIL"
 

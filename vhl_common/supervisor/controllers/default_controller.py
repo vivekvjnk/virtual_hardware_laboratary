@@ -1,6 +1,7 @@
 from vhl_common.urp.data_types import LastTaskOutcome
 from .abstract_controller import AbstractController
-
+import logging
+logger = logging.getLogger(__name__)
 
 class DefaultController(AbstractController):
     """The default controller plugin that manages idle or unclaimed agents."""
@@ -18,10 +19,13 @@ class DefaultController(AbstractController):
         return self._priority
 
     async def on_acquired(self, agent_id: str) -> None:
+        logger.info(f"[{self.controller_id}] Acquired control of agent '{agent_id}'")
         pass
 
     async def on_released(self, agent_id: str) -> None:
+        logger.info(f"[{self.controller_id}] Releasing control of agent '{agent_id}'")
         pass
 
     async def handle_outcome(self, agent_id: str, outcome: LastTaskOutcome) -> None:
+        logger.info(f"[{self.controller_id}] Received outcome for agent '{agent_id}': {outcome}")
         pass

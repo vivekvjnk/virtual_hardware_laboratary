@@ -35,7 +35,7 @@ class WorkspaceManager:
         
         # VAP state variables
         self.circuit_name: Optional[dict[str,str]] = None
-        self.current_iteration_path: Optional[dict[str,Path]] = None
+        self.current_iteration_path: dict[str, Optional[Path]] = {}
         self._session_first_iteration: dict[str,bool] = True
         self._iteration_count: Optional[dict[str,int]] = None
         self.previous_iteration_path: Optional[dict[str,Path]] = None
@@ -45,12 +45,18 @@ class WorkspaceManager:
         logger.info(f"[WorkspaceManager.__init__] WorkspaceManager initialized with root: {self.workspace_root}")
 
     def reset_iterations(self,module):
-        self.current_iteration_path[module] = None
-        self._session_first_iteration[module] = True
-        self._iteration_count[module] = None
-        self.previous_iteration_path[module] = None
-        self._session_iteration_count[module] = 0
-        self.current_iteration_id[module] = None
+        if self.current_iteration_path is not None and isinstance(self.current_iteration_path, dict):
+            self.current_iteration_path[module] = None
+        if self._session_first_iteration is not None and isinstance(self._session_first_iteration, dict):
+            self._session_first_iteration[module] = True
+        if self._iteration_count is not None and isinstance(self._iteration_count, dict):
+            self._iteration_count[module] = None
+        if self.previous_iteration_path is not None and isinstance(self.previous_iteration_path, dict):
+            self.previous_iteration_path[module] = None
+        if self._session_iteration_count is not None and isinstance(self._session_iteration_count, dict):
+            self._session_iteration_count[module] = 0
+        if self.current_iteration_id is not None and isinstance(self.current_iteration_id, dict):
+            self.current_iteration_id[module] = None
 
     def close_project(self):
         """Resets the workspace manager to its initial state, closing any open project."""

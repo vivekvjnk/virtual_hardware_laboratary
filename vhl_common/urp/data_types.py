@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 import uuid
 from enum import Enum
 
-class AgentStatus(Enum):
+class AgentStatus(str, Enum):
     """Strict state machine enforcement per URP Section 2."""
     UNINITIALIZED = "UNINITIALIZED"
     INITIALIZED = "INITIALIZED"

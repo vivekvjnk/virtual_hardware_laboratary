@@ -9,6 +9,8 @@ from .abstract_controller import AbstractController
 
 logger = logging.getLogger(__name__)
 
+OUTCOME_WAIT_TIMEOUT = 600
+
 class Workflow1Controller(AbstractController):
     """Controller responsible for orchestrating Workflow 1 (Archy -> Librarian -> ANA-D)
     by claiming agents, sending work, waiting for outcomes, and advancing the workflow.
@@ -56,7 +58,7 @@ class Workflow1Controller(AbstractController):
             self._outcome_queues[agent_id] = asyncio.Queue()
         await self._outcome_queues[agent_id].put(outcome)
 
-    async def wait_for_outcome(self, agent_id: str, timeout: float = 600) -> LastTaskOutcome:
+    async def wait_for_outcome(self, agent_id: str, timeout: float = OUTCOME_WAIT_TIMEOUT) -> LastTaskOutcome:
         """Asynchronously waits for an outcome from a specific agent."""
         if agent_id not in self._outcome_queues:
             self._outcome_queues[agent_id] = asyncio.Queue()

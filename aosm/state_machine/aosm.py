@@ -27,7 +27,7 @@ from vhl_common.utils import handle_errors
 from vhl_common.project_state_manager.evaluators.project_creation_evaluator import ProjectCreationEvaluator
 from archy.archy_agent.archy_evaluator import ArchyEvaluator
 from librarian.librarian_agent.librarian_evaluator import LibrarianEvaluator
-from vhl_common.gate import GateRegistry, HILTerminal
+
 
 from vhl_common.urp.data_types import LastTaskOutcome
 from vhl_common.supervisor import Supervisor, AgentNotFoundError
@@ -75,8 +75,7 @@ class AOSM:
         self.sync_client = SyncClient(self.web_socket_client, self.workspace_manager)
         # mcp_endpoint = os.getenv("MCP_ENDPOINT", mcp_default)
         # self.mcp_manager = MCPManager(endpoint=mcp_endpoint)
-        self.gate = GateRegistry.get("aosm_gate")
-        self.hil_terminal = HILTerminal(self.gate)
+        # HIL is now managed by Supervisor
         
     def _init_supervisor(self):
         self.supervisor = Supervisor()
@@ -101,15 +100,30 @@ class AOSM:
         
         # Start HIL Terminal TCP server by default unless explicitly disabled
         if os.environ.get("VHL_DISABLE_HIL_TERMINAL") != "true":
-            self.hil_terminal.start()
+            # HIL is started by Supervisor
             
         await self.broadcast_agent_state()
 
     async def broadcast_agent_state(self):
         """Broadcasts the current state of all agents."""
+        
+        # Merge local AOSM/ANA states with Supervisor URP agent states
+        system_view = self.supervisor.get_system_state()
+        
+        archy_status = self.agent_state["archy"]
+        librarian_status = self.agent_state["librarian"]
+        
+        for agent_id, data in system_view.items():
+            if "archy" in agent_id:
+                archy_status = data["status"]
+                self.agent_state["archy"] = archy_status
+            elif "librarian" in agent_id:
+                librarian_status = data["status"]
+                self.agent_state["librarian"] = librarian_status
+                
         await self.web_socket_client.emit_agent_state(
-            archy=self.agent_state["archy"],
-            librarian=self.agent_state["librarian"],
+            archy=archy_status,
+            librarian=librarian_status,
             ana=self.agent_state["ana"],
             aosm=self.agent_state["aosm"]
         )
@@ -129,7 +143,7 @@ class AOSM:
             self._main_loop_task.cancel()
             
         # Stop HIL Terminal input loop
-        await self.hil_terminal.stop()
+        # HIL is stopped by Supervisor
         
         await self.web_socket_client.stop()
 
@@ -155,6 +169,13 @@ class AOSM:
         while True:
             try:
                 mcp_status = "initialized" if self.mcp_manager else "not_initialized"
+                system_view = self.supervisor.get_system_state()
+                for agent_id, data in system_view.items():
+                    if "archy" in agent_id:
+                        self.agent_state["archy"] = data["status"]
+                    elif "librarian" in agent_id:
+                        self.agent_state["librarian"] = data["status"]
+                        
                 agent_states = {k: v.name if hasattr(v, 'name') else str(v) for k, v in self.agent_state.items()}
                 
                 await self.web_socket_client.emit_agent_health(
@@ -304,7 +325,6 @@ class AOSM:
 
             # Now initialize all the agents
             await self.register_agents(workspace_manager=self.workspace_manager)
-            self.gate.register("HIL", self.hil_terminal.send)
             
             # Store project root information in class variable
             self.project_root_info = self.workspace_manager.get_workspace_info()
@@ -342,7 +362,6 @@ class AOSM:
                 await self.register_agents(workspace_manager=self.workspace_manager)
                 
                 # Setup HIL GATE routes for the agents
-                self.gate.register("HIL", self.hil_terminal.send)
 
                 # Store project root information in class variable
                 self.project_root_info = self.workspace_manager.get_workspace_info()
@@ -416,29 +435,22 @@ class AOSM:
             
             # Step 2: Get archy agent from factory                                                                      
             factory = get_agent_factory(name=archy_agent_id)
-            archy_agent = factory.factory_func(descriptor=factory.descriptor) 
-            
-            
-            async def emit_callback(message: MessageEnvelope):
-                logger.debug(f"[EVENT] Received {message.type} with payload {message.payload}")
-                await self.gate.send(message)
-
-            # Step 3: Prepare context and initialize Archy agent with context and emit callback
+            # Step 3: Prepare context and initialize Archy agent
             context = {
                 "config": ArchyConfig(conversation_persistence=True),
                 "workspace": self.workspace_manager,
                 "sqlite_manager": self.project_semantic_db,
                 "module_name": module_name
             }
-            archy_agent.initialize(context=context, emit_callback=emit_callback)
+            # Initial callback is a no-op; Supervisor will enforce egress routing
+            archy_agent.initialize(context=context, emit_callback=lambda msg: None)
+
+            # Store the instantiated agent (This enforces egress via Supervisor -> Gate)
+            self.supervisor.attach_agent(archy_agent)
 
             logger.info("Starting Archy agent")
             # Step 4: Start Archy agent (enters WAITING state)
             await archy_agent.start()
-            
-            # Step 5: Register Gate with Supervisor wrapper for message routing
-            self.gate.register(archy_agent_id, lambda msg, aid=archy_agent_id: self.supervisor.send(aid, msg))
-
             # Store the instantiated agent for subsequent state retrieval
             self.supervisor.attach_agent(archy_agent)
 
@@ -457,10 +469,7 @@ class AOSM:
 
             # # Step 2: Configure librarian agent
             factory = get_agent_factory(name=f"{module_name}.librarian")
-            librarian = factory.factory_func(descriptor=factory.descriptor) 
-            
-
-            # # Step 3: Prepare context and initialize Archy agent with context and emit callback
+            # # Step 3: Prepare context and initialize librarian agent
             context = {
                 "config": LibrarianConfig(conversation_persistence=True),
                 "workspace": self.workspace_manager,
@@ -468,14 +477,15 @@ class AOSM:
                 "module_name": module_name,
                 "sync_manager": self.sync_client
             }
-            librarian.initialize(context=context, emit_callback=emit_callback)
+            librarian.initialize(context=context, emit_callback=lambda msg: None)
+
+            # # Step 5: Register Gate with Supervisor wrapper for message routing
+            self.supervisor.attach_agent(librarian)
 
             logger.info("Starting librarian agent")
-            # Step 4: Start Archy agent (enters WAITING state)
+            # Step 4: Start librarian agent (enters WAITING state)
             await librarian.start()
-            
             # # Step 5: Register Gate with Supervisor wrapper for message routing
-            self.gate.register(librarian_agent_id, lambda msg, lid=librarian_agent_id: self.supervisor.send(lid, msg))
             self.supervisor.attach_agent(librarian)
             librarian_state = self.supervisor.get_agent_state(librarian_agent_id)
             self.update_agent_status("librarian", librarian_state["status"])
@@ -526,7 +536,7 @@ class AOSM:
                 msg_payload = {"text": message_data}
 
                 message = MessageEnvelope(type="MESSAGE_TO_AGENT", payload=msg_payload,sender="vhl_webui",receiver=target_agent)
-                await self.gate.send(message=message)
+                await self.supervisor.route_egress(message=message)
             else:
                 logger.error("[AOSM._handle_idle] Invalid MESSAGE_TO_AGENT payload: missing target_agent or message")
                 await self.web_socket_client.emit_event(BaseEvent(

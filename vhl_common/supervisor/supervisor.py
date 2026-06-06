@@ -12,16 +12,22 @@ from .exceptions import (
     ControllerAlreadyExistsError,
     ControlClaimError,
 )
+from .data_types import SupervisorState
+from vhl_common.gate.gate import GateRegistry
+from vhl_common.urp.data_types import MessageEnvelope
 
 
 class Supervisor:
     """The persistent control plane for all active URP agent instances."""
 
-    def __init__(self) -> None:
+    def __init__(self, context_id: str = "aosm_gate") -> None:
         self._agents: Dict[str, AgentRecord] = {}
         self._controllers: Dict[str, AbstractController] = {}
         # Mapping from agent_id -> controller_id -> ControlClaim
         self._claims: Dict[str, Dict[str, ControlClaim]] = {}
+        
+        self.state = SupervisorState.NORMAL
+        self.gate = GateRegistry.get(context_id)
 
         # Background supervision & outcome routing task state
         self._routing_agents = set()
@@ -32,15 +38,23 @@ class Supervisor:
         # This controller is automatically attached during Supervisor initialization.
         self._default_controller = DefaultController()
         self.register_controller(self._default_controller)
+        
+        from vhl_common.gate.hil import HILTerminal
+        self.hil_terminal = HILTerminal(self.gate)
 
     def start(self, interval: float = 0.1) -> None:
         """Start the background outcome monitoring loop."""
         self._monitor_interval = interval
+        import os
+        if os.environ.get("VHL_DISABLE_HIL_TERMINAL") != "true":
+            self.hil_terminal.start()
+            
         if self._monitor_task is None or self._monitor_task.done():
             self._monitor_task = asyncio.create_task(self._run_monitoring_loop())
 
     async def stop(self) -> None:
-        """Stop the background outcome monitoring loop."""
+        """Stop the background outcome monitoring loop and HIL terminal."""
+        await self.hil_terminal.stop()
         if self._monitor_task and not self._monitor_task.done():
             self._monitor_task.cancel()
             try:
@@ -59,6 +73,9 @@ class Supervisor:
 
     async def process_outcomes(self) -> None:
         """Inspect all registered agents and route any pending outcomes to their active controllers."""
+        if self.state == SupervisorState.SHUTDOWN:
+            return
+
         for agent_id, record in list(self._agents.items()):
             if agent_id in self._routing_agents:
                 continue
@@ -110,6 +127,11 @@ class Supervisor:
                 priority=self._default_controller.priority
             )
         }
+        # Register agent ingress via Gate
+        self.gate.register(agent_id, lambda msg, aid=agent_id: asyncio.create_task(self.send(aid, msg)))
+        
+        # Enforce agent egress via Supervisor -> Gate
+        agent.set_callback(lambda msg: asyncio.create_task(self.route_egress(msg)))
 
     def detach_agent(self, agent_id: str) -> None:
         """Detach an agent from the Supervisor registry."""
@@ -120,6 +142,7 @@ class Supervisor:
             del self._claims[agent_id]
         self._routing_agents.discard(agent_id)
 
+        self.gate.unregister(agent_id)
     def get_agent(self, agent_id: str) -> AbstractURPAgent:
         """Get the active agent instance by its ID."""
         if agent_id not in self._agents:
@@ -170,6 +193,9 @@ class Supervisor:
         
         Returns True if authority was acquired, False otherwise.
         """
+        if self.state in (SupervisorState.MAINTENANCE, SupervisorState.SHUTDOWN):
+            raise ControlClaimError(f"Cannot claim agents while supervisor is in {self.state.name} state.")
+
         if agent_id not in self._agents:
             raise AgentNotFoundError(f"Agent with ID '{agent_id}' not found.")
         if controller_id not in self._controllers:
@@ -264,6 +290,9 @@ class Supervisor:
 
     async def send(self, agent_id: str, message: Any) -> None:
         """Route a message to an agent on behalf of its active controller."""
+        if self.state == SupervisorState.SHUTDOWN:
+            raise ControlClaimError("Cannot send messages while supervisor is in SHUTDOWN state.")
+
         if agent_id not in self._agents:
             raise AgentNotFoundError(f"Agent with ID '{agent_id}' not found.")
         agent = self._agents[agent_id].agent
@@ -271,4 +300,25 @@ class Supervisor:
 
     def get_system_state(self) -> dict:
         """Get the system-wide operational state telemetry."""
-        return {}
+        system_view = {}
+        for agent_id, record in self._agents.items():
+            state = record.agent.state
+            # Expose waiting, processing, error, terminated states dynamically based on underlying agent status
+            status = state.get("status", "UNKNOWN")
+            if hasattr(status, "name"):
+                status = status.name
+            system_view[agent_id] = {
+                "status": status,
+                "active_controller": record.active_controller
+            }
+        return {"agents": system_view, "supervisor_state": self.state.name}
+
+    async def route_egress(self, message: MessageEnvelope) -> None:
+        """Route a message originating from an agent to its destination via Gate."""
+        if self.state == SupervisorState.SHUTDOWN:
+            raise ControlClaimError("Cannot route egress messages while supervisor is in SHUTDOWN state.")
+        await self.gate.send(message)
+
+    def register_hil_handler(self, handler) -> None:
+        """Register the HIL communication handler."""
+        self.gate.register("HIL", handler)

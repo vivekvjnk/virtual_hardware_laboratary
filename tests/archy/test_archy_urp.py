@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from archy.archy_agent.urp_archy import ArchyConfig, ArchyContext, ArchyURPAgent
 from archy.archy_agent.main import prepare_archy_workspace
-from vhl_common.urp.data_types import AgentContext, MessageEnvelope, AgentDescriptor
+from vhl_common.urp.data_types import AgentContext, MessageEnvelope, AgentDescriptor, AgentStatus
 
 from openhands.sdk import (
     LLM,
@@ -66,14 +66,7 @@ async def test_archy_urp_agent(workspace_manager, replay_llm):
     if persistence_dir.exists():
         llm = replay_llm.from_persistence(str(persistence_dir))
     else:
-        # Fallback to real LLM or dummy for structural testing
-        api_key = os.getenv("LLM_API_KEY", "dummy_key")
-        model = os.getenv("LLM_MODEL", "anthropic/claude-sonnet-4-5-20250929")
-        llm = LLM(
-            usage_id="archy-regression-test",
-            model=model,
-            api_key=SecretStr(api_key),
-        )
+        pytest.skip(f"No persistence data found at {persistence_dir}. Skipping real LLM call to prevent unintended API usage and rate limits.")
 
     # 3. Initialize Agent with Event Capturer
     
@@ -94,14 +87,23 @@ async def test_archy_urp_agent(workspace_manager, replay_llm):
     context = {
         "config": ArchyConfig(conversation_persistence=True),
         "workspace": workspace_manager,
-        "module_name": "bms-monitor-module"
+        "module_name": "bms-monitor-module",
+        "sqlite_manager": workspace_manager.db
     }
     
+    from vhl_common.project_state_manager.evaluators.project_creation_evaluator import AGENT_ID, OPERATION_NAME
+    import json
+    workspace_manager.db.conn.execute(
+        "INSERT INTO semantic_operations (artifact_ref_id, op_name, author, status, payload, timestamp) VALUES (?, ?, ?, ?, ?, datetime('now'))",
+        (1, OPERATION_NAME, AGENT_ID, "SUCCESS", json.dumps({}))
+    )
+    workspace_manager.db.commit()
+
     archy.initialize(context=context, emit_callback=emit_callback)
 
     # 4. Start Agent (Enters WAITING state)
     await archy.start()
-    assert archy.state["status"] == "WAITING"
+    assert archy.state["status"] == AgentStatus.WAITING
 
     # 5. Send Message (Mailbox-driven)
     message = MessageEnvelope(
@@ -136,6 +138,6 @@ async def test_archy_urp_agent(workspace_manager, replay_llm):
 
     # 7. Shutdown Agent
     await archy.shutdown()
-    assert archy.state["status"] == "TERMINATED"
+    assert archy.state["status"] == AgentStatus.TERMINATED
     logger.info("Archy URP regression test passed successfully.")
     
