@@ -13,7 +13,7 @@ from vhl_common.supervisor import (
     InvalidSupervisorStateError,
 )
 from vhl_common.supervisor.controllers import AbstractController, DefaultController
-from vhl_common.urp.data_types import AgentDescriptor, ProcessResult
+from vhl_common.urp.data_types import AgentDescriptor, ProcessResult, LastTaskOutcome
 from vhl_common.urp.abstract_urp import AbstractURPAgent
 
 
@@ -71,12 +71,9 @@ async def test_supervisor_skeleton_defaults():
     # Methods that are synchronous stubs or handled gracefully
     assert supervisor.attach_agent(None) is None
     assert supervisor.register_controller(None) is None
-    assert supervisor.get_active_controller("agent-1") == ""
     assert supervisor.get_system_state() == {}
 
     # Methods that are asynchronous stubs
-    assert await supervisor.claim("ctrl-1", "agent-1") is False
-    assert await supervisor.release("ctrl-1", "agent-1") is None
     assert await supervisor.send("agent-1", None) is None
 
 
@@ -146,4 +143,228 @@ def test_supervisor_agent_registry():
 
     with pytest.raises(AgentNotFoundError):
         supervisor.detach_agent("test-agent-123")
+
+
+class MockController(AbstractController):
+    """A mock/test controller for testing arbitration and claims."""
+
+    def __init__(self, controller_id: str, priority: int):
+        self._controller_id = controller_id
+        self._priority = priority
+        self.acquired_calls = []
+        self.released_calls = []
+        self.outcomes_handled = []
+
+    @property
+    def controller_id(self) -> str:
+        return self._controller_id
+
+    @property
+    def priority(self) -> int:
+        return self._priority
+
+    async def on_acquired(self, agent_id: str) -> None:
+        self.acquired_calls.append(agent_id)
+
+    async def on_released(self, agent_id: str) -> None:
+        self.released_calls.append(agent_id)
+
+    async def handle_outcome(self, agent_id: str, outcome: LastTaskOutcome) -> None:
+        self.outcomes_handled.append((agent_id, outcome))
+
+
+@pytest.mark.asyncio
+async def test_supervisor_controller_registration():
+    """Verify that Supervisor registry allows registering, fetching and unregistering unique controllers."""
+    supervisor = Supervisor()
+    ctrl_a = MockController("ctrl-a", 10)
+    ctrl_b = MockController("ctrl-a", 20)
+
+    # Register
+    supervisor.register_controller(ctrl_a)
+    with pytest.raises(ControllerAlreadyExistsError):
+        supervisor.register_controller(ctrl_b)
+
+    # Get
+    assert supervisor.get_controller("ctrl-a") is ctrl_a
+    with pytest.raises(ControllerNotFoundError):
+        supervisor.get_controller("ctrl-b")
+
+    # Unregister error cases
+    with pytest.raises(ControllerNotFoundError):
+        supervisor.unregister_controller("ctrl-b")
+    with pytest.raises(ControlClaimError):
+        supervisor.unregister_controller("default_controller")
+
+    # Attach agent and claim to test unregistration block
+    descriptor = AgentDescriptor(
+        agent_id="test-agent-reg",
+        name="Test Agent",
+        version="1.0",
+        capabilities=["TEST_CAP"],
+        accepted_message_types=["TEST_MSG"]
+    )
+    agent = DummyURPAgent(descriptor=descriptor)
+    supervisor.attach_agent(agent)
+    await supervisor.claim("ctrl-a", "test-agent-reg")
+
+    # Should raise error because ctrl-a is actively governing test-agent-reg
+    with pytest.raises(ControlClaimError):
+        supervisor.unregister_controller("ctrl-a")
+
+    # Release and unregister should succeed
+    await supervisor.release("ctrl-a", "test-agent-reg")
+    supervisor.unregister_controller("ctrl-a")
+    with pytest.raises(ControllerNotFoundError):
+        supervisor.get_controller("ctrl-a")
+
+
+@pytest.mark.asyncio
+async def test_supervisor_default_controller_assigned_on_attach():
+    """Verify that new agents are automatically assigned to default_controller."""
+    supervisor = Supervisor()
+    descriptor = AgentDescriptor(
+        agent_id="test-agent-abc",
+        name="Test Agent",
+        version="1.0",
+        capabilities=["TEST_CAP"],
+        accepted_message_types=["TEST_MSG"]
+    )
+    agent = DummyURPAgent(descriptor=descriptor)
+    supervisor.attach_agent(agent)
+
+    # Default controller should be active governing this agent
+    assert supervisor.get_active_controller("test-agent-abc") == "default_controller"
+
+
+@pytest.mark.asyncio
+async def test_supervisor_claim_arbitration_flow():
+    """Verify claim arbitration rule: Highest Priority Claim Wins with callbacks."""
+    supervisor = Supervisor()
+    descriptor = AgentDescriptor(
+        agent_id="test-agent-abc",
+        name="Test Agent",
+        version="1.0",
+        capabilities=["TEST_CAP"],
+        accepted_message_types=["TEST_MSG"]
+    )
+    agent = DummyURPAgent(descriptor=descriptor)
+    supervisor.attach_agent(agent)
+
+    # Register controllers A and B
+    ctrl_a = MockController("ctrl-a", 10)
+    ctrl_b = MockController("ctrl-b", 5)
+    supervisor.register_controller(ctrl_a)
+    supervisor.register_controller(ctrl_b)
+
+    # 1. Claim unregistered agent
+    with pytest.raises(AgentNotFoundError):
+        await supervisor.claim("ctrl-a", "non-existent")
+
+    # 2. Unregistered controller claiming registered agent
+    with pytest.raises(ControllerNotFoundError):
+        await supervisor.claim("unregistered", "test-agent-abc")
+
+    # 3. Ctrl-b with priority 5 claims the agent (wins over default_controller with priority 0)
+    acquired = await supervisor.claim("ctrl-b", "test-agent-abc")
+    assert acquired is True
+    assert supervisor.get_active_controller("test-agent-abc") == "ctrl-b"
+    assert ctrl_b.acquired_calls == ["test-agent-abc"]
+    assert ctrl_b.released_calls == []
+
+    # 4. Ctrl-a with priority 10 claims the agent (wins over ctrl-b with priority 5)
+    acquired = await supervisor.claim("ctrl-a", "test-agent-abc")
+    assert acquired is True
+    assert supervisor.get_active_controller("test-agent-abc") == "ctrl-a"
+    assert ctrl_a.acquired_calls == ["test-agent-abc"]
+    assert ctrl_b.released_calls == ["test-agent-abc"]
+
+    # 5. Ctrl-b claims again (already has claim but lower priority than ctrl-a)
+    # The active controller should remain ctrl-a, claim returns False because ctrl-b didn't win authority
+    acquired = await supervisor.claim("ctrl-b", "test-agent-abc")
+    assert acquired is False
+    assert supervisor.get_active_controller("test-agent-abc") == "ctrl-a"
+
+
+@pytest.mark.asyncio
+async def test_supervisor_release_flow():
+    """Verify release logic, falling back to next highest claim and handling errors."""
+    supervisor = Supervisor()
+    descriptor = AgentDescriptor(
+        agent_id="test-agent-xyz",
+        name="Test Agent",
+        version="1.0",
+        capabilities=["TEST_CAP"],
+        accepted_message_types=["TEST_MSG"]
+    )
+    agent = DummyURPAgent(descriptor=descriptor)
+    supervisor.attach_agent(agent)
+
+    ctrl_a = MockController("ctrl-a", 10)
+    ctrl_b = MockController("ctrl-b", 5)
+    supervisor.register_controller(ctrl_a)
+    supervisor.register_controller(ctrl_b)
+
+    # Make active claims
+    await supervisor.claim("ctrl-b", "test-agent-xyz")
+    await supervisor.claim("ctrl-a", "test-agent-xyz")
+
+    assert supervisor.get_active_controller("test-agent-xyz") == "ctrl-a"
+
+    # 1. Error cases for release
+    with pytest.raises(AgentNotFoundError):
+        await supervisor.release("ctrl-a", "non-existent")
+
+    with pytest.raises(ControllerNotFoundError):
+        await supervisor.release("unregistered", "test-agent-xyz")
+
+    with pytest.raises(ControlClaimError):
+        # Default controller claim cannot be released
+        await supervisor.release("default_controller", "test-agent-xyz")
+
+    # 2. Release of non-existent claim
+    ctrl_c = MockController("ctrl-c", 1)
+    supervisor.register_controller(ctrl_c)
+    with pytest.raises(ControlClaimError):
+        await supervisor.release("ctrl-c", "test-agent-xyz")
+
+    # 3. Release active controller (ctrl-a) -> falls back to ctrl-b (next highest priority)
+    await supervisor.release("ctrl-a", "test-agent-xyz")
+    assert supervisor.get_active_controller("test-agent-xyz") == "ctrl-b"
+    assert ctrl_a.released_calls == ["test-agent-xyz"]
+    # ctrl-b is re-acquired
+    assert ctrl_b.acquired_calls == ["test-agent-xyz", "test-agent-xyz"]
+
+    # 4. Release ctrl-b -> falls back to default_controller
+    await supervisor.release("ctrl-b", "test-agent-xyz")
+    assert supervisor.get_active_controller("test-agent-xyz") == "default_controller"
+
+
+@pytest.mark.asyncio
+async def test_supervisor_acknowledge_outcome():
+    """Verify that Supervisor can invoke acknowledge_outcome on agents."""
+    supervisor = Supervisor()
+    descriptor = AgentDescriptor(
+        agent_id="test-agent",
+        name="Test Agent",
+        version="1.0",
+        capabilities=["TEST_CAP"],
+        accepted_message_types=["TEST_MSG"]
+    )
+    agent = DummyURPAgent(descriptor=descriptor)
+    supervisor.attach_agent(agent)
+
+    # Initially acknowledged should be True as default on initialization
+    assert agent.state["outcome_acknowledged"] is True
+
+    # Simulate URP Agent completing a task and setting outcome_acknowledged to False
+    agent._state.outcome_acknowledged = False
+    assert agent.state["outcome_acknowledged"] is False
+
+    supervisor.acknowledge_outcome("test-agent")
+    assert agent.state["outcome_acknowledged"] is True
+
+    # Error case
+    with pytest.raises(AgentNotFoundError):
+        supervisor.acknowledge_outcome("non-existent")
 

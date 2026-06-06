@@ -46,49 +46,26 @@ Only introduce abstraction boundaries.
 
 ---
 
-# Phase 2: Agent Instance Registry
+# Phase 2: Agent Instance Registry [COMPLETED]
 
 Move active-agent ownership out of AOSM.
 
-Create:
-
-```python
-@dataclass
-class AgentRecord:
-    agent: AbstractURPAgent
-    descriptor: AgentDescriptor
-    active_controller: str
-    registered_at: datetime
-```
-
-Supervisor maintains:
-
-```python
-self._agents: Dict[str, AgentRecord]
-```
-
-Implement:
-
-```python
-attach_agent()
-detach_agent()
-get_agent()
-get_agent_state()
-```
-
-Migration:
-
-```python
-AOSM._agents
-```
-
-must be removed.
-
-Supervisor becomes the single source of truth.
+**Status**: Fully Implemented.
+* Created the `AgentRecord` data structure in `vhl_common/supervisor/data_types.py`.
+* Added `self._agents` mapping within the `Supervisor` class.
+* Fully implemented registry management methods in `vhl_common/supervisor/supervisor.py`:
+  - `attach_agent(agent)`: Registers active URP agent, raising `AgentAlreadyExistsError` if the ID is already taken.
+  - `detach_agent(agent_id)`: Removes the agent from the registry, raising `AgentNotFoundError` if it doesn't exist.
+  - `get_agent(agent_id)`: Retrieves the active agent by ID, raising `AgentNotFoundError` if it doesn't exist.
+  - `get_agent_state(agent_id)`: Securely retrieves the read-only dictionary of the agent's current state, raising `AgentNotFoundError` if it doesn't exist.
+* Migrated AOSM state machine:
+  - Removed `self._agents = {}` from `AOSM.__init__` and `AOSM.close_project` (replaced with `self.supervisor = Supervisor()`).
+  - Replaced all agent lookup and tracking calls in `AOSM` (`register_agents`, `handle_archy`, `handle_librarian`) with standard calls to `self.supervisor.attach_agent(...)` and `self.supervisor.get_agent(...)`.
+* Added robust unit tests verifying the registry logic, including duplication prevention and error conditions, with 100% test coverage.
 
 ---
 
-# Phase 3: Controller Framework
+# Phase 3: Controller Framework [COMPLETED]
 
 Introduce:
 
@@ -110,13 +87,13 @@ on_acquired()
 on_released()
 ```
 
-No workflow logic yet.
-
-Only interface definition.
+**Status**: Fully Implemented.
+* The `AbstractController` abstract base class was created in `vhl_common/supervisor/controllers/abstract_controller.py` with all required methods and properties.
+* Comprehensive imports and exports are registered.
 
 ---
 
-# Phase 4: Default Controller
+# Phase 4: Default Controller [COMPLETED]
 
 Implement:
 
@@ -138,6 +115,15 @@ Every agent always has an active controller.
 ```
 
 This controller should be automatically attached during Supervisor initialization.
+
+**Status**: Fully Implemented.
+* Created the `DefaultController` class implementing `AbstractController` in `vhl_common/supervisor/controllers/default_controller.py`.
+* Integrated the controller registry & claims system in `Supervisor.__init__` to instantiate and automatically register `DefaultController` with priority `0`.
+* Configured `Supervisor.attach_agent` to default any newly registered agent's `active_controller` to `"default_controller"` and create an initial claim for it.
+* Implemented the claims arbitration model where "Highest Priority Claim Wins" (alphabetical tie-breaker on controller ID).
+* Implemented callback transitions (`on_acquired`, `on_released`) on controllers when authority over an agent changes.
+* Implemented `Supervisor.acknowledge_outcome` to allow safe outcome consumption and acknowledgment.
+* Added comprehensive unit tests in `tests/vhl_common/test_supervisor.py` covering registration, arbitration flow, callback sequences, error scenarios, and outcome acknowledgment. All tests are passing with 100% success.
 
 ---
 
@@ -409,7 +395,7 @@ This removes HIL concerns from workflow controllers.
 
 # Migration Milestones
 
-## Milestone 1
+## Milestone 1 [COMPLETED]
 
 Supervisor exists.
 
@@ -419,7 +405,7 @@ No behavior changes.
 
 ---
 
-## Milestone 2
+## Milestone 2 [COMPLETED]
 
 Supervisor owns agent instances.
 
