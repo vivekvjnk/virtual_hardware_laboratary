@@ -2,6 +2,32 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Callable
 from datetime import datetime, timezone
 import uuid
+from enum import Enum
+
+class AgentStatus(Enum):
+    """Strict state machine enforcement per URP Section 2."""
+    UNINITIALIZED = "UNINITIALIZED"
+    INITIALIZED = "INITIALIZED"
+    WAITING = "WAITING"
+    PROCESSING = "PROCESSING"
+    ERROR = "ERROR"
+    TERMINATED = "TERMINATED"
+
+class LastTaskOutcome(Enum):
+    """"""
+    NONE = "NONE"
+    WAITING_FOR_USER_INPUT = "WAITING_FOR_USER_INPUT"
+    TASK_FAILED = "TASK_FAILED"
+    TASK_COMPLETED = "TASK_COMPLETED"
+
+@dataclass
+class ProcessResultPayload:
+    text: str
+
+@dataclass
+class ProcessResult:
+    outcome: LastTaskOutcome
+    payload: ProcessResultPayload | None = field(default=None)
 
 @dataclass
 class AgentDescriptor:
@@ -28,11 +54,11 @@ class AgentState:
     # URP's tracking of the internal state/session. 
     # For LangGraph, we track the thread_id to maintain conversational state.
     session_id: str
-    status: str = "INITIALIZED"
-    internal_memory: Dict[str, Any] = field(default_factory=dict)
+    status: AgentStatus = AgentStatus.INITIALIZED
     # Execution outcome of last processed message
-    last_task_outcome: Optional[str] = None
+    last_task_outcome: LastTaskOutcome = LastTaskOutcome.NONE
     outcome_acknowledged: bool = True
+    internal_memory: Dict[str, Any] = field(default_factory=dict)
         
 @dataclass
 class AgentContext:

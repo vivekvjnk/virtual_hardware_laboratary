@@ -20,11 +20,16 @@ from openhands.sdk import (
     AgentContext as OpenHandsAgentContext,
     get_logger,
 )
+from openhands.sdk.conversation.state import (
+    ConversationExecutionStatus,
+    ConversationState,
+)
 from openhands.sdk.context import Skill
 from openhands.tools.file_editor import FileEditorTool
 from vhl_common.project_state_manager.evaluators.project_creation_evaluator import AGENT_ID, OPERATION_NAME
 
 from vhl_common.urp.abstract_urp import AbstractURPAgent
+from vhl_common.urp.data_types import ProcessResult, ProcessResultPayload, LastTaskOutcome
 from vhl_common.urp.data_types import AgentDescriptor, MessageEnvelope
 import logging
 from vhl_common.utils import setup_dedicated_logger
@@ -390,7 +395,7 @@ class ArchyURPAgent(AbstractURPAgent):
             logger.error(f"Error checking start preconditions: {e}")
             return False, f"Error checking start preconditions: {e}"
     
-    async def _check_postconditions(self, message: MessageEnvelope, result: Any) -> tuple[bool, str]:
+    async def _check_postconditions(self, message: MessageEnvelope, result: ProcessResult) -> tuple[bool, str]:
         # Check if the module directory contains <module_name>.scud document. If not, return false with missing scud document as response message. If yes move to next step
         #   1. Get the module path from workspace manager
         if not self.workspace_manager or not self.module_name:
@@ -475,7 +480,7 @@ class ArchyURPAgent(AbstractURPAgent):
 
         return True, "SCUD construction complete"
 
-    async def process(self, message: MessageEnvelope) -> Any:
+    async def process(self, message: MessageEnvelope) -> ProcessResult:
         """
         Core execution primitive. Handles BUILD_SCUD messages.
         """
@@ -498,15 +503,28 @@ class ArchyURPAgent(AbstractURPAgent):
 
         # conversation.run() is synchronous and blocks. We offload it to a thread.
         await asyncio.to_thread(self.conversation.run)
-        # get the final response from the conversation history (last assistant message)
-
-        logger.info(f"[ArchyURPAgent:{self.descriptor.agent_id}] Completed SCUD construction for {self.module_name}, Total cost: {self.llm.metrics.accumulated_cost}")
         
-        response = str(self.llm_messages[-1]) if self.llm_messages else "No response generated"
+        # Check the status of the conversation. If conversation is Paused, ProcessResult is WAITING_FOR_USER_INPUT. If conversation is Finished, TASK_COMPLETED
+        # If any error in the process function, ProcessResult is TASK_FAILED
+        # conversation.state.execution_status != ConversationExecutionStatus.FINISHED ConversationExecutionStatus.PAUSED
+        # ConversationExecutionStatus.RUNNING
+        if self.conversation.state.execution_status == ConversationExecutionStatus.PAUSED:
+            last_task_outcome = LastTaskOutcome.WAITING_FOR_USER_INPUT
+        elif self.conversation.state.execution_status == ConversationExecutionStatus.FINISHED: # Conversation has completed current task. last task outcome is success
+            last_task_outcome = LastTaskOutcome.TASK_COMPLETED
+        elif self.conversation.state.execution_status in [ConversationExecutionStatus.STUCK, ConversationExecutionStatus.ERROR]:
+            last_task_outcome = LastTaskOutcome.TASK_FAILED
+        elif self.conversation.state.execution_status == ConversationExecutionStatus.IDLE:
+            logger.warning(f"[ArchyURPAgent:process]Conversation status is ConversationExecutionStatus.IDLE after running the conversation. This should never happen!!!")
+            last_task_outcome = LastTaskOutcome.NONE
+        else:
+            last_task_outcome = LastTaskOutcome.NONE
 
-        return {
-            "response":response,
-            "module_name": self.module_name,
-            "cost": self.llm.metrics.accumulated_cost
-        }
+        # NOTE: FINISHED, ERROR and STUCK are considered as terminal states in agent-sdk. 
+              
+        # get the final response from the conversation history (last assistant message)
+        response = str(self.llm_messages[-1]) if self.llm_messages else "No response generated"
+        payload = ProcessResultPayload(text=response)
+        
+        return ProcessResult(outcome=last_task_outcome, payload=payload)
     

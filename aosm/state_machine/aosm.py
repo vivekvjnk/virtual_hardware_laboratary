@@ -29,6 +29,8 @@ from archy.archy_agent.archy_evaluator import ArchyEvaluator
 from librarian.librarian_agent.librarian_evaluator import LibrarianEvaluator
 from vhl_common.gate import GateRegistry, HILTerminal
 
+from vhl_common.urp.data_types import LastTaskOutcome
+
 logger = logging.getLogger(__name__)
 
 
@@ -790,13 +792,13 @@ class AOSM:
         found_completion = False
 
         while (asyncio.get_event_loop().time() - start_time) < timeout:
-            
+            logger.info(f"[AOSM.handle_archy] Waiting for Archy to complete... Current status: {archy_agent.state['status']}")
             # --- Wait for one task completion ---
             while (asyncio.get_event_loop().time() - start_time) < timeout:
                 state = archy_agent.state
-
+                logger.info(f"[AOSM.handle_archy] Current Archy state: {state}")
                 # Waiting for User input. Simply continue the outer loop
-                if state["status"] == "WAITING" and state["last_task_outcome"] is not None:
+                if state["status"].value == AgentStatus.WAITING.value and state["last_task_outcome"] is not None:
                     break
 
                 await asyncio.sleep(poll_interval)
@@ -810,17 +812,22 @@ class AOSM:
             archy_agent.acknowledge_outcome()
 
             # --- Decision logic ---
-            if outcome == "TASK_COMPLETED":
+            if outcome.value == LastTaskOutcome.TASK_COMPLETED.value:
                 found_completion = True
                 break
 
-            elif outcome in ["TASK_POSTCONDITIONS_VIOLATED", "TASK_FAILED", "TASK_PRECONDITIONS_VIOLATED"]:
+            elif outcome.value in [LastTaskOutcome.TASK_FAILED.value]:
                 logger.warning(
                     f"[AOSM.handle_archy] Archy returned {outcome}. Waiting for HIL resolution..."
                 )
                 # Do NOT break — continue outer loop
                 # Environment/HIL is expected to drive next message into agent
+                # sleep to avoid blocking 
+                await asyncio.sleep(poll_interval)
                 continue
+            
+            await asyncio.sleep(poll_interval)
+
 
         # Final timeout check
         if not found_completion:
@@ -852,19 +859,19 @@ class AOSM:
         
         self.update_agent_status("librarian", librarian_agent.state["status"])
         # Wait until Librarian reaches SUCCESS (may involve multiple attempts / HIL cycles)
-        timeout = 600  # total budget (can be extended if needed)
+        timeout = 900  # total budget (can be extended if needed)
         poll_interval = 1
         start_time = asyncio.get_event_loop().time()
         found_completion = False
 
         while (asyncio.get_event_loop().time() - start_time) < timeout:
-            
+            logger.info(f"[AOSM.handle_librarian] Waiting for Librarian to complete... Current status: {librarian_agent.state['status']}")
             # --- Wait for one task completion ---
             while (asyncio.get_event_loop().time() - start_time) < timeout:
                 state = librarian_agent.state
 
                 # Waiting for User input. Simply continue the outer loop
-                if state["status"] == "WAITING" and state["last_task_outcome"] is not None:
+                if state["status"].value == AgentStatus.WAITING.value and state["last_task_outcome"] is not None:
                     break
 
                 await asyncio.sleep(poll_interval)
@@ -878,17 +885,19 @@ class AOSM:
             librarian_agent.acknowledge_outcome()
 
             # --- Decision logic ---
-            if outcome == "TASK_COMPLETED":
+            if outcome.value == LastTaskOutcome.TASK_COMPLETED.value:
                 found_completion = True
                 break
 
-            elif outcome in ["TASK_POSTCONDITIONS_VIOLATED", "TASK_FAILED", "TASK_PRECONDITIONS_VIOLATED"]:
+            elif outcome.value in [LastTaskOutcome.TASK_FAILED.value]:
                 logger.warning(
                     f"[AOSM.handle_librarian] Librarian returned {outcome}. Waiting for HIL resolution..."
                 )
                 # Do NOT break — continue outer loop
                 # Environment/HIL is expected to drive next message into agent
+                await asyncio.sleep(poll_interval)
                 continue
+            await asyncio.sleep(poll_interval)
 
         # Final timeout check
         if not found_completion:

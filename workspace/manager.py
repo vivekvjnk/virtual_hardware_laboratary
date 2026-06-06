@@ -654,10 +654,12 @@ class WorkspaceManager:
             os.symlink(rel_source, link_path)
             logger.debug(f"[WorkspaceManager._setup_symlinks] Created symlink: {link_path} -> {rel_source}")
 
-    def get_workspace_info(self, module_name) -> Dict[str, Any]:
+    def get_workspace_info(self, module_name=None) -> Dict[str, Any]:
         """Returns information about the current workspace status."""
         is_synthesizable = False
         is_synthesis_completed = False
+        if not module_name:
+            module_name = self.module_names[0] # TODO: Prepare proper worksapce info for all modules
         if self.project_root:
             has_schematic_images = (self.project_root / module_name / "schematic_images").exists() and (self.project_root / module_name / "schematic_images").is_dir()
             has_user_artefacts = (self.project_root / module_name / "resources").exists() and (self.project_root / module_name / "resources").is_dir()
@@ -710,32 +712,41 @@ class WorkspaceManager:
             temp_dir.mkdir(parents=True, exist_ok=True)
             logger.info(f"[WorkspaceManager.resolve_resource_path] No project_id provided. Returning temporary directory for zip extraction: {temp_dir}")
             return temp_dir
-
-        project_root = self.workspace_root / project_id / module_name
-        # Determine circuit name for path resolution
-        res_circuit_name = self.circuit_name[module_name]
-        resolved_path = None
-        if resource_type == "Library":
-            resolved_path= project_root / "lib" / "imports"
-        elif resource_type == "Circuit":
-            if iteration_id:
-                resolved_path = project_root / "Iterations" / iteration_id / f"{res_circuit_name}.tsx"
-            else:
-                resolved_path= project_root / f"{res_circuit_name}.tsx"
-        elif resource_type == "Evaluation":
-            if iteration_id:
-                resolved_path= project_root / "Iterations" / iteration_id / "eval_results"
-            else:
-                resolved_path= project_root / "eval_results"
-        elif resource_type == "StableCircuit":
-            resolved_path= project_root / "Stable" / f"{res_circuit_name}.tsx"
-        elif resource_type == "EvaluationOutput":
-            resolved_path = project_root / "Stable" / "dist"
         
+        resolved_path = None
+        
+        if not module_name:
+            project_root = self.workspace_root / project_id 
+            logger.warning("[WorkspaceManger.resolve_resource_path] module_name is None. Only supported operation is Library resolution")
+            if resource_type == "Library":
+                resolved_path= project_root / "lib" / "imports"
+            else:
+                raise ValueError("[WorkspaceManager.resolve_resource_path] module_name is None. Only Library path resolution is allowed")
+        else:
+            project_root = self.workspace_root / project_id / module_name
+            # Determine circuit name for path resolution
+            res_circuit_name = self.circuit_name[module_name]
+            if resource_type == "Library":
+                resolved_path= project_root / "lib" / "imports"
+            elif resource_type == "Circuit":
+                if iteration_id:
+                    resolved_path = project_root / "Iterations" / iteration_id / f"{res_circuit_name}.tsx"
+                else:
+                    resolved_path= project_root / f"{res_circuit_name}.tsx"
+            elif resource_type == "Evaluation":
+                if iteration_id:
+                    resolved_path= project_root / "Iterations" / iteration_id / "eval_results"
+                else:
+                    resolved_path= project_root / "eval_results"
+            elif resource_type == "StableCircuit":
+                resolved_path= project_root / "Stable" / f"{res_circuit_name}.tsx"
+            elif resource_type == "EvaluationOutput":
+                resolved_path = project_root / "Stable" / "dist"
+            
         if resolved_path:
             logger.info(f"[WorkspaceManager.resolve_resource_path] resolved resource path: {resolved_path}")
             return resolved_path
-        raise ValueError(f"Unknown resource type: {resource_type}")
+        raise ValueError(f"[WorkspaceManager.resolve_resource_path]Unknown resource type: {resource_type}")
 
     # Git Worktree Support
     # ====================

@@ -44,8 +44,8 @@ members = [
 
 [tool.uv.sources]
 litellm = { git = "https://github.com/vivekvjnk/litellm.git", branch = "fix/vertex-gemini-multimodal-drop" }
-openhands-sdk = { git = "https://github.com/vivekvjnk/agent-sdk.git", branch = "main", subdirectory = "openhands-sdk" }
-openhands-tools = { git = "https://github.com/vivekvjnk/agent-sdk.git", branch = "main", subdirectory = "openhands-tools" }
+openhands-sdk = { git = "https://github.com/vivekvjnk/agent-sdk.git", branch = "feat/escalate_tool", subdirectory = "openhands-sdk" }
+openhands-tools = { git = "https://github.com/vivekvjnk/agent-sdk.git", branch = "feat/escalate_tool", subdirectory = "openhands-tools" }
 
 ana = { workspace = true }
 vhl-protocol = { workspace = true }

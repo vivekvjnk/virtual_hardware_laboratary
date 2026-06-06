@@ -17,6 +17,10 @@ from openhands.sdk import (
     TextContent,
     Tool,
 )
+from openhands.sdk.conversation.state import (
+    ConversationExecutionStatus,
+    ConversationState,
+)
 from openhands.tools.file_editor import FileEditorTool
 from openhands.tools.terminal import TerminalTool
 
@@ -29,7 +33,7 @@ from vhl_common.utils import setup_dedicated_logger
 from workspace.manager import WorkspaceManager
 from vhl_common.project_state_manager import SQLiteManager
 from vhl_protocol.sync.client import SyncClient
-
+from vhl_common.urp.data_types import ProcessResult, ProcessResultPayload, LastTaskOutcome
 # Setup dedicated logger for librarian
 logger = setup_dedicated_logger("librarian_agent", "librarian_agent.log")
 
@@ -215,16 +219,28 @@ class LibrarianURPAgent(AbstractURPAgent):
 
         # Run conversation in thread as it is synchronous
         await asyncio.to_thread(self.conversation.run)
-        
+    
+        # Check the status of the conversation. If conversation is Paused, ProcessResult is WAITING_FOR_USER_INPUT. If conversation is Finished, TASK_COMPLETED
+        # If any error in the process function, ProcessResult is TASK_FAILED
+
+        if self.conversation.state.execution_status == ConversationExecutionStatus.PAUSED:
+            last_task_outcome = LastTaskOutcome.WAITING_FOR_USER_INPUT
+        elif self.conversation.state.execution_status == ConversationExecutionStatus.FINISHED: # Conversation has completed current task. last task outcome is success
+            last_task_outcome = LastTaskOutcome.TASK_COMPLETED
+        elif self.conversation.state.execution_status in [ConversationExecutionStatus.STUCK, ConversationExecutionStatus.ERROR]:
+            last_task_outcome = LastTaskOutcome.TASK_FAILED
+        elif self.conversation.state.execution_status == ConversationExecutionStatus.IDLE:
+            logger.warning(f"[ArchyURPAgent:process]Conversation status is ConversationExecutionStatus.IDLE after running the conversation. This should never happen!!!")
+            last_task_outcome = LastTaskOutcome.NONE
+        else:
+            last_task_outcome = LastTaskOutcome.NONE
+
+
         logger.info(f"[LibrarianURPAgent:{self.descriptor.agent_id}] Finished processing.")
 
         response = str(self.llm_messages[-1]) if self.llm_messages else "No response generated"
-
-        return {
-            "response": response,
-            "status": "success",
-            "cost": self.llm.metrics.accumulated_cost
-        }
+        payload = ProcessResultPayload(text=response)
+        return ProcessResult(outcome=last_task_outcome, payload=payload)
 
     async def _check_start_preconditions(self) -> tuple[bool,str]:
         # Check if the last project creation evaluation passed successfully. This ensures that the project is in a good state before Archy starts processing messages. 
@@ -267,7 +283,7 @@ class LibrarianURPAgent(AbstractURPAgent):
             logger.error(f"Error checking start preconditions: {e}")
             return False, f"Error checking start preconditions: {e}"
     
-    async def _check_postconditions(self, message: MessageEnvelope, result: Any) -> tuple[bool,str]:
+    async def _check_postconditions(self, message: MessageEnvelope, result: ProcessResult) -> tuple[bool,str]:
         """
         1. Synchronize library after successful execution of Librarian agent.
         2. Validate if <project_root>/lib directory has been updated. No strict validation, simply check if there are any files created 

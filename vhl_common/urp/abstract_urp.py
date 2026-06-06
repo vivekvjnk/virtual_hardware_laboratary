@@ -1,21 +1,13 @@
 import asyncio
+from asyncio.log import logger
 import uuid
 from abc import ABC, abstractmethod
-from enum import Enum
 from typing import Any, Callable, Dict, Optional
-
-from .data_types import AgentDescriptor, AgentContext, AgentState, MessageEnvelope
+from vhl_common.utils import setup_dedicated_logger
+from .data_types import AgentDescriptor, AgentContext, AgentState, MessageEnvelope, LastTaskOutcome, AgentStatus, ProcessResult
 MAILBOX_POLL_INTERVAL = 0.5  # seconds
 
-class AgentStatus(Enum):
-    """Strict state machine enforcement per URP Section 2."""
-    UNINITIALIZED = "UNINITIALIZED"
-    INITIALIZED = "INITIALIZED"
-    WAITING = "WAITING"
-    PROCESSING = "PROCESSING"
-    ERROR = "ERROR"
-    TERMINATING = "TERMINATING"
-    TERMINATED = "TERMINATED"
+logger = setup_dedicated_logger("abstract_urp", "abstract_urp.log")
 
 class PostconditionsViolatedError(Exception):
     """Raised when post-condition verification fails."""
@@ -48,7 +40,7 @@ class AbstractURPAgent(ABC):
         # 3. Persistent State (initialized to baseline)
         self._state = AgentState(
             session_id=str(uuid.uuid4()), 
-            status=AgentStatus.UNINITIALIZED.value
+            status=AgentStatus.UNINITIALIZED
         )
         
         # 4. Mailbox
@@ -59,6 +51,8 @@ class AbstractURPAgent(ABC):
         self._emit_callback: Optional[Callable[['MessageEnvelope'], None]] = None
         self._shutdown_event = asyncio.Event()
         self._task: Optional[asyncio.Task] = None
+        
+        logger.info(f"[{self.descriptor.agent_id}] AbstractURPAgent instantiated. Session ID: {self._state.session_id}")
 
     # ---------------------------------------------------------
     # LIFECYCLE CONTRACT (URP Section 4)
@@ -67,35 +61,37 @@ class AbstractURPAgent(ABC):
     def initialize(self, context, emit_callback: Callable[['MessageEnvelope'], None]) -> None:
         """Runs exactly once. Binds dependencies and event bus."""
         # Invariant 1: Initialize exactly once
-        if self._state.status != AgentStatus.UNINITIALIZED.value:
+        if self._state.status != AgentStatus.UNINITIALIZED:
+            logger.error(f"[{self.descriptor.agent_id}] Initialization failed: Agent is already in state {self._state.status}")
             raise RuntimeError(f"Cannot initialize agent in state: {self._state.status}")
         
+        logger.info(f"[{self.descriptor.agent_id}] Initializing agent...")
         self.context = context
         self.set_callback(emit_callback)
         
         # Allow child classes to perform specific initialization (e.g., loading prompts)
         self._on_initialize(context)
         
-        self._state.status = AgentStatus.INITIALIZED.value
+        self._state.status = AgentStatus.INITIALIZED
+        logger.info(f"[{self.descriptor.agent_id}] Agent successfully transitioned to state: {self._state.status}")
     
     def set_callback(self,emit_callback: Callable[['MessageEnvelope'], None]) -> None:
         """Allows resetting the emit callback, useful for testing or dynamic rebinding."""
+        logger.debug(f"[{self.descriptor.agent_id}] Setting new emit callback.")
         self._emit_callback = emit_callback
 
     async def start(self) -> None:
         """Makes agent runnable. Enters WAITING state."""
-        if self._state.status != AgentStatus.INITIALIZED.value:
+        if self._state.status != AgentStatus.INITIALIZED:
+            logger.error(f"[{self.descriptor.agent_id}] Start failed: Agent must be INITIALIZED. Current: {self._state.status}")
             raise RuntimeError(f"Agent must be INITIALIZED to start. Current: {self._state.status}")
         
+        logger.info(f"[{self.descriptor.agent_id}] Verifying start preconditions...")
         # Check start preconditions
-        precond_res = await self._check_start_preconditions()
-        if isinstance(precond_res, tuple):
-            start_ok, result = precond_res
-        else:
-            start_ok = precond_res
-            result = "Start preconditions check failed" if not start_ok else "Start precondition check successful"
+        start_ok, result = await self._check_start_preconditions()
             
         if not start_ok:
+            logger.warning(f"[{self.descriptor.agent_id}] Start preconditions violated: {result}")
             await self.emit(MessageEnvelope(
                 type="AGENT_START_PRECONDITIONS_VIOLATED",
                 payload={"reason": result,"text": result},
@@ -103,9 +99,11 @@ class AbstractURPAgent(ABC):
             ))
             raise StartPreconditionsViolatedError(f"Start preconditions check failed: {result}")
             
-        self._state.status = AgentStatus.WAITING.value
+        self._state.status = AgentStatus.WAITING
+        self._state.last_task_outcome = LastTaskOutcome.NONE
         self._task = asyncio.create_task(self._lifecycle_loop())
         
+        logger.info(f"[{self.descriptor.agent_id}] Lifecycle loop spawned successfully. Status: {self._state.status}")
         await self.emit(MessageEnvelope(
             type="AGENT_STARTED",
             payload={"session_id": self._state.session_id, "text": "Agent has started successfully."},
@@ -114,30 +112,38 @@ class AbstractURPAgent(ABC):
 
     async def send(self, message: 'MessageEnvelope') -> None:
         """Asynchronous mailbox delivery. Invariant 3: Messages enter only through mailbox."""
-        if self._state.status in (AgentStatus.TERMINATING.value, AgentStatus.TERMINATED.value):
+        if self._state.status == AgentStatus.TERMINATED:
+            logger.error(f"[{self.descriptor.agent_id}] Drop Message Alert: Cannot send message to a terminating/terminated agent. Msg ID: {message.message_id}")
             raise RuntimeError("Cannot send message to a terminating/terminated agent.")
             
+        logger.debug(f"[{self.descriptor.agent_id}] Enqueueing message into mailbox. Msg ID: {message.message_id}. Type: {message.type}")
         await self.mailbox.put(message)
 
     async def emit(self, event: 'MessageEnvelope') -> None:
         """Pushes output to runtime bus. Invariant 4: Outputs leave only through emit."""
         if self._emit_callback:
+            logger.debug(f"[{self.descriptor.agent_id}] Emitting event of type '{event.type}' to runtime bus.")
             res = self._emit_callback(event)
             if res is not None and asyncio.iscoroutine(res):
                 await res
+        else:
+            logger.warning(f"[{self.descriptor.agent_id}] Event emitted but no callback is bound. Event Type: {event.type}")
 
     async def shutdown(self) -> None:
         """Graceful termination."""
-        self._state.status = AgentStatus.TERMINATING.value
+        logger.info(f"[{self.descriptor.agent_id}] Triggering graceful shutdown...")
         self._shutdown_event.set()
         
         # Allow child classes to clean up resources
         await self._on_shutdown()
         
         if self._task:
+            logger.debug(f"[{self.descriptor.agent_id}] Awaiting lifecycle loop task completion.")
             await self._task
             
-        self._state.status = AgentStatus.TERMINATED.value
+        self._state.status = AgentStatus.TERMINATED
+        logger.info(f"[{self.descriptor.agent_id}] Agent has safely terminated. Final status: {self._state.status}")
+        
         await self.emit(MessageEnvelope(
             type="AGENT_TERMINATED",
             payload={   "text": "Agent has terminated successfully."},
@@ -153,23 +159,25 @@ class AbstractURPAgent(ABC):
         The mandated single invariant loop:
         WAITING -> receive message -> PROCESSING -> emit events -> WAITING
         """
+        logger.info(f"[{self.descriptor.agent_id}] Entering core lifecycle execution loop.")
         while not self._shutdown_event.is_set():
             try:
                 # 1. WAITING
-                self._state.status = AgentStatus.WAITING.value
+                self._state.status = AgentStatus.WAITING
 
                 # set last_task_outcome to None before getting a new message. 
                 while not self._state.outcome_acknowledged:
+                    logger.warning(f"[{self.descriptor.agent_id}] Last task outcome {self._state.last_task_outcome} has not been acknowledged yet. Agent state: {self._state.status}. Waiting for acknowledgment before processing new messages.")
                     await asyncio.sleep(0.3)  # Wait for acknowledgment before processing next message
 
                 # 0.5s timeout to check mailbox periodically. If no messages, loop continues.
                 message = await asyncio.wait_for(self.mailbox.get(), timeout=MAILBOX_POLL_INTERVAL)
                 
-
-                self._state.last_task_outcome = None  # Reset last task outcome at the start of each loop iteration
+                logger.info(f"[{self.descriptor.agent_id}] Message popped from mailbox. Processing Msg ID: {message.message_id}, Type: {message.type}, Correlation ID: {message.correlation_id}")
 
                 try:
                     # Pre-condition Check: After a message is popped from the mailbox, call _check_preconditions.
+                    logger.debug(f"[{self.descriptor.agent_id}] Evaluating task preconditions for Msg ID: {message.message_id}")
                     precond_res = await self._check_preconditions(message)
                     if isinstance(precond_res, tuple):
                         pre_ok, pre_response = precond_res
@@ -183,12 +191,14 @@ class AbstractURPAgent(ABC):
                         raise PreconditionsViolatedError(pre_response)
                     
                     # 2. PROCESSING
-                    self._state.status = AgentStatus.PROCESSING.value
+                    self._state.status = AgentStatus.PROCESSING
+                    logger.info(f"[{self.descriptor.agent_id}] Preconditions passed. Status changed to: {self._state.status}")
                     
                     # Capture the return value from the implementation
-                    result = await self.process(message)
+                    result: ProcessResult = await self.process(message)
                     
                     # Post-condition Check: Inside the successful block of process(), right before emitting TASK_COMPLETED, invoke _check_postconditions.
+                    logger.debug(f"[{self.descriptor.agent_id}] Evaluating task postconditions for Msg ID: {message.message_id}")
                     postcond_res = await self._check_postconditions(message, result)
                     if isinstance(postcond_res, tuple):
                         post_ok, post_response = postcond_res
@@ -199,33 +209,21 @@ class AbstractURPAgent(ABC):
                         raise PostconditionsViolatedError(result=result,message=f"Postconditions check failed: {post_response}")
                     
                     # 3. AUTO-EMIT FINAL RESULT
-                    # If process() returns data, we treat it as a successful task completion.
-                    if result is not None:
-                        self._state.last_task_outcome = "TASK_COMPLETED"
-                        self._state.outcome_acknowledged = False
-                        
-                        if (isinstance(result, dict) and 
-                            "content" in result and 
-                            isinstance(result["content"], list) and 
-                            len(result["content"]) > 0 and 
-                            hasattr(result["content"][0], "text")):
-                            text_output = result["content"][0].text
-                        else:
-                            text_output = "Task completed successfully."
-
-                        await self.emit(MessageEnvelope(
-                            type="TASK_COMPLETED",
-                            payload={
-                                "result": result,
-                                "text": text_output
-                            },
-                            sender=self.descriptor.agent_id,
-                            correlation_id=message.correlation_id,
-                            message_id=message.message_id
-                        ))
+                    self._state.last_task_outcome = result.outcome
+                    self._state.outcome_acknowledged = False
+                    
+                    logger.info(f"[{self.descriptor.agent_id}] Task processing successful. Outcome: {result.outcome}. Dispatching response.")
+                    await self.emit(MessageEnvelope(
+                        type=self._state.last_task_outcome,
+                        payload=result.payload,
+                        sender=self.descriptor.agent_id,
+                        correlation_id=message.correlation_id,
+                        message_id=message.message_id
+                    ))
                         
                 except PostconditionsViolatedError as e:
-                    self._state.last_task_outcome = "TASK_POSTCONDITIONS_VIOLATED"
+                    logger.warning(f"[{self.descriptor.agent_id}] Postconditions violated for Msg ID {message.message_id}: {str(e)}")
+                    self._state.last_task_outcome = LastTaskOutcome.TASK_FAILED
                     self._state.outcome_acknowledged = False
                     await self.emit(MessageEnvelope(
                         type="TASK_POSTCONDITIONS_VIOLATED",
@@ -239,7 +237,8 @@ class AbstractURPAgent(ABC):
                         correlation_id= message.correlation_id
                     ))
                 except PreconditionsViolatedError as e:
-                    self._state.last_task_outcome = "TASK_PRECONDITIONS_VIOLATED"
+                    logger.warning(f"[{self.descriptor.agent_id}] Preconditions violated for Msg ID {message.message_id}: {str(e)}")
+                    self._state.last_task_outcome = LastTaskOutcome.TASK_FAILED
                     self._state.outcome_acknowledged = False
                     await self.emit(MessageEnvelope(
                         type="TASK_PRECONDITIONS_VIOLATED",
@@ -254,7 +253,8 @@ class AbstractURPAgent(ABC):
                     ))
 
                 except Exception as e:
-                    self._state.last_task_outcome = "TASK_FAILED"
+                    logger.error(f"[{self.descriptor.agent_id}] Unhandled exception during processing of Msg ID {message.message_id}", exc_info=True)
+                    self._state.last_task_outcome = LastTaskOutcome.TASK_FAILED
                     self._state.outcome_acknowledged = False
                     await self.emit(MessageEnvelope(
                         type="TASK_FAILED",
@@ -267,12 +267,17 @@ class AbstractURPAgent(ABC):
                         correlation_id= message.correlation_id
                     ))
                 finally:
+                    logger.debug(f"[{self.descriptor.agent_id}] Marking mailbox task done for Msg ID: {message.message_id}")
                     self.mailbox.task_done()
                     
             except asyncio.TimeoutError:
+                # Normal behavior when mailbox is empty during the poll interval
                 continue
             except asyncio.CancelledError:
+                logger.info(f"[{self.descriptor.agent_id}] Lifecycle loop received Cancellation request. Exiting loop.")
                 break
+            except Exception as e:
+                logger.critical(f"[{self.descriptor.agent_id}] Panic: Critical failure in outer scheduler runtime loop: {str(e)}", exc_info=True)
 
 
     # ---------------------------------------------------------
@@ -280,7 +285,7 @@ class AbstractURPAgent(ABC):
     # ---------------------------------------------------------
 
     @abstractmethod
-    async def process(self, message: 'MessageEnvelope') -> Any:
+    async def process(self, message: 'MessageEnvelope') -> ProcessResult:
         """
         Core execution primitive.
         Must invoke LLM, tools, mutate state, and emit events without violating invariants.
@@ -312,7 +317,7 @@ class AbstractURPAgent(ABC):
         """
         return True, "Precondition check successful"
 
-    async def _check_postconditions(self, message: 'MessageEnvelope', result: Any) -> tuple[bool,str]:
+    async def _check_postconditions(self, message: 'MessageEnvelope', result: ProcessResult) -> tuple[bool,str]:
         """
         Asynchronous verification hook executed after process() completes successfully
         but before the final output state is committed or emitted.
@@ -338,6 +343,8 @@ class AbstractURPAgent(ABC):
             "last_task_outcome": self._state.last_task_outcome,
             "outcome_acknowledged": self._state.outcome_acknowledged
         }
+        
     def acknowledge_outcome(self) -> None:
         """Allows external systems (e.g., AOSM) to acknowledge that they've processed the last task outcome."""
+        logger.info(f"[{self.descriptor.agent_id}] Outcome {self._state.last_task_outcome} has been externally acknowledged.")
         self._state.outcome_acknowledged = True
