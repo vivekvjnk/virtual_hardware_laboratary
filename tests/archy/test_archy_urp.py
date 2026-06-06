@@ -66,8 +66,15 @@ async def test_archy_urp_agent(workspace_manager, replay_llm):
     if persistence_dir.exists():
         llm = replay_llm.from_persistence(str(persistence_dir))
     else:
-        pytest.skip(f"No persistence data found at {persistence_dir}. Skipping real LLM call to prevent unintended API usage and rate limits.")
-
+        # Fallback to real LLM or dummy for structural testing
+        api_key = os.getenv("LLM_API_KEY", "dummy_key")
+        model = os.getenv("LLM_MODEL", "anthropic/claude-sonnet-4-5-20250929")
+        llm = LLM(
+            usage_id="archy-regression-test",
+            model=model,
+            api_key=SecretStr(api_key),
+        )
+        
     # 3. Initialize Agent with Event Capturer
     
     descriptor = AgentDescriptor(

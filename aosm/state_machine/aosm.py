@@ -97,11 +97,6 @@ class AOSM:
             await asyncio.to_thread(self.mcp_manager.ensure_server_running)
         self._main_loop_task = asyncio.create_task(self._main_loop())
         asyncio.create_task(self._heartbeat_loop())
-        
-        # Start HIL Terminal TCP server by default unless explicitly disabled
-        if os.environ.get("VHL_DISABLE_HIL_TERMINAL") != "true":
-            # HIL is started by Supervisor
-            
         await self.broadcast_agent_state()
 
     async def broadcast_agent_state(self):
@@ -435,6 +430,7 @@ class AOSM:
             
             # Step 2: Get archy agent from factory                                                                      
             factory = get_agent_factory(name=archy_agent_id)
+            archy_agent = factory.factory_func(descriptor=factory.descriptor) 
             # Step 3: Prepare context and initialize Archy agent
             context = {
                 "config": ArchyConfig(conversation_persistence=True),
@@ -444,9 +440,6 @@ class AOSM:
             }
             # Initial callback is a no-op; Supervisor will enforce egress routing
             archy_agent.initialize(context=context, emit_callback=lambda msg: None)
-
-            # Store the instantiated agent (This enforces egress via Supervisor -> Gate)
-            self.supervisor.attach_agent(archy_agent)
 
             logger.info("Starting Archy agent")
             # Step 4: Start Archy agent (enters WAITING state)
@@ -477,10 +470,8 @@ class AOSM:
                 "module_name": module_name,
                 "sync_manager": self.sync_client
             }
+            librarian = factory.factory_func(descriptor=factory.descriptor)             
             librarian.initialize(context=context, emit_callback=lambda msg: None)
-
-            # # Step 5: Register Gate with Supervisor wrapper for message routing
-            self.supervisor.attach_agent(librarian)
 
             logger.info("Starting librarian agent")
             # Step 4: Start librarian agent (enters WAITING state)

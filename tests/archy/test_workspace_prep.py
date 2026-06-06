@@ -29,7 +29,7 @@ except ImportError:
 @pytest.fixture
 def temp_workspace(tmp_path):
     """Fixture to create a temporary copy of the test workspace."""
-    src = Path(f"{project_root}/tests/archy/agent_workspace/{PROJECT_NAME}")
+    src = Path(f"{project_root}/tests/archy/resources/{PROJECT_NAME}")
     dst = tmp_path / PROJECT_NAME
 
     # We use copytree to duplicate the entire test project
