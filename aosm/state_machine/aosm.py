@@ -31,6 +31,7 @@ from vhl_common.gate import GateRegistry, HILTerminal
 
 from vhl_common.urp.data_types import LastTaskOutcome
 from vhl_common.supervisor import Supervisor, AgentNotFoundError
+from vhl_common.supervisor.controllers import Workflow1Controller
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +59,7 @@ class AOSM:
         self.ana_inbox: Optional[asyncio.Queue] = None
         self._main_loop_task: Optional[asyncio.Task] = None
         self.project_id = None
-        self.supervisor = Supervisor()
+        self._init_supervisor()
         lib_default = "http://localhost:8082/sse"
         self.librarian_mcp_url = os.getenv("LIBRARIAN_MCP_URL", lib_default)
         self.mcp_manager = None
@@ -77,9 +78,19 @@ class AOSM:
         self.gate = GateRegistry.get("aosm_gate")
         self.hil_terminal = HILTerminal(self.gate)
         
+    def _init_supervisor(self):
+        self.supervisor = Supervisor()
+        self.workflow_controller = Workflow1Controller(
+            supervisor=self.supervisor,
+            workspace_manager=self.workspace_manager,
+            on_status_update=self.update_agent_status
+        )
+        self.supervisor.register_controller(self.workflow_controller)
+        
     async def start(self):
         """Starts AOSM and the WebSocket client."""
         logger.info("[AOSM.start] Starting AOSM...")
+        self.supervisor.start()
         self.web_socket_client.add_subscriber(self._handle_ws_event)
         await self.web_socket_client.start()
         # Verify MCP server is running (it's managed by VHL Runtime)
@@ -112,6 +123,7 @@ class AOSM:
     async def stop(self):
         """Stops AOSM and the WebSocket client."""
         logger.info("[AOSM.stop] Stopping AOSM...")
+        await self.supervisor.stop()
         self.web_socket_client.remove_subscriber(self._handle_ws_event)
         if self._main_loop_task:
             self._main_loop_task.cancel()
@@ -424,13 +436,14 @@ class AOSM:
             # Step 4: Start Archy agent (enters WAITING state)
             await archy_agent.start()
             
-            # Step 5: Register Archy's send function to GATE for message routing
-            self.gate.register(archy_agent_id, archy_agent.send)
+            # Step 5: Register Gate with Supervisor wrapper for message routing
+            self.gate.register(archy_agent_id, lambda msg, aid=archy_agent_id: self.supervisor.send(aid, msg))
 
             # Store the instantiated agent for subsequent state retrieval
             self.supervisor.attach_agent(archy_agent)
 
-            self.update_agent_status("archy", archy_agent.state["status"])
+            archy_state = self.supervisor.get_agent_state(archy_agent_id)
+            self.update_agent_status("archy", archy_state["status"])
 
             # ----Librarian setup----
             librarian_descriptor = AgentDescriptor(
@@ -461,10 +474,11 @@ class AOSM:
             # Step 4: Start Archy agent (enters WAITING state)
             await librarian.start()
             
-            # # Step 5: Register Archy's send function to GATE for message routing
-            self.gate.register(librarian_agent_id, librarian.send)
+            # # Step 5: Register Gate with Supervisor wrapper for message routing
+            self.gate.register(librarian_agent_id, lambda msg, lid=librarian_agent_id: self.supervisor.send(lid, msg))
             self.supervisor.attach_agent(librarian)
-            self.update_agent_status("librarian", librarian.state["status"])
+            librarian_state = self.supervisor.get_agent_state(librarian_agent_id)
+            self.update_agent_status("librarian", librarian_state["status"])
 
     
     async def _handle_idle(self, event: BaseEvent):
@@ -710,7 +724,9 @@ class AOSM:
         
         # 3. Reset AOSM internal state
         self.project_id = None
-        self.supervisor = Supervisor()
+        await self.supervisor.stop()
+        self._init_supervisor()
+        self.supervisor.start()
         self.project_root_info = None
         self.current_message = {
             "state_id": AOSMState.STARTUP,
@@ -735,12 +751,12 @@ class AOSM:
         logger.info(f"[AOSM.run_workflow_1] Starting sequential Workflow 1 for module: {module_name}")
         try:
             # 1. Step 1: Archy
-            await self.handle_archy(module_name=module_name)
+            await self.workflow_controller.handle_archy(module_name=module_name)
             archy_evaluator = ArchyEvaluator(self.project_semantic_db, module_name=module_name)
             archy_evaluator.evaluate() # This will commit an operation to the semantic db which can            
             
             # 2. Step 2: Librarian
-            await self.handle_librarian(module_name=module_name)
+            await self.workflow_controller.handle_librarian(module_name=module_name)
             librarian_evaluator = LibrarianEvaluator(self.project_semantic_db, module_name=module_name)
             librarian_evaluator.evaluate()
             # 3. Step 3: ANA-D
@@ -754,163 +770,6 @@ class AOSM:
             logger.info(f"[AOSM.run_workflow_1] Sequential Workflow 1 completed successfully for module: {module_name}")
         except Exception as e:
             logger.error(f"[AOSM.run_workflow_1] Sequential Workflow 1 failed: {e}", exc_info=True)
-
-    async def handle_archy(self, module_name: str) -> Path:
-        """
-        Sequential member of Workflow 1: Archy.
-        1. Prepares the workspace.
-        2. Resolves paths and triggers the Archy agent logic.
-        3. Simple placeholder for HIL review.
-        """
-        logger.info(f"[AOSM.handle_archy] Starting Archy processing for module: {module_name}")
-        
-        # Prepare workspace and assets for Archy
-        success = await asyncio.to_thread(
-            prepare_archy_workspace,
-            workspace_manager=self.workspace_manager,
-        )
-        if not success:
-            raise RuntimeError("Failed to prepare workspace for Archy. Check logs for details.")
-        
-        # Step 2: Get active archy agent instance from local cache
-        try:
-            archy_agent: ArchyURPAgent = self.supervisor.get_agent(f"{module_name}.archy")
-        except AgentNotFoundError:
-            archy_agent = None
-            raise RuntimeError(f"Archy agent for module '{module_name}' was not initialized at startup.")
-        
-        # Send Message (Mailbox-driven)
-        message = MessageEnvelope(
-            type="BUILD_SCUD",
-            payload={"text": "Please prepare the scud document."},
-            sender="orchestrator",
-            receiver=archy_agent.descriptor.agent_id
-        )
-        await archy_agent.send(message)
-
-        # Wait until Archy reaches SUCCESS (may involve multiple attempts / HIL cycles)
-        timeout = 600  # total budget (can be extended if needed)
-        poll_interval = 1
-        start_time = asyncio.get_event_loop().time()
-        found_completion = False
-
-        while (asyncio.get_event_loop().time() - start_time) < timeout:
-            logger.info(f"[AOSM.handle_archy] Waiting for Archy to complete... Current status: {archy_agent.state['status']}")
-            # --- Wait for one task completion ---
-            while (asyncio.get_event_loop().time() - start_time) < timeout:
-                state = archy_agent.state
-                logger.info(f"[AOSM.handle_archy] Current Archy state: {state}")
-                # Waiting for User input. Simply continue the outer loop
-                if state["status"].value == AgentStatus.WAITING.value and state["last_task_outcome"] is not None:
-                    break
-
-                await asyncio.sleep(poll_interval)
-
-            # Timeout check for inner wait
-            if archy_agent.state["last_task_outcome"] is None:
-                raise TimeoutError("Archy agent did not complete within timeout")
-
-            # --- Consume outcome ---
-            outcome = archy_agent.state["last_task_outcome"]
-            archy_agent.acknowledge_outcome()
-
-            # --- Decision logic ---
-            if outcome.value == LastTaskOutcome.TASK_COMPLETED.value:
-                found_completion = True
-                break
-
-            elif outcome.value in [LastTaskOutcome.TASK_FAILED.value]:
-                logger.warning(
-                    f"[AOSM.handle_archy] Archy returned {outcome}. Waiting for HIL resolution..."
-                )
-                # Do NOT break — continue outer loop
-                # Environment/HIL is expected to drive next message into agent
-                # sleep to avoid blocking 
-                await asyncio.sleep(poll_interval)
-                continue
-            
-            await asyncio.sleep(poll_interval)
-
-
-        # Final timeout check
-        if not found_completion:
-            raise TimeoutError("Archy did not reach SUCCESS within timeout")
-                
-        self.update_agent_status("archy", archy_agent.state["status"])
-
-    async def handle_librarian(self, module_name: str) -> Path:
-        """
-        Sequential member of Workflow 1: Librarian.
-        1. Runs the Librarian agent component resolution.
-        2. Centralized client sync of resolved libraries.
-        3. Simple placeholder for HIL review.
-        """
-        logger.info(f"[AOSM.handle_librarian] Starting Librarian processing for module: {module_name}")
-            # Step 2: Get active librarian agent instance from local cache
-        try:
-            librarian_agent: LibrarianURPAgent = self.supervisor.get_agent(f"{module_name}.librarian")
-        except AgentNotFoundError:
-            librarian_agent = None
-            raise RuntimeError(f"Librarian agent for module '{module_name}' was not initialized at startup.")
-        
-        # Send Message (Mailbox-driven)
-        message = MessageEnvelope(
-            type="RESOLVE_COMPONENTS",
-            payload={"text": "Hello Librarian, project is set up! Please read the .scud document and import non trivial components."},
-            sender="orchestrator",
-            receiver=librarian_agent.descriptor.agent_id
-        )
-        await self.gate.send(message=message)
-        
-        self.update_agent_status("librarian", librarian_agent.state["status"])
-        # Wait until Librarian reaches SUCCESS (may involve multiple attempts / HIL cycles)
-        timeout = 900  # total budget (can be extended if needed)
-        poll_interval = 1
-        start_time = asyncio.get_event_loop().time()
-        found_completion = False
-
-        while (asyncio.get_event_loop().time() - start_time) < timeout:
-            logger.info(f"[AOSM.handle_librarian] Waiting for Librarian to complete... Current status: {librarian_agent.state['status']}")
-            # --- Wait for one task completion ---
-            while (asyncio.get_event_loop().time() - start_time) < timeout:
-                state = librarian_agent.state
-
-                # Waiting for User input. Simply continue the outer loop
-                if state["status"].value == AgentStatus.WAITING.value and state["last_task_outcome"] is not None:
-                    break
-
-                await asyncio.sleep(poll_interval)
-
-            # Timeout check for inner wait
-            if librarian_agent.state["last_task_outcome"] is None:
-                raise TimeoutError("Librarian agent did not complete within timeout")
-
-            # --- Consume outcome ---
-            outcome = librarian_agent.state["last_task_outcome"]
-            librarian_agent.acknowledge_outcome()
-
-            # --- Decision logic ---
-            if outcome.value == LastTaskOutcome.TASK_COMPLETED.value:
-                found_completion = True
-                break
-
-            elif outcome.value in [LastTaskOutcome.TASK_FAILED.value]:
-                logger.warning(
-                    f"[AOSM.handle_librarian] Librarian returned {outcome}. Waiting for HIL resolution..."
-                )
-                # Do NOT break — continue outer loop
-                # Environment/HIL is expected to drive next message into agent
-                await asyncio.sleep(poll_interval)
-                continue
-            await asyncio.sleep(poll_interval)
-
-        # Final timeout check
-        if not found_completion:
-            raise TimeoutError("Librarian did not reach SUCCESS within timeout")
-                
-        self.update_agent_status("librarian", librarian_agent.state["status"])
-
-        logger.info("[AOSM._handle_librarian] Finished Librarian")
 
 
     async def handle_ana(self) -> None:

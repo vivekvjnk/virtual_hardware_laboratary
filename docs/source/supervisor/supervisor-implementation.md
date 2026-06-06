@@ -239,7 +239,7 @@ Controllers never access agents directly.
 
 ---
 
-# Phase 8: Workflow 1 Controller
+# Phase 8: Workflow 1 Controller [COMPLETED]
 
 Implement:
 
@@ -267,15 +267,20 @@ Advance Workflow
 ```
 
 Supervisor handles:
-
 ```text
 Outcome Routing
 Acknowledgement
 ```
 
+**Implementation Details**:
+* Created `Workflow1Controller` that claims Archy and Librarian agents in sequence.
+* Implemented `wait_for_outcome` to handle outcome routing via Supervisor background task.
+* Handled the handoff logic from AOSM to the Controller for executing Workflow 1.
+* Fully updated `AOSM.run_workflow_1` to delegate to `self.workflow_controller`.
+
 ---
 
-# Phase 9: Remove Agent Ownership From AOSM
+# Phase 9: Remove Agent Ownership From AOSM [COMPLETED]
 
 Current:
 
@@ -318,6 +323,11 @@ agent.acknowledge_outcome()
 Remove entirely.
 
 Only Supervisor may acknowledge outcomes.
+
+**Implementation Details**:
+* Removed `self._agents` from AOSM. Replaced all occurrences with `self.supervisor.attach_agent` and `self.supervisor.get_agent_state`.
+* Routing was moved over to `self.supervisor.send(aid, msg)`.
+* Removed direct calls to `agent.acknowledge_outcome()` across the repository, routing them through the Supervisor.
 
 ---
 
@@ -427,7 +437,7 @@ AOSM accesses agents through Supervisor.
 
 ---
 
-## Milestone 3
+## Milestone 3 [COMPLETED]
 
 Supervisor consumes outcomes.
 
@@ -435,7 +445,7 @@ AOSM polling loops removed.
 
 ---
 
-## Milestone 4
+## Milestone 4 [COMPLETED]
 
 Workflow1Controller introduced.
 
@@ -443,7 +453,7 @@ Archy/Librarian ownership logic removed from AOSM.
 
 ---
 
-## Milestone 5
+## Milestone 5 [COMPLETED]
 
 DefaultController active.
 
