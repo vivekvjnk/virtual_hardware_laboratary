@@ -30,6 +30,7 @@ from librarian.librarian_agent.librarian_evaluator import LibrarianEvaluator
 from vhl_common.gate import GateRegistry, HILTerminal
 
 from vhl_common.urp.data_types import LastTaskOutcome
+from vhl_common.supervisor import Supervisor, AgentNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +58,7 @@ class AOSM:
         self.ana_inbox: Optional[asyncio.Queue] = None
         self._main_loop_task: Optional[asyncio.Task] = None
         self.project_id = None
-        self._agents = {}
+        self.supervisor = Supervisor()
         lib_default = "http://localhost:8082/sse"
         self.librarian_mcp_url = os.getenv("LIBRARIAN_MCP_URL", lib_default)
         self.mcp_manager = None
@@ -427,7 +428,7 @@ class AOSM:
             self.gate.register(archy_agent_id, archy_agent.send)
 
             # Store the instantiated agent for subsequent state retrieval
-            self._agents[archy_agent_id] = archy_agent
+            self.supervisor.attach_agent(archy_agent)
 
             self.update_agent_status("archy", archy_agent.state["status"])
 
@@ -462,7 +463,7 @@ class AOSM:
             
             # # Step 5: Register Archy's send function to GATE for message routing
             self.gate.register(librarian_agent_id, librarian.send)
-            self._agents[librarian_agent_id] = librarian
+            self.supervisor.attach_agent(librarian)
             self.update_agent_status("librarian", librarian.state["status"])
 
     
@@ -709,7 +710,7 @@ class AOSM:
         
         # 3. Reset AOSM internal state
         self.project_id = None
-        self._agents = {}
+        self.supervisor = Supervisor()
         self.project_root_info = None
         self.current_message = {
             "state_id": AOSMState.STARTUP,
@@ -772,8 +773,10 @@ class AOSM:
             raise RuntimeError("Failed to prepare workspace for Archy. Check logs for details.")
         
         # Step 2: Get active archy agent instance from local cache
-        archy_agent: ArchyURPAgent = self._agents.get(f"{module_name}.archy")
-        if not archy_agent:
+        try:
+            archy_agent: ArchyURPAgent = self.supervisor.get_agent(f"{module_name}.archy")
+        except AgentNotFoundError:
+            archy_agent = None
             raise RuntimeError(f"Archy agent for module '{module_name}' was not initialized at startup.")
         
         # Send Message (Mailbox-driven)
@@ -843,9 +846,11 @@ class AOSM:
         3. Simple placeholder for HIL review.
         """
         logger.info(f"[AOSM.handle_librarian] Starting Librarian processing for module: {module_name}")
-            # Step 2: Get active archy agent instance from local cache
-        librarian_agent: LibrarianURPAgent = self._agents.get(f"{module_name}.librarian")
-        if not librarian_agent:
+            # Step 2: Get active librarian agent instance from local cache
+        try:
+            librarian_agent: LibrarianURPAgent = self.supervisor.get_agent(f"{module_name}.librarian")
+        except AgentNotFoundError:
+            librarian_agent = None
             raise RuntimeError(f"Librarian agent for module '{module_name}' was not initialized at startup.")
         
         # Send Message (Mailbox-driven)

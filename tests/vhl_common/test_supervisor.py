@@ -13,6 +13,8 @@ from vhl_common.supervisor import (
     InvalidSupervisorStateError,
 )
 from vhl_common.supervisor.controllers import AbstractController, DefaultController
+from vhl_common.urp.data_types import AgentDescriptor, ProcessResult
+from vhl_common.urp.abstract_urp import AbstractURPAgent
 
 
 def test_supervisor_imports():
@@ -66,11 +68,9 @@ async def test_supervisor_skeleton_defaults():
     """Verify the default dummy returns of the supervisor skeleton methods."""
     supervisor = Supervisor()
 
-    # Methods that are synchronous stubs
+    # Methods that are synchronous stubs or handled gracefully
     assert supervisor.attach_agent(None) is None
-    assert supervisor.detach_agent("agent-1") is None
     assert supervisor.register_controller(None) is None
-    assert supervisor.get_agent_state("agent-1") == {}
     assert supervisor.get_active_controller("agent-1") == ""
     assert supervisor.get_system_state() == {}
 
@@ -91,3 +91,59 @@ async def test_default_controller_skeleton_methods():
     await controller.on_acquired("agent-1")
     await controller.on_released("agent-1")
     await controller.handle_outcome("agent-1", None)
+
+
+class DummyURPAgent(AbstractURPAgent):
+    """A dummy URP agent for testing supervisor registry functionality."""
+    async def process(self, message) -> ProcessResult:
+        return ProcessResult(outcome="TASK_COMPLETED", payload={})
+
+    def _on_initialize(self, context) -> None:
+        pass
+
+
+def test_supervisor_agent_registry():
+    """Verify that Supervisor registry methods function correctly."""
+    supervisor = Supervisor()
+    descriptor = AgentDescriptor(
+        agent_id="test-agent-123",
+        name="Test Agent",
+        version="1.0",
+        capabilities=["TEST_CAP"],
+        accepted_message_types=["TEST_MSG"]
+    )
+    agent = DummyURPAgent(descriptor=descriptor)
+
+    # 1. Verify get_agent raises AgentNotFoundError initially
+    with pytest.raises(AgentNotFoundError):
+        supervisor.get_agent("test-agent-123")
+
+    with pytest.raises(AgentNotFoundError):
+        supervisor.get_agent_state("test-agent-123")
+
+    # 2. Attach agent
+    supervisor.attach_agent(agent)
+
+    # 3. Verify get_agent and get_agent_state return correct values
+    retrieved_agent = supervisor.get_agent("test-agent-123")
+    assert retrieved_agent is agent
+    assert retrieved_agent.descriptor.agent_id == "test-agent-123"
+
+    state = supervisor.get_agent_state("test-agent-123")
+    assert isinstance(state, dict)
+    assert state["agent_id"] == "test-agent-123"
+
+    # 4. Verify re-attaching raises AgentAlreadyExistsError
+    with pytest.raises(AgentAlreadyExistsError):
+        supervisor.attach_agent(agent)
+
+    # 5. Detach agent
+    supervisor.detach_agent("test-agent-123")
+
+    # 6. Verify lookup raises AgentNotFoundError after detaching
+    with pytest.raises(AgentNotFoundError):
+        supervisor.get_agent("test-agent-123")
+
+    with pytest.raises(AgentNotFoundError):
+        supervisor.detach_agent("test-agent-123")
+
