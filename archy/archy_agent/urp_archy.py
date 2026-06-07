@@ -29,7 +29,7 @@ from openhands.tools.file_editor import FileEditorTool
 from vhl_common.project_state_manager.evaluators.project_creation_evaluator import AGENT_ID, OPERATION_NAME
 
 from vhl_common.urp.abstract_urp import AbstractURPAgent
-from vhl_common.urp.data_types import ProcessResult, ProcessResultPayload, LastTaskOutcome
+from vhl_common.urp.data_types import ProcessResult, ProcessResultPayload, LastTaskOutcome, FailureCategory
 from vhl_common.urp.data_types import AgentDescriptor, MessageEnvelope
 import logging
 from vhl_common.utils import setup_dedicated_logger
@@ -403,6 +403,7 @@ class ArchyURPAgent(AbstractURPAgent):
         
         module_paths = self.workspace_manager.module_paths
         if self.module_name not in module_paths:
+            result.category = FailureCategory.INFRASTRUCTURE_FAILURE
             return False, f"Module '{self.module_name}' path not found in workspace manager."
         
         module_path = module_paths[self.module_name]
@@ -411,6 +412,7 @@ class ArchyURPAgent(AbstractURPAgent):
         scud_file_name = f"{self.module_name}.scud"
         scud_file = module_path / scud_file_name
         if not scud_file.exists():
+            result.category = FailureCategory.AGENTIC_FAILURE
             return False, f"Missing scud document: {scud_file_name} is not present in module directory."
          
         # Check if <module_name>.scud document has 'IN_PROGRESS' string at the very end. If yes, return false with scud is still under construction as response message. If no, send true with scud construction complete as response message
@@ -418,8 +420,10 @@ class ArchyURPAgent(AbstractURPAgent):
             with open(scud_file, "r", encoding="utf-8") as f:
                 content = f.read().strip()
             if content.endswith("IN_PROGRESS"):
+                result.category = FailureCategory.AGENTIC_FAILURE
                 return False, "SCUD is still under construction."
         except Exception as e:
+            result.category = FailureCategory.INFRASTRUCTURE_FAILURE
             return False, f"Failed to read scud file: {e}"
         
         # Semantic operation section
@@ -432,9 +436,11 @@ class ArchyURPAgent(AbstractURPAgent):
             )
             row = cursor.fetchone()
             if not row:
+                result.category = FailureCategory.INFRASTRUCTURE_FAILURE
                 return False, f"Module '{self.module_name}' not found in project_modules database."
             mod_id = row["id"]
         except Exception as e:
+            result.category = FailureCategory.INFRASTRUCTURE_FAILURE
             return False, f"Database error fetching module ID: {e}"
 
         try:
@@ -445,6 +451,7 @@ class ArchyURPAgent(AbstractURPAgent):
                     sha256_hash.update(byte_block)
             checksum = sha256_hash.hexdigest()
         except Exception as e:
+            result.category = FailureCategory.INFRASTRUCTURE_FAILURE
             return False, f"Failed to compute checksum for scud file: {e}"
 
         try:
@@ -463,6 +470,7 @@ class ArchyURPAgent(AbstractURPAgent):
             )
         except Exception as e:
             logger.error(f"Error inserting module resource: {e}")
+            result.category = FailureCategory.INFRASTRUCTURE_FAILURE
             return False, f"Failed to insert scud resource to database: {e}"
 
         try:
@@ -476,6 +484,7 @@ class ArchyURPAgent(AbstractURPAgent):
             )
         except Exception as e:
             logger.error(f"Error recording operation: {e}")
+            result.category = FailureCategory.INFRASTRUCTURE_FAILURE
             return False, f"Failed to record SCUD_GENERATION operation: {e}"
 
         return True, "SCUD construction complete"
@@ -509,16 +518,16 @@ class ArchyURPAgent(AbstractURPAgent):
         # conversation.state.execution_status != ConversationExecutionStatus.FINISHED ConversationExecutionStatus.PAUSED
         # ConversationExecutionStatus.RUNNING
         if self.conversation.state.execution_status == ConversationExecutionStatus.PAUSED:
-            last_task_outcome = LastTaskOutcome.WAITING_FOR_USER_INPUT
+            process_outcome = LastTaskOutcome.WAITING_FOR_USER_INPUT
         elif self.conversation.state.execution_status == ConversationExecutionStatus.FINISHED: # Conversation has completed current task. last task outcome is success
-            last_task_outcome = LastTaskOutcome.TASK_COMPLETED
+            process_outcome = LastTaskOutcome.TASK_COMPLETED
         elif self.conversation.state.execution_status in [ConversationExecutionStatus.STUCK, ConversationExecutionStatus.ERROR]:
-            last_task_outcome = LastTaskOutcome.TASK_FAILED
+            process_outcome = LastTaskOutcome.TASK_FAILED
         elif self.conversation.state.execution_status == ConversationExecutionStatus.IDLE:
             logger.warning(f"[ArchyURPAgent:process]Conversation status is ConversationExecutionStatus.IDLE after running the conversation. This should never happen!!!")
-            last_task_outcome = LastTaskOutcome.NONE
+            process_outcome = LastTaskOutcome.NONE
         else:
-            last_task_outcome = LastTaskOutcome.NONE
+            process_outcome = LastTaskOutcome.NONE
 
         # NOTE: FINISHED, ERROR and STUCK are considered as terminal states in agent-sdk. 
               
@@ -526,5 +535,5 @@ class ArchyURPAgent(AbstractURPAgent):
         response = str(self.llm_messages[-1]) if self.llm_messages else "No response generated"
         payload = ProcessResultPayload(text=response)
         
-        return ProcessResult(outcome=last_task_outcome, payload=payload)
+        return ProcessResult(outcome=process_outcome, payload=payload)
     

@@ -24,6 +24,11 @@ from openhands.sdk import (
 )
 from openhands.tools.file_editor import FileEditorTool
 
+from openhands.sdk.conversation.state import (
+    ConversationExecutionStatus,
+    ConversationState,
+)
+
 from vhl_common.urp.abstract_urp import AbstractURPAgent
 from vhl_common.urp.data_types import AgentDescriptor, MessageEnvelope
 from vhl_common.utils import setup_dedicated_logger
@@ -31,6 +36,7 @@ from workspace.manager import WorkspaceManager
 from vhl_common.project_state_manager import SQLiteManager
 from vhl_protocol.sync.client import SyncClient
 from vhl_protocol.client.client import VHLWebSocketClient
+from vhl_common.urp.data_types import ProcessResult, ProcessResultPayload, LastTaskOutcome, FailureCategory
 
 from ana_agent.ana_worker_1 import run_ana_w1_agent
 from ana_agent.ana_worker_2.agent import ANA_validation_agent
@@ -312,36 +318,37 @@ class AnaURPAgent(AbstractURPAgent):
                     logger.error(msg)
                     return False, msg
 
-                # Derive suffix for iteration ID inside WorkspaceManager
-                import uuid
-                iteration_id_suffix = str(uuid.uuid4()).split("-")[0][:8]
 
                 # Collect observations/user instructions from message payload
                 observations = message.payload.get("observations", []) if message.payload else []
 
+                # Track previous iteration (the one that was active before this call)
+                self._previous_iteration_dir = self.workspace_manager.previous_iteration_path[
+                    self.module_name
+                ]
+                
+                # Derive suffix for iteration ID inside WorkspaceManager
+                import uuid
+                iteration_id_suffix = str(uuid.uuid4()).split("-")[0][:8]
                 # prepare_iteration_with_files: creates iteration dir + copies stable circuit
-                iteration_path = self.workspace_manager.prepare_iteration_with_files(
+                self._iteration_dir = self.workspace_manager.prepare_iteration_with_files(
                     source_file=str(stable_circuit_path),
                     iteration_id_suffix=iteration_id_suffix,
                     module_name=self.module_name,
                     observations=observations if observations else None,
                 )
-                # Track previous iteration (the one that was active before this call)
-                self._previous_iteration_dir = self.workspace_manager.previous_iteration_path[
-                    self.module_name
-                ]
-                self._iteration_dir = iteration_path
 
             else:
                 # ---- 3. First synthesis — create a bare iteration directory ----
                 import uuid
+                self._previous_iteration_dir = None
                 iteration_id_suffix = str(uuid.uuid4()).split("-")[0][:8]
-                iteration_path = self.workspace_manager.create_new_iteration(
+                self._iteration_dir = self.workspace_manager.create_new_iteration(
                     hash_val=iteration_id_suffix,
                     module_name=self.module_name,
                 )
-                self._previous_iteration_dir = None
-                self._iteration_dir = iteration_path
+            if not self._iteration_dir:
+                raise RuntimeError("Failed to setup iteration directory.")
 
             logger.info(
                 f"[AnaURPAgent._check_preconditions] Iteration directory ready: "
@@ -382,97 +389,76 @@ class AnaURPAgent(AbstractURPAgent):
             f"iteration='{self._iteration_dir}'"
         )
 
-        if not self._iteration_dir:
-            raise RuntimeError(
-                "[AnaURPAgent.process] Iteration directory not set. "
-                "Pre-conditions must run before process()."
-            )
+        scud_path: Path = self.workspace_manager.get_scud_path(
+            module_name=self.module_name
+        )
+        library_path: Path = self.workspace_manager.get_library_path(
+            module_name=self.module_name
+        )
+        circuit_name = self.workspace_manager.circuit_name[self.module_name]
+        current_iter_dir = self._iteration_dir
+        schematic_images_path = str(current_iter_dir / "schematic_images")
 
-        try:
-            scud_path: Path = self.workspace_manager.get_scud_path(
-                module_name=self.module_name
-            )
-            library_path: Path = self.workspace_manager.get_library_path(
-                module_name=self.module_name
-            )
-            circuit_name = self.workspace_manager.circuit_name[self.module_name]
-            current_iter_dir = self._iteration_dir
-            schematic_images_path = str(current_iter_dir / "schematic_images")
-
-            # Observations: prefer pending error from previous REJECT, then message payload
-            observations: list = []
-            if self._pending_error_message:
-                logger.info(
-                    "[AnaURPAgent.process] Injecting pending error message from previous "
-                    "REJECT into observations for error-correction."
-                )
-                observations.append(self._pending_error_message)
-                self._pending_error_message = None  # consumed
-
-            payload_observations = (
-                message.payload.get("observations", []) if message.payload else []
-            )
-            observations.extend(payload_observations)
-
-            previous_iter_dir = self._previous_iteration_dir
-
+        # Observations: prefer pending error from previous REJECT, then message payload
+        observations: list = []
+        if self._pending_error_message:
             logger.info(
-                f"[AnaURPAgent.process] Mode: "
-                f"{'error-correction' if previous_iter_dir else 'synthesis'}, "
-                f"observations={len(observations)}, "
-                f"circuit_name='{circuit_name}'"
+                "[AnaURPAgent.process] Injecting pending error message from previous "
+                "REJECT into observations for error-correction."
             )
+            observations.append(self._pending_error_message)
+            self._pending_error_message = None  # consumed
 
-            await asyncio.to_thread(
-                run_ana_w1_agent,
-                workspace=str(current_iter_dir),
-                schematic_images_path=schematic_images_path,
-                scud_path=str(scud_path),
-                circuit_name=circuit_name,
-                observations=observations if observations else None,
-                previous_iteration_dir=str(previous_iter_dir) if previous_iter_dir else None,
-                library_path=library_path,
-            )
+        payload_observations = (
+            message.payload.get("observations", []) if message.payload else []
+        )
+        observations.extend(payload_observations)
 
-            # Confirm ANA-W1 produced the expected circuit file
-            circuit_tsx_path = self.workspace_manager.get_circuit_tsx_path(
-                module_name=self.module_name
-            )
-            if not circuit_tsx_path.exists():
-                # Try to find any .tsx file and rename it (defensive handling from SM)
-                tsx_files = list(Path(str(current_iter_dir)).glob("*.tsx"))
-                if tsx_files:
-                    logger.warning(
-                        f"[AnaURPAgent.process] Expected circuit file not found at "
-                        f"{circuit_tsx_path}. Renaming {tsx_files[0]} to match."
-                    )
-                    shutil.move(str(tsx_files[0]), str(circuit_tsx_path))
-                else:
-                    raise FileNotFoundError(
-                        f"ANA-W1 did not produce a circuit .tsx file in {current_iter_dir}."
-                    )
+        previous_iter_dir = self._previous_iteration_dir
 
-            logger.info(
-                f"[AnaURPAgent.process] ANA-W1 completed. Circuit at: {circuit_tsx_path}"
-            )
+        logger.info(
+            f"[AnaURPAgent.process] Mode: "
+            f"{'error-correction' if previous_iter_dir else 'synthesis'}, "
+            f"observations={len(observations)}, "
+            f"circuit_name='{circuit_name}'"
+        )
 
-            return {
-                "status": "W1_COMPLETE",
-                "circuit_tsx_path": str(circuit_tsx_path),
-                "iteration_dir": str(current_iter_dir),
-                "module_name": self.module_name,
-            }
+        await asyncio.to_thread(
+            run_ana_w1_agent,
+            workspace=str(current_iter_dir),
+            schematic_images_path=schematic_images_path,
+            scud_path=str(scud_path),
+            circuit_name=circuit_name,
+            observations=observations if observations else None,
+            previous_iteration_dir=str(previous_iter_dir) if previous_iter_dir else None,
+            library_path=library_path,
+        )
+        
+        
 
-        except Exception as e:
-            logger.exception(f"[AnaURPAgent.process] Error during ANA-W1 execution: {e}")
-            raise
+        if self.conversation.state.execution_status == ConversationExecutionStatus.PAUSED:
+            process_outcome = LastTaskOutcome.WAITING_FOR_USER_INPUT
+        elif self.conversation.state.execution_status == ConversationExecutionStatus.FINISHED: # Conversation has completed current task. last task outcome is success
+            process_outcome = LastTaskOutcome.TASK_COMPLETED
+        elif self.conversation.state.execution_status in [ConversationExecutionStatus.STUCK, ConversationExecutionStatus.ERROR]:
+            process_outcome = LastTaskOutcome.TASK_FAILED
+        elif self.conversation.state.execution_status == ConversationExecutionStatus.IDLE:
+            logger.error(f"[ArchyURPAgent:process]Conversation status is ConversationExecutionStatus.IDLE after running the conversation. This should never happen!!!")
+            process_outcome = LastTaskOutcome.NONE
+        else:
+            process_outcome = LastTaskOutcome.NONE
+        
+        response = str(self.llm_messages[-1]) if self.llm_messages else "No response generated"
+        payload = ProcessResultPayload(text=response)
+        return ProcessResult(outcome=process_outcome, payload=payload)
+
 
     # ------------------------------------------------------------------
     # Post-conditions  (maps: handle_trigger_w2 + handle_authorize + handle_exit_success)
     # ------------------------------------------------------------------
 
     async def _check_postconditions(
-        self, message: MessageEnvelope, result: Any
+        self, message: MessageEnvelope, result: ProcessResult
     ) -> tuple[bool, str]:
         """
         Post-condition hook — runs after process() succeeds.
@@ -500,13 +486,25 @@ class AnaURPAgent(AbstractURPAgent):
         4. Return (False, reject_reason) — URP framework will emit TASK_POSTCONDITIONS_VIOLATED
            which triggers a new corrective invocation with ANA in error-correction mode.
         """
+        if not self._iteration_dir:
+            return False, "Iteration directory not set — cannot run W2 validation."
         logger.info(
             f"[AnaURPAgent._check_postconditions] module='{self.module_name}', "
             f"iteration='{self._iteration_dir}'"
         )
+        
+        # Confirm ANA-W1 produced the expected circuit file
+        circuit_tsx_path = self.workspace_manager.get_circuit_tsx_path(
+            module_name=self.module_name
+        )
+        if not circuit_tsx_path.exists():
+            raise FileNotFoundError(
+                f"ANA-W1 did not produce a circuit .tsx file in {self._iteration_dir}."
+            )
+        logger.info(
+            f"[AnaURPAgent.process] ANA-W1 completed. Circuit at: {circuit_tsx_path}"
+        )
 
-        if not self._iteration_dir:
-            return False, "Iteration directory not set — cannot run W2 validation."
 
         iteration_dir = self._iteration_dir
         circuit_name = self.workspace_manager.circuit_name.get(self.module_name)
@@ -530,6 +528,7 @@ class AnaURPAgent(AbstractURPAgent):
         except Exception as e:
             msg = f"[AnaURPAgent._check_postconditions] ANA-W2 raised exception: {e}"
             logger.exception(msg)
+            result.category = FailureCategory.INFRASTRUCTURE_FAILURE
             return False, msg
         finally:
             try:
@@ -553,6 +552,7 @@ class AnaURPAgent(AbstractURPAgent):
                 f"'{vap_decision}'. Treating as REJECT."
             )
             logger.error(msg)
+            result.category = FailureCategory.VALIDATION_FAILURE
             return False, msg
 
     # ------------------------------------------------------------------
@@ -560,7 +560,7 @@ class AnaURPAgent(AbstractURPAgent):
     # ------------------------------------------------------------------
 
     async def _handle_vap_accept(
-        self, vap_result: dict, iteration_dir: Path
+        self, vap_result: dict, iteration_dir: Path, result:ProcessResult
     ) -> tuple[bool, str]:
         """
         Handle VAP ACCEPT:
@@ -573,8 +573,8 @@ class AnaURPAgent(AbstractURPAgent):
         """
         logger.info("[AnaURPAgent._handle_vap_accept] VAP ACCEPTED — promoting to Stable/.")
 
-        # 1. Promote circuit to Stable/
         try:
+            # 1. Promote circuit to Stable/
             self.workspace_manager.populate_stable(
                 iteration_id=str(iteration_dir),
                 module_name=self.module_name,
@@ -582,31 +582,22 @@ class AnaURPAgent(AbstractURPAgent):
             logger.info(
                 f"[AnaURPAgent._handle_vap_accept] Stable/ populated from {iteration_dir}"
             )
-        except Exception as e:
-            msg = f"[AnaURPAgent._handle_vap_accept] Failed to populate Stable/: {e}"
-            logger.error(msg)
-            return False, msg
 
-        # 2. Move all iteration directories to Archives/
-        try:
+            # 2. Move all iteration directories to Archives/
             self.workspace_manager.move_iterations_to_archives(
                 module_name=self.module_name
             )
             logger.info("[AnaURPAgent._handle_vap_accept] Iterations archived.")
-        except Exception as e:
-            logger.warning(
-                f"[AnaURPAgent._handle_vap_accept] Failed to archive iterations: {e}"
-            )
+        
 
-        # 3. Record CIRCUIT_SYNTHESIS operation
-        try:
+            # 3. Record CIRCUIT_SYNTHESIS operation
             snapshot_id = self.workspace_manager.record_operation(
                 module_name=self.module_name,
                 op_name=ANA_OPERATION_NAME,
                 author=self.descriptor.agent_id,
                 status="SUCCESS",
                 payload={
-                    "vap_decision": "ACCEPT",
+                    "vap_decision": vap_result.get("decision"),
                     "task_id": vap_result.get("task_id"),
                     "circuit_name": self.workspace_manager.circuit_name.get(self.module_name),
                 },
@@ -616,46 +607,34 @@ class AnaURPAgent(AbstractURPAgent):
                 f"[AnaURPAgent._handle_vap_accept] CIRCUIT_SYNTHESIS recorded. "
                 f"Snapshot ID: {snapshot_id}"
             )
+
+            # 4. Sync project with runtime
+            iteration_id = self.workspace_manager.get_current_iteration_id(module_name=self.module_name)
+            await self.sync_client.sync_circuit_json(self.project_id, iteration_id)
+            logger.info(f"[AnaURPAgent._handle_vap_accept] StableCircuit and EvaluationOutput sync completed successfully")
+
+            # 5. Send evaluation update to the runtime 
+            await self.web_socket_client.emit_evaluation_update(task_id=vap_result.get("task_id"), decision=vap_result.get("decision"))
+            logger.info(f"[AnaURPAgent._handle_vap_accept] Sent evaluation update to vhl-runtime")
+            
+            # 6. Condense conversation history to prevent context bloat on next iteration
+            self.conversation.condense()
+            logger.info("[AnaURPAgent._handle_vap_accept] Condensed conversation")
+
+            return (
+                True,
+                f"VAP ACCEPTED. Circuit for module '{self.module_name}' promoted to Stable/.",
+            )
         except Exception as e:
             msg = (
-                f"[AnaURPAgent._handle_vap_accept] Failed to record CIRCUIT_SYNTHESIS "
-                f"operation: {e}"
+                f"[AnaURPAgent._handle_vap_accept] Failed: {e}"
             )
             logger.error(msg)
+            result.category = FailureCategory.INFRASTRUCTURE_FAILURE
             return False, msg
 
-        # 4. Run AnaEvaluator to stamp the canonical "synthesis done" marker
-        try:
-            evaluator = AnaEvaluator(db=self.sqlite_manager, module_name=self.module_name)
-            eval_result, eval_desc = evaluator.evaluate(snapshot_id=snapshot_id)
-            logger.info(
-                f"[AnaURPAgent._handle_vap_accept] AnaEvaluator: {eval_result} — {eval_desc}"
-            )
-        except Exception as e:
-            logger.warning(
-                f"[AnaURPAgent._handle_vap_accept] AnaEvaluator failed (non-fatal): {e}"
-            )
-
-        # 5. Sync project with runtime
-        if self.sync_client and self.project_id:
-            try:
-                await self.sync_client.sync_library(self.project_id)
-                logger.info("[AnaURPAgent._handle_vap_accept] Project synced with runtime.")
-            except Exception as e:
-                logger.warning(
-                    f"[AnaURPAgent._handle_vap_accept] Runtime sync failed (non-fatal): {e}"
-                )
-
-        # 6. Condense conversation history to prevent context bloat on next iteration
-        self._condense_conversation()
-
-        return (
-            True,
-            f"VAP ACCEPTED. Circuit for module '{self.module_name}' promoted to Stable/.",
-        )
-
     async def _handle_vap_reject(
-        self, vap_result: dict, iteration_dir: Path
+        self, vap_result: dict, iteration_dir: Path, result:ProcessResult
     ) -> tuple[bool, str]:
         """
         Handle VAP REJECT:
@@ -708,43 +687,21 @@ class AnaURPAgent(AbstractURPAgent):
             "[AnaURPAgent._handle_vap_reject] Error message stashed for next iteration."
         )
 
-        # Condense conversation history — every error-correction iteration starts
-        # with a condensed history (design discussion: "condensation approach")
-        self._condense_conversation()
+        # Condense conversation history — 
+        # every error-correction iteration starts with a condensed history
+        self.conversation.condense()
+        logger.info("[AnaURPAgent._handle_vap_reject] Condensed conversation")
 
         reject_reason = (
             f"VAP REJECTED for module '{self.module_name}'. "
             "Error-correction iteration will be triggered. "
             f"Task ID: {vap_result.get('task_id', 'N/A')}"
         )
+        result.category = FailureCategory.VALIDATION_FAILURE
         return False, reject_reason
 
-    def _condense_conversation(self):
-        """
-        Trigger conversation condensation to prevent context bloat.
-        Called after both ACCEPT and REJECT VAP outcomes so that every new
-        iteration starts with a lean history (design principle from discussion).
-        """
-        if self.conversation:
-            try:
-                # Conversation.condense() triggers the registered condenser pipeline
-                # (surgical + LLM summarising).  This is the "condensation" step
-                # discussed in the design chat to avoid context explosion across
-                # error-correction iterations.
-                self.conversation.condense()
-                logger.info(
-                    "[AnaURPAgent._condense_conversation] Conversation history condensed."
-                )
-            except AttributeError:
-                # condense() may not exist in all SDK versions; log and continue
-                logger.warning(
-                    "[AnaURPAgent._condense_conversation] conversation.condense() not "
-                    "available in current SDK. Skipping condensation."
-                )
-            except Exception as e:
-                logger.warning(
-                    f"[AnaURPAgent._condense_conversation] Condensation failed: {e}"
-                )
+
+    # VAP iteration handling 
 
     # ------------------------------------------------------------------
     # Shutdown

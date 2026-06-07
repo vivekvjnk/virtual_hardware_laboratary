@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 from vhl_common.supervisor import Supervisor, AgentAlreadyExistsError, AgentNotFoundError
 from vhl_common.supervisor.controllers import Workflow1Controller
-from vhl_common.urp.data_types import AgentDescriptor, LastTaskOutcome, AgentStatus, MessageEnvelope
+from vhl_common.urp.data_types import AgentDescriptor, LastTaskOutcome, AgentStatus, MessageEnvelope, ProcessResult
 from tests.vhl_common.test_supervisor import DummyURPAgent
 
 
@@ -85,8 +85,8 @@ async def test_workflow1_controller_handle_archy_success(mock_prep_workspace):
     msg = await agent.mailbox.get()
     assert msg.type == "BUILD_SCUD"
 
-    # Simulate URP agent completing the task (setting last_task_outcome and outcome_acknowledged = False)
-    agent._state.last_task_outcome = LastTaskOutcome.TASK_COMPLETED
+    # Simulate URP agent completing the task (setting last_process_result and outcome_acknowledged = False)
+    agent._state.last_process_result = ProcessResult(outcome=LastTaskOutcome.TASK_COMPLETED)
     agent._state.outcome_acknowledged = False
 
     # Wait for the background controller to finish
@@ -207,7 +207,7 @@ async def test_workflow1_controller_handle_librarian_success():
     assert supervisor.get_active_controller("test_module.librarian") == "workflow1_controller"
 
     # Simulate completed outcome
-    agent._state.last_task_outcome = LastTaskOutcome.TASK_COMPLETED
+    agent._state.last_process_result = ProcessResult(outcome=LastTaskOutcome.TASK_COMPLETED)
     agent._state.outcome_acknowledged = False
 
     await lib_task
@@ -244,7 +244,7 @@ async def test_workflow1_controller_handle_outcome_callback():
     # Claim the agent to trigger on_acquired
     await supervisor.claim("workflow1_controller", "test-agent")
     
-    agent._state.last_task_outcome = LastTaskOutcome.TASK_COMPLETED
+    agent._state.last_process_result = ProcessResult(outcome=LastTaskOutcome.TASK_COMPLETED)
     agent._state.outcome_acknowledged = False
 
     # Route and acknowledge using the supervisor's built-in routing

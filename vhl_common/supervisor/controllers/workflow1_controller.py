@@ -116,6 +116,13 @@ class Workflow1Controller(AbstractController):
                 # Wait for outcome routed by supervisor
                 outcome = await self.wait_for_outcome(archy_agent_id, timeout=timeout - (asyncio.get_event_loop().time() - start_time))
 
+                # TODO : Elaborate decision logic needs to be implemented
+                # 1. If outcome is TASK_COMPLETED:
+                #       - Check status of the agent. If AgentStatus.WAITING ==> Agent successfully completed last task. Waiting for next task
+                #       - If AgentStatus.PROCESSING ==> Last task was successful. Processing new user message. Since only one controller is allowed to own the agent, AgentStatus.PROCESSING with a previous task outcome TASK_COMPLETED means, user(HIL) has sent a new message to agent before Workflow1Controller acknowledge the previous outcome. 
+                # 2. If outcome is TASK_FAILED:
+                #       - If AgentStatus.WAITING ==> Waiting for HIL user to interact with agent to resolve the problem
+                #       - If AgentStatus.PROCESSING ==> HIL user has sent some message 
                 # Decision logic
                 if outcome.value == LastTaskOutcome.TASK_COMPLETED.value:
                     found_completion = True
@@ -179,6 +186,14 @@ class Workflow1Controller(AbstractController):
                 # Wait for outcome routed by supervisor
                 outcome = await self.wait_for_outcome(librarian_agent_id, timeout=timeout - (asyncio.get_event_loop().time() - start_time))
 
+
+                # TODO : Elaborate decision logic needs to be implemented
+                # 1. If outcome is TASK_COMPLETED:
+                #       - Check status of the agent. If AgentStatus.WAITING ==> Agent successfully completed last task. Waiting for next task
+                #       - If AgentStatus.PROCESSING ==> Last task was successful. Processing new user message. Since only one controller is allowed to own the agent, AgentStatus.PROCESSING with a previous task outcome TASK_COMPLETED means, user(HIL) has sent a new message to agent before Workflow1Controller acknowledge the previous outcome. 
+                # 2. If outcome is TASK_FAILED:
+                #       - If AgentStatus.WAITING ==> Waiting for HIL user to interact with agent to resolve the problem
+                #       - If AgentStatus.PROCESSING ==> HIL user has sent some message 
                 # Decision logic
                 if outcome.value == LastTaskOutcome.TASK_COMPLETED.value:
                     found_completion = True

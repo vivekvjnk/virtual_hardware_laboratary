@@ -419,7 +419,7 @@ async def test_supervisor_process_outcomes():
     await supervisor.claim("ctrl-a", "test-agent")
 
     # Simulate an unacknowledged outcome
-    agent._state.last_task_outcome = LastTaskOutcome.TASK_COMPLETED
+    agent._state.last_process_result = ProcessResult(outcome=LastTaskOutcome.TASK_COMPLETED)
     agent._state.outcome_acknowledged = False
 
     # Process outcomes
@@ -458,7 +458,7 @@ async def test_supervisor_background_monitoring_loop():
     supervisor.start(interval=0.01)
 
     # Simulate unacknowledged outcome
-    agent._state.last_task_outcome = LastTaskOutcome.TASK_COMPLETED
+    agent._state.last_process_result = ProcessResult(outcome=LastTaskOutcome.TASK_COMPLETED)
     agent._state.outcome_acknowledged = False
 
     # Wait a bit for background execution

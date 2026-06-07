@@ -66,7 +66,7 @@ def test_worktree_operations(temp_repo, tmp_path):
     git.create_branch("feature-1")
     
     worktree_path = tmp_path / "agent_worktree"
-    git.worktree_add(worktree_path, "feature-1")
+    git.worktree_add(worktree_path, "feature-1", new_branch=False)
     
     assert worktree_path.exists()
     assert (worktree_path / "root_file.txt").exists()
@@ -148,7 +148,7 @@ def test_worktree_remove_force(temp_repo, tmp_path):
     
     git.create_branch("branch-force")
     wt_path = tmp_path / "wt_force"
-    git.worktree_add(wt_path, "branch-force")
+    git.worktree_add(wt_path, "branch-force", new_branch=False)
     
     # Create uncommitted changes in worktree
     (wt_path / "dirty.txt").write_text("dirty")
@@ -178,7 +178,7 @@ def test_worktree_prune(temp_repo, tmp_path):
     
     git.create_branch("branch-prune")
     wt_path = tmp_path / "wt_prune"
-    git.worktree_add(wt_path, "branch-prune")
+    git.worktree_add(wt_path, "branch-prune", new_branch=False)
     
     # Verify it exists in list
     assert any(wt["path"] == str(wt_path.resolve()) for wt in git.list_worktrees())

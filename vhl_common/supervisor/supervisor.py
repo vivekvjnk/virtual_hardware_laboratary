@@ -82,7 +82,8 @@ class Supervisor:
 
             try:
                 state = record.agent.state
-                outcome = state.get("last_task_outcome")
+                last_result = state.get("last_process_result")
+                outcome = last_result.outcome if last_result else None
                 acknowledged = state.get("outcome_acknowledged")
 
                 if outcome is not None and not acknowledged:

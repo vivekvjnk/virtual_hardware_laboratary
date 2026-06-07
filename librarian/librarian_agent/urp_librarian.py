@@ -33,7 +33,7 @@ from vhl_common.utils import setup_dedicated_logger
 from workspace.manager import WorkspaceManager
 from vhl_common.project_state_manager import SQLiteManager
 from vhl_protocol.sync.client import SyncClient
-from vhl_common.urp.data_types import ProcessResult, ProcessResultPayload, LastTaskOutcome
+from vhl_common.urp.data_types import ProcessResult, ProcessResultPayload, LastTaskOutcome, FailureCategory
 # Setup dedicated logger for librarian
 logger = setup_dedicated_logger("librarian_agent", "librarian_agent.log")
 
@@ -224,23 +224,23 @@ class LibrarianURPAgent(AbstractURPAgent):
         # If any error in the process function, ProcessResult is TASK_FAILED
 
         if self.conversation.state.execution_status == ConversationExecutionStatus.PAUSED:
-            last_task_outcome = LastTaskOutcome.WAITING_FOR_USER_INPUT
+            process_outcome = LastTaskOutcome.WAITING_FOR_USER_INPUT
         elif self.conversation.state.execution_status == ConversationExecutionStatus.FINISHED: # Conversation has completed current task. last task outcome is success
-            last_task_outcome = LastTaskOutcome.TASK_COMPLETED
+            process_outcome = LastTaskOutcome.TASK_COMPLETED
         elif self.conversation.state.execution_status in [ConversationExecutionStatus.STUCK, ConversationExecutionStatus.ERROR]:
-            last_task_outcome = LastTaskOutcome.TASK_FAILED
+            process_outcome = LastTaskOutcome.TASK_FAILED
         elif self.conversation.state.execution_status == ConversationExecutionStatus.IDLE:
             logger.warning(f"[ArchyURPAgent:process]Conversation status is ConversationExecutionStatus.IDLE after running the conversation. This should never happen!!!")
-            last_task_outcome = LastTaskOutcome.NONE
+            process_outcome = LastTaskOutcome.NONE
         else:
-            last_task_outcome = LastTaskOutcome.NONE
+            process_outcome = LastTaskOutcome.NONE
 
 
         logger.info(f"[LibrarianURPAgent:{self.descriptor.agent_id}] Finished processing.")
 
         response = str(self.llm_messages[-1]) if self.llm_messages else "No response generated"
         payload = ProcessResultPayload(text=response)
-        return ProcessResult(outcome=last_task_outcome, payload=payload)
+        return ProcessResult(outcome=process_outcome, payload=payload)
 
     async def _check_start_preconditions(self) -> tuple[bool,str]:
         # Check if the last project creation evaluation passed successfully. This ensures that the project is in a good state before Archy starts processing messages. 
@@ -336,12 +336,14 @@ class LibrarianURPAgent(AbstractURPAgent):
         if not module_path:
             msg = f"Postconditions check failed: Module path not found for module '{self.module_name}'."
             logger.warning(msg)
+            result.category = FailureCategory.INFRASTRUCTURE_FAILURE
             return False, msg
 
         scud_files = list(module_path.glob("*.scud"))
         if not scud_files:
             msg = f"Postconditions check failed: No .scud file found in module directory '{module_path}'."
             logger.warning(msg)
+            result.category = FailureCategory.INFRASTRUCTURE_FAILURE
             return False, msg
 
         scud_file = scud_files[0]
@@ -350,6 +352,7 @@ class LibrarianURPAgent(AbstractURPAgent):
         except Exception as e:
             msg = f"Postconditions check failed: Failed to read scud file changes: {e}"
             logger.warning(msg)
+            result.category = FailureCategory.INFRASTRUCTURE_FAILURE
             return False, msg
 
         target = "librarymapping"
@@ -359,6 +362,7 @@ class LibrarianURPAgent(AbstractURPAgent):
         if not scud_updated:
             msg = "Postconditions check failed: 'Library Mapping' section not found in .scud file changes."
             logger.warning(msg)
+            result.category = FailureCategory.AGENTIC_FAILURE
             return False, msg
 
         # 5. If validations are successful call self.workspace_manager.record_operation()
@@ -373,6 +377,7 @@ class LibrarianURPAgent(AbstractURPAgent):
             )
         except Exception as e:
             logger.error(f"Failed to record LIBRARY_UPDATE operation: {e}")
+            result.category = FailureCategory.INFRASTRUCTURE_FAILURE
             return False, f"Failed to record LIBRARY_UPDATE operation: {e}"
 
         # 6. Return True with appropriate message if all validations are successful.

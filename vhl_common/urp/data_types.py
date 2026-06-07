@@ -20,6 +20,16 @@ class LastTaskOutcome(Enum):
     TASK_FAILED = "TASK_FAILED"
     TASK_COMPLETED = "TASK_COMPLETED"
 
+class FailureCategory(Enum):
+    NONE = "NONE"
+
+    AGENTIC_FAILURE = "AGENTIC_FAILURE"
+    POSTCONDITION_FAILURE = "POSTCONDITION_FAILURE"
+    PRECONDITION_FAILURE = "PRECONDITION_FAILURE"
+
+    VALIDATION_FAILURE = "VALIDATION_FAILURE"
+    INFRASTRUCTURE_FAILURE = "INFRASTRUCTURE_FAILURE"
+
 @dataclass
 class ProcessResultPayload:
     text: str
@@ -27,7 +37,8 @@ class ProcessResultPayload:
 @dataclass
 class ProcessResult:
     outcome: LastTaskOutcome
-    payload: ProcessResultPayload | None = field(default=None)
+    category: FailureCategory = FailureCategory.NONE
+    payload: ProcessResultPayload | None = None
 
 @dataclass
 class AgentDescriptor:
@@ -56,7 +67,7 @@ class AgentState:
     session_id: str
     status: AgentStatus = AgentStatus.INITIALIZED
     # Execution outcome of last processed message
-    last_task_outcome: LastTaskOutcome = LastTaskOutcome.NONE
+    last_process_result: ProcessResult | None = None
     outcome_acknowledged: bool = True
     internal_memory: Dict[str, Any] = field(default_factory=dict)
         

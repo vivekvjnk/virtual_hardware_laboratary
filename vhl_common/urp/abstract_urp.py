@@ -4,7 +4,8 @@ import uuid
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Dict, Optional
 from vhl_common.utils import setup_dedicated_logger
-from .data_types import AgentDescriptor, AgentContext, AgentState, MessageEnvelope, LastTaskOutcome, AgentStatus, ProcessResult
+from .data_types import AgentDescriptor, AgentContext, AgentState, MessageEnvelope, LastTaskOutcome, AgentStatus, ProcessResult, FailureCategory
+
 MAILBOX_POLL_INTERVAL = 0.5  # seconds
 
 logger = setup_dedicated_logger("abstract_urp", "abstract_urp.log")
@@ -100,7 +101,7 @@ class AbstractURPAgent(ABC):
             raise StartPreconditionsViolatedError(f"Start preconditions check failed: {result}")
             
         self._state.status = AgentStatus.WAITING
-        self._state.last_task_outcome = LastTaskOutcome.NONE
+        self._state.last_process_result = ProcessResult(outcome=LastTaskOutcome.NONE, category=FailureCategory.NONE)
         self._task = asyncio.create_task(self._lifecycle_loop())
         
         logger.info(f"[{self.descriptor.agent_id}] Lifecycle loop spawned successfully. Status: {self._state.status}")
@@ -165,9 +166,9 @@ class AbstractURPAgent(ABC):
                 # 1. WAITING
                 self._state.status = AgentStatus.WAITING
 
-                # set last_task_outcome to None before getting a new message. 
+                # set last_process_result to None before getting a new message. 
                 while not self._state.outcome_acknowledged:
-                    logger.warning(f"[{self.descriptor.agent_id}] Last task outcome {self._state.last_task_outcome} has not been acknowledged yet. Agent state: {self._state.status}. Waiting for acknowledgment before processing new messages.")
+                    logger.warning(f"[{self.descriptor.agent_id}] Last task outcome {self._state.last_process_result} has not been acknowledged yet. Agent state: {self._state.status}. Waiting for acknowledgment before processing new messages.")
                     await asyncio.sleep(0.3)  # Wait for acknowledgment before processing next message
 
                 # 0.5s timeout to check mailbox periodically. If no messages, loop continues.
@@ -177,13 +178,8 @@ class AbstractURPAgent(ABC):
 
                 try:
                     # Pre-condition Check: After a message is popped from the mailbox, call _check_preconditions.
-                    logger.debug(f"[{self.descriptor.agent_id}] Evaluating task preconditions for Msg ID: {message.message_id}")
-                    precond_res = await self._check_preconditions(message)
-                    if isinstance(precond_res, tuple):
-                        pre_ok, pre_response = precond_res
-                    else:
-                        pre_ok = precond_res
-                        pre_response = "Preconditions check failed" if not pre_ok else "Precondition check successful"
+                    logger.info(f"[{self.descriptor.agent_id}] Evaluating task preconditions for Msg ID: {message.message_id}")
+                    pre_ok, pre_response = await self._check_preconditions(message)
                     
                     # If it returns False, do not transition to PROCESSING.
                     # Instead, emit an event of type TASK_PRECONDITIONS_VIOLATED, mark the task as done, and return the agent to the WAITING loop.
@@ -198,23 +194,21 @@ class AbstractURPAgent(ABC):
                     result: ProcessResult = await self.process(message)
                     
                     # Post-condition Check: Inside the successful block of process(), right before emitting TASK_COMPLETED, invoke _check_postconditions.
-                    logger.debug(f"[{self.descriptor.agent_id}] Evaluating task postconditions for Msg ID: {message.message_id}")
-                    postcond_res = await self._check_postconditions(message, result)
-                    if isinstance(postcond_res, tuple):
-                        post_ok, post_response = postcond_res
-                    else:
-                        post_ok = postcond_res
-                        post_response = "Postconditions check failed" if not post_ok else "Postcondition check successful"
+                    logger.info(f"[{self.descriptor.agent_id}] Evaluating task postconditions for Msg ID: {message.message_id}")
+                    post_ok, post_response = await self._check_postconditions(message, result) 
+                    # NOTE: _check_postconditions may update result.category if any categorical post condition failure occur. 
+                    
+
                     if not post_ok:
                         raise PostconditionsViolatedError(result=result,message=f"Postconditions check failed: {post_response}")
                     
-                    # 3. AUTO-EMIT FINAL RESULT
-                    self._state.last_task_outcome = result.outcome
+                    self._state.last_process_result = result
                     self._state.outcome_acknowledged = False
                     
                     logger.info(f"[{self.descriptor.agent_id}] Task processing successful. Outcome: {result.outcome}. Dispatching response.")
+                    # 3. AUTO-EMIT FINAL RESULT
                     await self.emit(MessageEnvelope(
-                        type=self._state.last_task_outcome,
+                        type=self._state.last_process_result.outcome.value,
                         payload=result.payload,
                         sender=self.descriptor.agent_id,
                         correlation_id=message.correlation_id,
@@ -223,8 +217,17 @@ class AbstractURPAgent(ABC):
                         
                 except PostconditionsViolatedError as e:
                     logger.warning(f"[{self.descriptor.agent_id}] Postconditions violated for Msg ID {message.message_id}: {str(e)}")
-                    self._state.last_task_outcome = LastTaskOutcome.TASK_FAILED
+                    # Post conditions validation may have already updated the FailureCategory in e.result.
+                    cat = FailureCategory.POSTCONDITION_FAILURE
+                    if e.result and e.result.category != FailureCategory.NONE:
+                        cat = e.result.category
+                        
+                    self._state.last_process_result = ProcessResult(
+                        outcome=LastTaskOutcome.TASK_FAILED,
+                        category=cat
+                    )
                     self._state.outcome_acknowledged = False
+                    
                     await self.emit(MessageEnvelope(
                         type="TASK_POSTCONDITIONS_VIOLATED",
                         payload={
@@ -238,7 +241,10 @@ class AbstractURPAgent(ABC):
                     ))
                 except PreconditionsViolatedError as e:
                     logger.warning(f"[{self.descriptor.agent_id}] Preconditions violated for Msg ID {message.message_id}: {str(e)}")
-                    self._state.last_task_outcome = LastTaskOutcome.TASK_FAILED
+                    self._state.last_process_result = ProcessResult(
+                        outcome=LastTaskOutcome.TASK_FAILED,
+                        category=FailureCategory.PRECONDITION_FAILURE
+                    )
                     self._state.outcome_acknowledged = False
                     await self.emit(MessageEnvelope(
                         type="TASK_PRECONDITIONS_VIOLATED",
@@ -254,7 +260,10 @@ class AbstractURPAgent(ABC):
 
                 except Exception as e:
                     logger.error(f"[{self.descriptor.agent_id}] Unhandled exception during processing of Msg ID {message.message_id}", exc_info=True)
-                    self._state.last_task_outcome = LastTaskOutcome.TASK_FAILED
+                    self._state.last_process_result = ProcessResult(
+                        outcome=LastTaskOutcome.TASK_FAILED,
+                        category=FailureCategory.INFRASTRUCTURE_FAILURE
+                    )
                     self._state.outcome_acknowledged = False
                     await self.emit(MessageEnvelope(
                         type="TASK_FAILED",
@@ -340,11 +349,11 @@ class AbstractURPAgent(ABC):
             "status": self._state.status,
             "session_id": self._state.session_id,
             "mailbox_size": self.mailbox.qsize(),
-            "last_task_outcome": self._state.last_task_outcome,
+            "last_process_result": self._state.last_process_result,
             "outcome_acknowledged": self._state.outcome_acknowledged
         }
         
     def acknowledge_outcome(self) -> None:
         """Allows external systems (e.g., AOSM) to acknowledge that they've processed the last task outcome."""
-        logger.info(f"[{self.descriptor.agent_id}] Outcome {self._state.last_task_outcome} has been externally acknowledged.")
+        logger.info(f"[{self.descriptor.agent_id}] Result {self._state.last_process_result} has been externally acknowledged.")
         self._state.outcome_acknowledged = True

@@ -706,6 +706,7 @@ class AOSM:
             await self.transition_to(AOSMState.PRESENT_RESULT, payload=event.payload)
         except Exception as e:
             logger.error(f"Background wait failed: {e}")
+    
     async def _handle_close_project(self, event: BaseEvent):
         """Global handler for closing the current project."""
         logger.info(f"[AOSM._handle_close_project] Closing project {self.project_id}")
