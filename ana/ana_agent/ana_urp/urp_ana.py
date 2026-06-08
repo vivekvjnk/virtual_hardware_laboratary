@@ -648,7 +648,7 @@ class AnaURPAgent(AbstractURPAgent):
         eval_results_dir = iteration_dir / "eval_results"
         error_summary_parts = [
             "The circuit failed VAP evaluation. Please analyse the following evaluation "
-            "output file and correct the circuit accordingly.(first 4000 characters of the output files is attached here for your reference)\n"
+            "output file and correct the circuit accordingly.(first 4000 characters of the output log files are attached here for your reference)\n"
         ]
 
         if eval_results_dir.exists():

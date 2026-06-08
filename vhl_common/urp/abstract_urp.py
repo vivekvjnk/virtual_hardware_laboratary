@@ -224,14 +224,15 @@ class AbstractURPAgent(ABC):
                         
                     self._state.last_process_result = ProcessResult(
                         outcome=LastTaskOutcome.TASK_FAILED,
-                        category=cat
+                        category=cat,
+                        payload=e.result.payload
                     )
                     self._state.outcome_acknowledged = False
                     
                     await self.emit(MessageEnvelope(
                         type="TASK_POSTCONDITIONS_VIOLATED",
                         payload={
-                            "result": e.result,
+                            "result": self._state.last_process_result,
                             "error": str(e),
                             "text": str(e)
                         },
