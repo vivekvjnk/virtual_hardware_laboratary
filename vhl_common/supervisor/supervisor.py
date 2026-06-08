@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from typing import Any, Dict
 from datetime import datetime
 from vhl_common.urp.abstract_urp import AbstractURPAgent
@@ -16,6 +17,8 @@ from .data_types import SupervisorState
 from vhl_common.gate.gate import GateRegistry
 from vhl_common.urp.data_types import MessageEnvelope
 
+# Initialize logger for this module
+logger = logging.getLogger(__name__)
 
 class Supervisor:
     """The persistent control plane for all active URP agent instances."""
@@ -41,39 +44,48 @@ class Supervisor:
         
         from vhl_common.gate.hil import HILTerminal
         self.hil_terminal = HILTerminal(self.gate)
+        logger.info("Supervisor initialized successfully in context '%s'.", context_id)
 
     def start(self, interval: float = 0.1) -> None:
         """Start the background outcome monitoring loop."""
         self._monitor_interval = interval
         import os
         if os.environ.get("VHL_DISABLE_HIL_TERMINAL") != "true":
+            logger.info("Starting HIL Terminal...")
             self.hil_terminal.start()
+        else:
+            logger.warning("HIL Terminal initialization skipped (VHL_DISABLE_HIL_TERMINAL is set).")
             
         if self._monitor_task is None or self._monitor_task.done():
+            logger.info("Starting background outcome monitoring loop (interval: %s s)...", interval)
             self._monitor_task = asyncio.create_task(self._run_monitoring_loop())
 
     async def stop(self) -> None:
         """Stop the background outcome monitoring loop and HIL terminal."""
+        logger.info("Stopping Supervisor operations...")
         await self.hil_terminal.stop()
+        
         if self._monitor_task and not self._monitor_task.done():
             self._monitor_task.cancel()
             try:
                 await self._monitor_task
             except asyncio.CancelledError:
-                pass
+                logger.debug("Background monitoring loop task cancelled successfully.")
         self._monitor_task = None
+        logger.info("Supervisor stopped.")
 
     async def _run_monitoring_loop(self) -> None:
         while True:
             try:
                 await self.process_outcomes()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.exception("Unexpected exception encountered during the outcome monitoring loop execution: %s", e)
             await asyncio.sleep(self._monitor_interval)
 
     async def process_outcomes(self) -> None:
         """Inspect all registered agents and route any pending outcomes to their active controllers."""
         if self.state == SupervisorState.SHUTDOWN:
+            logger.debug("Skipping outcome processing: Supervisor is in SHUTDOWN state.")
             return
 
         for agent_id, record in list(self._agents.items()):
@@ -87,29 +99,38 @@ class Supervisor:
                 acknowledged = state.get("outcome_acknowledged")
 
                 if outcome is not None and not acknowledged:
+                    logger.debug("Detected pending, unacknowledged outcome for agent '%s'. Scheduling routing...", agent_id)
                     self._routing_agents.add(agent_id)
                     asyncio.create_task(self._route_and_acknowledge(agent_id, record, outcome))
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error("Failed to inspect metrics for agent '%s' during outcome processing: %s", agent_id, e, exc_info=True)
 
     async def _route_and_acknowledge(self, agent_id: str, record: AgentRecord, outcome: Any) -> None:
         try:
             active_controller_id = record.active_controller
             controller = self._controllers.get(active_controller_id)
+            
             if controller:
+                logger.info("Routing agent '%s' outcome to active controller '%s'.", agent_id, active_controller_id)
                 await controller.handle_outcome(agent_id, outcome)
+            else:
+                logger.warning("Active controller '%s' for agent '%s' was not found in registry. Dropping outcome routing.", active_controller_id, agent_id)
+                
             self.acknowledge_outcome(agent_id)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error("Exception occurred while routing or acknowledging outcome for agent '%s': %s", agent_id, e, exc_info=True)
         finally:
             self._routing_agents.discard(agent_id)
 
     def attach_agent(self, agent: AbstractURPAgent) -> None:
         """Attach an active agent to the Supervisor registry."""
         if agent is None:
+            logger.warning("Attempted to attach a None agent reference. Ignoring request.")
             return
+            
         agent_id = agent.descriptor.agent_id
         if agent_id in self._agents:
+            logger.error("Failed to attach agent: ID '%s' is already registered.", agent_id)
             raise AgentAlreadyExistsError(f"Agent with ID '{agent_id}' is already registered.")
 
         # Every newly attached agent is unclaimed and thus governed by the DefaultController
@@ -133,10 +154,12 @@ class Supervisor:
         
         # Enforce agent egress via Supervisor -> Gate
         agent.set_callback(lambda msg: asyncio.create_task(self.route_egress(msg)))
+        logger.info("Agent '%s' successfully attached and bound to default controller '%s'.", agent_id, self._default_controller.controller_id)
 
     def detach_agent(self, agent_id: str) -> None:
         """Detach an agent from the Supervisor registry."""
         if agent_id not in self._agents:
+            logger.error("Failed to detach agent: ID '%s' not found.", agent_id)
             raise AgentNotFoundError(f"Agent with ID '{agent_id}' not found.")
         del self._agents[agent_id]
         if agent_id in self._claims:
@@ -144,33 +167,41 @@ class Supervisor:
         self._routing_agents.discard(agent_id)
 
         self.gate.unregister(agent_id)
+        logger.info("Agent '%s' has been successfully detached and cleaned up from Supervisor.", agent_id)
     def get_agent(self, agent_id: str) -> AbstractURPAgent:
         """Get the active agent instance by its ID."""
         if agent_id not in self._agents:
+            logger.error("Lookup failed: Agent '%s' not found.", agent_id)
             raise AgentNotFoundError(f"Agent with ID '{agent_id}' not found.")
         return self._agents[agent_id].agent
 
     def register_controller(self, controller: AbstractController) -> None:
         """Register a controller plugin with the Supervisor."""
         if controller is None:
+            logger.warning("Attempted to register a None controller reference. Ignoring request.")
             return
         controller_id = controller.controller_id
         if controller_id in self._controllers:
+            logger.error("Failed to register controller: ID '%s' already exists.", controller_id)
             raise ControllerAlreadyExistsError(f"Controller with ID '{controller_id}' is already registered.")
         
         self._controllers[controller_id] = controller
+        logger.info("Controller plugin '%s' (Priority: %s) registered successfully.", controller_id, controller.priority)
 
     def unregister_controller(self, controller_id: str) -> None:
         """Unregister a controller plugin from the Supervisor."""
         if controller_id not in self._controllers:
+            logger.error("Failed to unregister: Controller '%s' not found.", controller_id)
             raise ControllerNotFoundError(f"Controller with ID '{controller_id}' not found.")
         
         if controller_id == self._default_controller.controller_id:
+            logger.error("Unregister denied: The system fallback DefaultController cannot be unregistered.")
             raise ControlClaimError("Cannot unregister the default controller.")
 
         # Check if the controller currently governs any agent
         for agent_id, record in self._agents.items():
             if record.active_controller == controller_id:
+                logger.error("Unregister denied: Controller '%s' actively governs agent '%s'.", controller_id, agent_id)
                 raise ControlClaimError(
                     f"Cannot unregister controller '{controller_id}' because it is currently governing agent '{agent_id}'."
                 )
@@ -181,11 +212,13 @@ class Supervisor:
         # Clean up any inactive claims
         for agent_id in list(self._claims.keys()):
             if controller_id in self._claims[agent_id]:
-                del self._claims[agent_id][controller_id]
+                del self._claims[agent_id][controller_id]      
+        logger.info("Controller plugin '%s' successfully unregistered.", controller_id)
 
     def get_controller(self, controller_id: str) -> AbstractController:
         """Get a registered controller by its ID."""
         if controller_id not in self._controllers:
+            logger.error("Lookup failed: Controller '%s' not found.", controller_id)
             raise ControllerNotFoundError(f"Controller with ID '{controller_id}' not found.")
         return self._controllers[controller_id]
 
@@ -195,13 +228,17 @@ class Supervisor:
         Returns True if authority was acquired, False otherwise.
         """
         if self.state in (SupervisorState.MAINTENANCE, SupervisorState.SHUTDOWN):
+            logger.error("Claim rejected: System state is '%s' (Claims blocked).", self.state.name)
             raise ControlClaimError(f"Cannot claim agents while supervisor is in {self.state.name} state.")
 
         if agent_id not in self._agents:
+            logger.error("Claim rejected: Target agent '%s' not found.", agent_id)
             raise AgentNotFoundError(f"Agent with ID '{agent_id}' not found.")
         if controller_id not in self._controllers:
+            logger.error("Claim rejected: Requesting controller '%s' not found.", controller_id)
             raise ControllerNotFoundError(f"Controller with ID '{controller_id}' not found.")
 
+        logger.debug("Processing control claim request by '%s' over agent '%s'...", controller_id, agent_id)
         controller = self._controllers[controller_id]
         record = self._agents[agent_id]
         old_active_id = record.active_controller
@@ -227,27 +264,35 @@ class Supervisor:
                 if old_active_id:
                     old_controller = self._controllers.get(old_active_id)
                     if old_controller:
+                        logger.debug("Notifying controller '%s' that it has been unseated from agent '%s'.", old_active_id, agent_id)
                         await old_controller.on_released(agent_id)
                 
                 record.active_controller = controller_id
+                logger.info("Arbitration update: Controller '%s' has successfully ACQUIRED control over agent '%s' (Unseated: '%s').", controller_id, agent_id, old_active_id)
                 await controller.on_acquired(agent_id)
             return True
         else:
+            logger.info("Arbitration update: Claim request by '%s' over agent '%s' DENIED. Controller '%s' retains higher precedence.", controller_id, agent_id, winning_claim.controller_id)
             return False
 
     async def release(self, controller_id: str, agent_id: str) -> None:
         """Release authority over a specific agent for a controller."""
         if agent_id not in self._agents:
+            logger.error("Release failed: Agent '%s' not found.", agent_id)
             raise AgentNotFoundError(f"Agent with ID '{agent_id}' not found.")
         if controller_id not in self._controllers:
+            logger.error("Release failed: Controller '%s' not found.", controller_id)
             raise ControllerNotFoundError(f"Controller with ID '{controller_id}' not found.")
 
         if agent_id not in self._claims or controller_id not in self._claims[agent_id]:
+            logger.error("Release failed: No active claim found for controller '%s' on agent '%s'.", controller_id, agent_id)
             raise ControlClaimError(f"No active claim found for controller '{controller_id}' on agent '{agent_id}'.")
 
         if controller_id == self._default_controller.controller_id:
+            logger.error("Release rejected: Fallback claim for '%s' cannot be released.", self._default_controller.controller_id)
             raise ControlClaimError("Cannot release the default controller's fallback claim.")
 
+        logger.debug("Processing control release request by '%s' over agent '%s'...", controller_id, agent_id)
         record = self._agents[agent_id]
         old_active_id = record.active_controller
 
@@ -267,6 +312,7 @@ class Supervisor:
                 await old_controller.on_released(agent_id)
 
             record.active_controller = new_active_id
+            logger.info("Arbitration update: Controller '%s' RELEASED control of agent '%s'. New active controller fallback: '%s'.", controller_id, agent_id, new_active_id)
             new_controller = self._controllers.get(new_active_id)
             if new_controller:
                 await new_controller.on_acquired(agent_id)
@@ -286,16 +332,22 @@ class Supervisor:
     def acknowledge_outcome(self, agent_id: str) -> None:
         """Allows external systems or the supervisor to acknowledge that they've processed the last task outcome."""
         if agent_id not in self._agents:
+            logger.error("Acknowledgment failed: Agent '%s' not found.", agent_id)
             raise AgentNotFoundError(f"Agent with ID '{agent_id}' not found.")
+        logger.debug("Acknowledging processing result outcome for agent '%s'.", agent_id)
         self._agents[agent_id].agent.acknowledge_outcome()
 
     async def send(self, agent_id: str, message: Any) -> None:
         """Route a message to an agent on behalf of its active controller."""
         if self.state == SupervisorState.SHUTDOWN:
+            logger.error("Ingress message drop: Refusing routing to agent '%s' during SHUTDOWN state.", agent_id)
             raise ControlClaimError("Cannot send messages while supervisor is in SHUTDOWN state.")
 
         if agent_id not in self._agents:
+            logger.error("Ingress message drop: Target agent '%s' not found.", agent_id)
             raise AgentNotFoundError(f"Agent with ID '{agent_id}' not found.")
+            
+        logger.debug("Routing ingress message to agent '%s' through Supervisor.", agent_id)
         agent = self._agents[agent_id].agent
         await agent.send(message)
 
@@ -304,7 +356,6 @@ class Supervisor:
         system_view = {}
         for agent_id, record in self._agents.items():
             state = record.agent.state
-            # Expose waiting, processing, error, terminated states dynamically based on underlying agent status
             status = state.get("status", "UNKNOWN")
             if hasattr(status, "name"):
                 status = status.name
@@ -317,9 +368,12 @@ class Supervisor:
     async def route_egress(self, message: MessageEnvelope) -> None:
         """Route a message originating from an agent to its destination via Gate."""
         if self.state == SupervisorState.SHUTDOWN:
+            logger.error("Egress message drop: Refusing routing during SHUTDOWN state.")
             raise ControlClaimError("Cannot route egress messages while supervisor is in SHUTDOWN state.")
+        logger.debug("Routing egress message originating from agent via Gate Registry.")
         await self.gate.send(message)
 
     def register_hil_handler(self, handler) -> None:
         """Register the HIL communication handler."""
+        logger.info("Registering modern HIL handling logic with context Gate.")
         self.gate.register("HIL", handler)
