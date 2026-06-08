@@ -752,13 +752,15 @@ class AOSM:
         """
         logger.info(f"[AOSM.run_workflow_1] Starting sequential Workflow 1 for module: {module_name}")
         try:
+            timeout = 1200
+
             # 1. Step 1: Archy
-            await self.workflow_controller.handle_archy(module_name=module_name)
+            await self.workflow_controller.handle_archy(module_name=module_name,timeout=timeout)
             archy_evaluator = ArchyEvaluator(self.project_semantic_db, module_name=module_name)
             archy_evaluator.evaluate() # This will commit an operation to the semantic db which can            
             
             # 2. Step 2: Librarian
-            await self.workflow_controller.handle_librarian(module_name=module_name)
+            await self.workflow_controller.handle_librarian(module_name=module_name,timeout=timeout)
             librarian_evaluator = LibrarianEvaluator(self.project_semantic_db, module_name=module_name)
             librarian_evaluator.evaluate()
             # 3. Step 3: ANA-D

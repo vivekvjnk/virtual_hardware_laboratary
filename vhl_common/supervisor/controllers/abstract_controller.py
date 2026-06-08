@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from vhl_common.urp.data_types import LastTaskOutcome
+from vhl_common.urp.data_types import ProcessResult
 
 
 class AbstractController(ABC):
@@ -28,6 +28,6 @@ class AbstractController(ABC):
         pass
 
     @abstractmethod
-    async def handle_outcome(self, agent_id: str, outcome: LastTaskOutcome) -> None:
+    async def handle_outcome(self, agent_id: str, outcome: ProcessResult) -> None:
         """Callback invoked when a managed agent publishes a task outcome."""
         pass

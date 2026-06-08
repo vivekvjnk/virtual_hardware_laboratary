@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from typing import Any, Dict, Callable, Optional
-from vhl_common.urp.data_types import LastTaskOutcome, MessageEnvelope
+from vhl_common.urp.data_types import LastTaskOutcome, MessageEnvelope, ProcessResult
 from vhl_protocol.models import AgentStatus
 from archy_agent.main import prepare_archy_workspace
 from ..exceptions import AgentNotFoundError
@@ -52,13 +52,13 @@ class Workflow1Controller(AbstractController):
         logger.info(f"[{self.controller_id}] Released authority over agent: {agent_id}")
         self._outcome_queues.pop(agent_id, None)
 
-    async def handle_outcome(self, agent_id: str, outcome: LastTaskOutcome) -> None:
-        logger.info(f"[{self.controller_id}] Received outcome for agent '{agent_id}': {outcome}")
+    async def handle_outcome(self, agent_id: str, last_process_result: ProcessResult) -> None:
+        logger.info(f"[{self.controller_id}] Received outcome for agent '{agent_id}': {last_process_result}")
         if agent_id not in self._outcome_queues:
             self._outcome_queues[agent_id] = asyncio.Queue()
-        await self._outcome_queues[agent_id].put(outcome)
+        await self._outcome_queues[agent_id].put(last_process_result)
 
-    async def wait_for_outcome(self, agent_id: str, timeout: float = OUTCOME_WAIT_TIMEOUT) -> LastTaskOutcome:
+    async def wait_for_outcome(self, agent_id: str, timeout: float = OUTCOME_WAIT_TIMEOUT) -> ProcessResult:
         """Asynchronously waits for an outcome from a specific agent."""
         if agent_id not in self._outcome_queues:
             self._outcome_queues[agent_id] = asyncio.Queue()
@@ -114,7 +114,7 @@ class Workflow1Controller(AbstractController):
                 logger.info(f"[{self.controller_id}.handle_archy] Waiting for Archy to complete... Current status: {current_state.get('status')}")
 
                 # Wait for outcome routed by supervisor
-                outcome = await self.wait_for_outcome(archy_agent_id, timeout=timeout - (asyncio.get_event_loop().time() - start_time))
+                process_result = await self.wait_for_outcome(archy_agent_id, timeout=timeout - (asyncio.get_event_loop().time() - start_time))
 
                 # TODO : Elaborate decision logic needs to be implemented
                 # 1. If outcome is TASK_COMPLETED:
@@ -124,12 +124,12 @@ class Workflow1Controller(AbstractController):
                 #       - If AgentStatus.WAITING ==> Waiting for HIL user to interact with agent to resolve the problem
                 #       - If AgentStatus.PROCESSING ==> HIL user has sent some message 
                 # Decision logic
-                if outcome.value == LastTaskOutcome.TASK_COMPLETED.value:
+                if process_result.outcome is LastTaskOutcome.TASK_COMPLETED:
                     found_completion = True
                     break
-                elif outcome.value == LastTaskOutcome.TASK_FAILED.value:
+                elif process_result.outcome.value is LastTaskOutcome.TASK_FAILED:
                     logger.warning(
-                        f"[{self.controller_id}.handle_archy] Archy returned {outcome}. Waiting for HIL resolution..."
+                        f"[{self.controller_id}.handle_archy] Archy returned {process_result}. Waiting for HIL resolution..."
                     )
                     await asyncio.sleep(self.poll_interval)
                     continue
@@ -184,7 +184,7 @@ class Workflow1Controller(AbstractController):
                 logger.info(f"[{self.controller_id}.handle_librarian] Waiting for Librarian to complete... Current status: {current_state.get('status')}")
 
                 # Wait for outcome routed by supervisor
-                outcome = await self.wait_for_outcome(librarian_agent_id, timeout=timeout - (asyncio.get_event_loop().time() - start_time))
+                process_result = await self.wait_for_outcome(librarian_agent_id, timeout=timeout - (asyncio.get_event_loop().time() - start_time))
 
 
                 # TODO : Elaborate decision logic needs to be implemented
@@ -195,12 +195,12 @@ class Workflow1Controller(AbstractController):
                 #       - If AgentStatus.WAITING ==> Waiting for HIL user to interact with agent to resolve the problem
                 #       - If AgentStatus.PROCESSING ==> HIL user has sent some message 
                 # Decision logic
-                if outcome.value == LastTaskOutcome.TASK_COMPLETED.value:
+                if process_result.outcome is LastTaskOutcome.TASK_COMPLETED:
                     found_completion = True
                     break
-                elif outcome.value == LastTaskOutcome.TASK_FAILED.value:
+                elif process_result.outcome is LastTaskOutcome.TASK_FAILED:
                     logger.warning(
-                        f"[{self.controller_id}.handle_librarian] Librarian returned {outcome}. Waiting for HIL resolution..."
+                        f"[{self.controller_id}.handle_librarian] Librarian returned {process_result}. Waiting for HIL resolution..."
                     )
                     await asyncio.sleep(self.poll_interval)
                     continue

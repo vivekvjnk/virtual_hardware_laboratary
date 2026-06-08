@@ -458,7 +458,7 @@ class AnaURPAgent(AbstractURPAgent):
     # ------------------------------------------------------------------
 
     async def _check_postconditions(
-        self, message: MessageEnvelope, result: ProcessResult
+        self, message: MessageEnvelope, process_result: ProcessResult
     ) -> tuple[bool, str]:
         """
         Post-condition hook — runs after process() succeeds.
@@ -487,22 +487,18 @@ class AnaURPAgent(AbstractURPAgent):
            which triggers a new corrective invocation with ANA in error-correction mode.
         """
         if not self._iteration_dir:
+            process_result.category = FailureCategory.INFRASTRUCTURE_FAILURE
             return False, "Iteration directory not set — cannot run W2 validation."
-        logger.info(
-            f"[AnaURPAgent._check_postconditions] module='{self.module_name}', "
-            f"iteration='{self._iteration_dir}'"
-        )
         
         # Confirm ANA-W1 produced the expected circuit file
         circuit_tsx_path = self.workspace_manager.get_circuit_tsx_path(
             module_name=self.module_name
         )
         if not circuit_tsx_path.exists():
-            raise FileNotFoundError(
-                f"ANA-W1 did not produce a circuit .tsx file in {self._iteration_dir}."
-            )
+            process_result.category = FailureCategory.AGENTIC_FAILURE
+            return False,f"ANA-W1 did not produce a circuit .tsx file in {self._iteration_dir}."
         logger.info(
-            f"[AnaURPAgent.process] ANA-W1 completed. Circuit at: {circuit_tsx_path}"
+            f"[AnaURPAgent._check_postconditions] module='{self.module_name}', iteration='{self._iteration_dir}', circuit_tsx_path='{circuit_tsx_path}"
         )
 
 
@@ -528,7 +524,7 @@ class AnaURPAgent(AbstractURPAgent):
         except Exception as e:
             msg = f"[AnaURPAgent._check_postconditions] ANA-W2 raised exception: {e}"
             logger.exception(msg)
-            result.category = FailureCategory.INFRASTRUCTURE_FAILURE
+            process_result.category = FailureCategory.INFRASTRUCTURE_FAILURE
             return False, msg
         finally:
             try:
@@ -542,17 +538,26 @@ class AnaURPAgent(AbstractURPAgent):
         )
 
         # ---- Step 2: Act on VAP decision ----
+        # NOTE: following handlers update the process_result.category if any failures occur.
         if vap_decision == "ACCEPT":
-            return await self._handle_vap_accept(vap_result, iteration_dir)
+            try:
+                return await self._handle_vap_accept(vap_result=vap_result, iteration_dir=iteration_dir) 
+            except e:
+                msg = (f"[AnaURPAgent._handle_vap_accept] Failed: {e}")
+                logger.error(msg)
+                process_result.category = FailureCategory.INFRASTRUCTURE_FAILURE
+                return False, msg
+
         elif vap_decision == "REJECT":
-            return await self._handle_vap_reject(vap_result, iteration_dir)
+            process_result.category = FailureCategory.VALIDATION_FAILURE
+            return await self._handle_vap_reject(vap_result=vap_result,iteration_dir=iteration_dir)
         else:
             msg = (
                 f"[AnaURPAgent._check_postconditions] Unexpected VAP decision: "
                 f"'{vap_decision}'. Treating as REJECT."
             )
             logger.error(msg)
-            result.category = FailureCategory.VALIDATION_FAILURE
+            process_result.category = FailureCategory.VALIDATION_FAILURE
             return False, msg
 
     # ------------------------------------------------------------------
@@ -560,7 +565,7 @@ class AnaURPAgent(AbstractURPAgent):
     # ------------------------------------------------------------------
 
     async def _handle_vap_accept(
-        self, vap_result: dict, iteration_dir: Path, result:ProcessResult
+        self, vap_result: dict, iteration_dir: Path,
     ) -> tuple[bool, str]:
         """
         Handle VAP ACCEPT:
@@ -573,68 +578,60 @@ class AnaURPAgent(AbstractURPAgent):
         """
         logger.info("[AnaURPAgent._handle_vap_accept] VAP ACCEPTED — promoting to Stable/.")
 
-        try:
-            # 1. Promote circuit to Stable/
-            self.workspace_manager.populate_stable(
-                iteration_id=str(iteration_dir),
-                module_name=self.module_name,
-            )
-            logger.info(
-                f"[AnaURPAgent._handle_vap_accept] Stable/ populated from {iteration_dir}"
-            )
+        # 1. Promote circuit to Stable/
+        self.workspace_manager.populate_stable(
+            iteration_id=str(iteration_dir),
+            module_name=self.module_name,
+        )
+        logger.info(
+            f"[AnaURPAgent._handle_vap_accept] Stable/ populated from {iteration_dir}"
+        )
 
-            # 2. Move all iteration directories to Archives/
-            self.workspace_manager.move_iterations_to_archives(
-                module_name=self.module_name
-            )
-            logger.info("[AnaURPAgent._handle_vap_accept] Iterations archived.")
+        # 2. Move all iteration directories to Archives/
+        self.workspace_manager.move_iterations_to_archives(
+            module_name=self.module_name
+        )
+        logger.info("[AnaURPAgent._handle_vap_accept] Iterations archived.")
+    
+
+        # 3. Record CIRCUIT_SYNTHESIS operation
+        snapshot_id = self.workspace_manager.record_operation(
+            module_name=self.module_name,
+            op_name=ANA_OPERATION_NAME,
+            author=self.descriptor.agent_id,
+            status="SUCCESS",
+            payload={
+                "vap_decision": vap_result.get("decision"),
+                "task_id": vap_result.get("task_id"),
+                "circuit_name": self.workspace_manager.circuit_name.get(self.module_name),
+            },
+            commit_message=f"CIRCUIT_SYNTHESIS: Module '{self.module_name}' validated successfully",
+        )
+        logger.info(
+            f"[AnaURPAgent._handle_vap_accept] CIRCUIT_SYNTHESIS recorded. "
+            f"Snapshot ID: {snapshot_id}"
+        )
+
+        # 4. Sync project with runtime
+        iteration_id = self.workspace_manager.get_current_iteration_id(module_name=self.module_name)
+        await self.sync_client.sync_circuit_json(self.project_id, iteration_id)
+        logger.info(f"[AnaURPAgent._handle_vap_accept] StableCircuit and EvaluationOutput sync completed successfully")
+
+        # 5. Send evaluation update to the runtime 
+        await self.web_socket_client.emit_evaluation_update(task_id=vap_result.get("task_id"), decision=vap_result.get("decision"))
+        logger.info(f"[AnaURPAgent._handle_vap_accept] Sent evaluation update to vhl-runtime")
         
+        # 6. Condense conversation history to prevent context bloat on next iteration
+        self.conversation.condense()
+        logger.info("[AnaURPAgent._handle_vap_accept] Condensed conversation")
 
-            # 3. Record CIRCUIT_SYNTHESIS operation
-            snapshot_id = self.workspace_manager.record_operation(
-                module_name=self.module_name,
-                op_name=ANA_OPERATION_NAME,
-                author=self.descriptor.agent_id,
-                status="SUCCESS",
-                payload={
-                    "vap_decision": vap_result.get("decision"),
-                    "task_id": vap_result.get("task_id"),
-                    "circuit_name": self.workspace_manager.circuit_name.get(self.module_name),
-                },
-                commit_message=f"CIRCUIT_SYNTHESIS: Module '{self.module_name}' validated successfully",
-            )
-            logger.info(
-                f"[AnaURPAgent._handle_vap_accept] CIRCUIT_SYNTHESIS recorded. "
-                f"Snapshot ID: {snapshot_id}"
-            )
-
-            # 4. Sync project with runtime
-            iteration_id = self.workspace_manager.get_current_iteration_id(module_name=self.module_name)
-            await self.sync_client.sync_circuit_json(self.project_id, iteration_id)
-            logger.info(f"[AnaURPAgent._handle_vap_accept] StableCircuit and EvaluationOutput sync completed successfully")
-
-            # 5. Send evaluation update to the runtime 
-            await self.web_socket_client.emit_evaluation_update(task_id=vap_result.get("task_id"), decision=vap_result.get("decision"))
-            logger.info(f"[AnaURPAgent._handle_vap_accept] Sent evaluation update to vhl-runtime")
-            
-            # 6. Condense conversation history to prevent context bloat on next iteration
-            self.conversation.condense()
-            logger.info("[AnaURPAgent._handle_vap_accept] Condensed conversation")
-
-            return (
-                True,
-                f"VAP ACCEPTED. Circuit for module '{self.module_name}' promoted to Stable/.",
-            )
-        except Exception as e:
-            msg = (
-                f"[AnaURPAgent._handle_vap_accept] Failed: {e}"
-            )
-            logger.error(msg)
-            result.category = FailureCategory.INFRASTRUCTURE_FAILURE
-            return False, msg
-
+        return (
+            True,
+            f"VAP ACCEPTED. Circuit for module '{self.module_name}' promoted to Stable/.",
+        )
+        
     async def _handle_vap_reject(
-        self, vap_result: dict, iteration_dir: Path, result:ProcessResult
+        self, vap_result: dict, iteration_dir: Path
     ) -> tuple[bool, str]:
         """
         Handle VAP REJECT:
@@ -651,7 +648,7 @@ class AnaURPAgent(AbstractURPAgent):
         eval_results_dir = iteration_dir / "eval_results"
         error_summary_parts = [
             "The circuit failed VAP evaluation. Please analyse the following evaluation "
-            "output and correct the circuit accordingly.\n"
+            "output file and correct the circuit accordingly.(first 4000 characters of the output files is attached here for your reference)\n"
         ]
 
         if eval_results_dir.exists():
@@ -661,7 +658,7 @@ class AnaURPAgent(AbstractURPAgent):
                     try:
                         content = log_file.read_text(encoding="utf-8", errors="replace")
                         error_summary_parts.append(
-                            f"\n--- {log_file.name} ---\n{content[:4000]}"  # cap per file
+                            f"\n--- {log_file.resolve()} ---\n{content[:4000]}"  # cap per file
                         )
                     except Exception as e:
                         logger.warning(
@@ -697,7 +694,6 @@ class AnaURPAgent(AbstractURPAgent):
             "Error-correction iteration will be triggered. "
             f"Task ID: {vap_result.get('task_id', 'N/A')}"
         )
-        result.category = FailureCategory.VALIDATION_FAILURE
         return False, reject_reason
 
 

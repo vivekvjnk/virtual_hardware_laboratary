@@ -200,7 +200,7 @@ class AbstractURPAgent(ABC):
                     
 
                     if not post_ok:
-                        raise PostconditionsViolatedError(result=result,message=f"Postconditions check failed: {post_response}")
+                        raise PostconditionsViolatedError(result=result,message=post_response)
                     
                     self._state.last_process_result = result
                     self._state.outcome_acknowledged = False
@@ -209,7 +209,7 @@ class AbstractURPAgent(ABC):
                     # 3. AUTO-EMIT FINAL RESULT
                     await self.emit(MessageEnvelope(
                         type=self._state.last_process_result.outcome.value,
-                        payload=result.payload,
+                        payload=self._state.last_process_result,
                         sender=self.descriptor.agent_id,
                         correlation_id=message.correlation_id,
                         message_id=message.message_id
@@ -219,7 +219,7 @@ class AbstractURPAgent(ABC):
                     logger.warning(f"[{self.descriptor.agent_id}] Postconditions violated for Msg ID {message.message_id}: {str(e)}")
                     # Post conditions validation may have already updated the FailureCategory in e.result.
                     cat = FailureCategory.POSTCONDITION_FAILURE
-                    if e.result and e.result.category != FailureCategory.NONE:
+                    if e.result and e.result.category is not FailureCategory.NONE:
                         cat = e.result.category
                         
                     self._state.last_process_result = ProcessResult(
