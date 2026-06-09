@@ -250,8 +250,8 @@ class AbstractURPAgent(ABC):
                     await self.emit(MessageEnvelope(
                         type="TASK_PRECONDITIONS_VIOLATED",
                         payload={
+                            "result": self._state.last_process_result,
                             "error": str(e),
-                            "reason": str(e),
                             "text": str(e)
                         },
                         sender=self.descriptor.agent_id,
@@ -269,6 +269,7 @@ class AbstractURPAgent(ABC):
                     await self.emit(MessageEnvelope(
                         type="TASK_FAILED",
                         payload={
+                            "result": self._state.last_process_result,
                             "error": str(e),
                             "text": str(e)
                         },
