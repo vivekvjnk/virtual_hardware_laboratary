@@ -40,12 +40,7 @@ llm = LLM(
     api_key=SecretStr(api_key),
 )
 
-# llm_condenser = LLM(
-#     usage_id="ana_condenser",
-#     model=model,
-#     base_url=base_url,
-#     api_key=SecretStr(api_key),
-# )
+
 surgical_condenser = LargeFileSurgicalCondenser(
     threshold_bytes=10240, # 1KB
     target_tool="file_editor"
@@ -70,7 +65,6 @@ logger.info(f"[ANA-W1] ANA-W1: Submodule root directory: {submodule_root}")
 tools = [
     Tool(name=TerminalTool.name),
     Tool(name=FileEditorTool.name),
-    # *GEMINI_FILE_TOOLS,
 ]
 
 

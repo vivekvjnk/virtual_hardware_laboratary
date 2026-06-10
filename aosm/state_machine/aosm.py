@@ -374,24 +374,26 @@ class AOSM:
                 
                 # Trigger sync for StableCircuit and Library (Agent to Runtime)
                 try:
-                    # Push StableCircuit from Agent to Runtime if it exists
-                    stable_path = self.sync_client.get_resource_path(project_id, "StableCircuit")
-                    if os.path.exists(stable_path):
-                        await self.sync_client.handle_upload_request(SyncPayload(
-                            sync_id=str(uuid.uuid4()),
-                            project_id=project_id,
-                            resource_type="StableCircuit",
-                            data={"circuit_name": self.workspace_manager.circuit_name}
-                        ))
+                    for module_name in self.workspace_manager.module_names:
+                        # Push StableCircuit from Agent to Runtime if it exists
+                        stable_path = self.sync_client.get_resource_path(project_id=project_id,resource_type="StableCircuit", module_name=module_name)
+                        if os.path.exists(stable_path):
+                            await self.sync_client.handle_upload_request(SyncPayload(
+                                sync_id=str(uuid.uuid4()),
+                                module_name=module_name,
+                                project_id=project_id,
+                                resource_type="StableCircuit",
+                                data={"circuit_name": self.workspace_manager.circuit_name}
+                            ))
 
-                    # Push Library from Agent to Runtime if it exists
-                    lib_path = self.sync_client.get_resource_path(project_id, "Library")
-                    if os.path.exists(lib_path):
-                        await self.sync_client.handle_upload_request(SyncPayload(
-                            sync_id=str(uuid.uuid4()),
-                            project_id=project_id,
-                            resource_type="Library"
-                        ))
+                        # Push Library from Agent to Runtime if it exists
+                        lib_path = self.sync_client.get_resource_path(project_id=project_id,resource_type="Library")
+                        if os.path.exists(lib_path):
+                            await self.sync_client.handle_upload_request(SyncPayload(
+                                sync_id=str(uuid.uuid4()),
+                                project_id=project_id,
+                                resource_type="Library"
+                            ))
                 except Exception as e:
                     logger.warning(f"[AOSM._handle_startup] Auto-sync failed on project load (this is expected if project is empty): {e}")
 
@@ -552,16 +554,16 @@ class AOSM:
 
             # if decision is ACCEPT copy current iteration directory to Stable directory
             if "ACCEPT" == decision:
-                # Sync StableCircuit and EvaluationOutput
+                # Sync StableCircuit and CompiledCircuit
                 if self.project_id:
                     try:
                         # 2. Trigger sync for evaluation output (Agent to Runtime)
                         # We need the iteration_id that was accepted.
                         # iteration_dir looks like .../iteration_<uuid>
                         iteration_id = Path(iteration_dir).name.replace("iteration_", "")
-                        await self.sync_client.sync_circuit_json(self.project_id, iteration_id)
+                        await self.sync_client.sync_compiled_circuit(project_id=self.project_id, iteration_id=iteration_id, module_name=None)  # NOTE: Outdated implementation. this method should be called with proper module name. Earlier AOSM implementation was for single circuit synthesis. All the downstream methods are modified to support multi-module synthesis.
                         
-                        logger.info(f"[AOSM._handle_present_result] StableCircuit and EvaluationOutput sync completed successfully")
+                        logger.info(f"[AOSM._handle_present_result] StableCircuit and CompiledCircuit sync completed successfully")
                         
                     except Exception as e:
                         logger.warning(f"[AOSM._handle_present_result] StableCircuit sync failed or timed out: {e}")

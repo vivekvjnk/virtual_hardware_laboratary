@@ -147,7 +147,9 @@ class AnaURPAgent(AbstractURPAgent):
         # Error payload forwarded from a REJECT post-condition into the next
         # process() call so ANA-W1 can self-correct.
         self._pending_error_message: Optional[str] = None
-
+        
+        # Runtime info like MAW paths. Populated by pre-condition 
+        self._runtime_info: dict[str,any] = None
     # ------------------------------------------------------------------
     # Lifecycle: _on_initialize
     # ------------------------------------------------------------------
@@ -337,6 +339,8 @@ class AnaURPAgent(AbstractURPAgent):
                     module_name=self.module_name,
                     observations=observations if observations else None,
                 )
+                
+
 
             else:
                 # ---- 3. First synthesis — create a bare iteration directory ----
@@ -354,6 +358,15 @@ class AnaURPAgent(AbstractURPAgent):
                 f"[AnaURPAgent._check_preconditions] Iteration directory ready: "
                 f"{self._iteration_dir}"
             )
+            
+            # TODO: populate the _runtime_info with iteration workspace paths
+            # * `{{ circuit }}.scud`
+            # * `resources/`
+            # * `resources/schematic_images/`
+            # * `tsci_built_in_elements/`
+            # * `lib/imports/`
+            # * `eval_results/`
+            
             return True, "Pre-conditions satisfied. Iteration directory created."
 
         except Exception as e:
@@ -389,33 +402,13 @@ class AnaURPAgent(AbstractURPAgent):
             f"iteration='{self._iteration_dir}'"
         )
 
-        scud_path: Path = self.workspace_manager.get_scud_path(
-            module_name=self.module_name
-        )
-        library_path: Path = self.workspace_manager.get_library_path(
-            module_name=self.module_name
-        )
-        circuit_name = self.workspace_manager.circuit_name[self.module_name]
         current_iter_dir = self._iteration_dir
-        schematic_images_path = str(current_iter_dir / "schematic_images")
 
-        # Observations: prefer pending error from previous REJECT, then message payload
-        observations: list = []
-        if self._pending_error_message:
-            logger.info(
-                "[AnaURPAgent.process] Injecting pending error message from previous "
-                "REJECT into observations for error-correction."
-            )
-            observations.append(self._pending_error_message)
-            self._pending_error_message = None  # consumed
+        self._pending_error_message = None  # consumed
 
-        payload_observations = (
-            message.payload.get("observations", []) if message.payload else []
-        )
-        observations.extend(payload_observations)
-
-        previous_iter_dir = self._previous_iteration_dir
-
+        user_message = message.payload["text"]
+        
+        
         logger.info(
             f"[AnaURPAgent.process] Mode: "
             f"{'error-correction' if previous_iter_dir else 'synthesis'}, "
@@ -423,19 +416,18 @@ class AnaURPAgent(AbstractURPAgent):
             f"circuit_name='{circuit_name}'"
         )
 
-        await asyncio.to_thread(
-            run_ana_w1_agent,
-            workspace=str(current_iter_dir),
-            schematic_images_path=schematic_images_path,
-            scud_path=str(scud_path),
-            circuit_name=circuit_name,
-            observations=observations if observations else None,
-            previous_iteration_dir=str(previous_iter_dir) if previous_iter_dir else None,
-            library_path=library_path,
-        )
-        
-        
 
+        self.conversation.send_message(
+            Message(
+                role="user",
+                content=[TextContent(text=user_message)],
+            )
+        )
+
+        # Run conversation in thread as it is synchronous
+        await asyncio.to_thread(self.conversation.run)
+        
+    
         if self.conversation.state.execution_status == ConversationExecutionStatus.PAUSED:
             process_outcome = LastTaskOutcome.WAITING_FOR_USER_INPUT
         elif self.conversation.state.execution_status == ConversationExecutionStatus.FINISHED: # Conversation has completed current task. last task outcome is success
@@ -452,7 +444,25 @@ class AnaURPAgent(AbstractURPAgent):
         payload = ProcessResultPayload(text=response)
         return ProcessResult(outcome=process_outcome, payload=payload)
 
+    def _prepare_orchestrator_message()->None:
+        """
+        Paths to derive from workspacemanager
 
+        * `{{ circuit }}.scud`
+        * `resources/`
+        * `resources/schematic_images/`
+        * `tsci_built_in_elements/`
+        * `lib/imports/`
+        * `eval_results/`
+
+        Under `resources/` you may find datasheets, reference designs module boundary document and system boundary document. 
+        Under `resources/schematic_images/` you may find the reference schematic design of the main ASIC in the module. You can use this as a reference for your design. 
+        Under `lib/imports/` you can find the non-trivial components for the module imported by the Librarian agent in the system.
+        Under `tsci_built_in_elements` you can find all the trivial tsci standard library component descriptions. You may refer them if needed. 
+        `eval_results/` directory appears after first evaluation iteration. You may find the logs from previous circuit evaluation under this directory.
+        
+        """
+        pass
     # ------------------------------------------------------------------
     # Post-conditions  (maps: handle_trigger_w2 + handle_authorize + handle_exit_success)
     # ------------------------------------------------------------------
@@ -614,8 +624,8 @@ class AnaURPAgent(AbstractURPAgent):
 
         # 4. Sync project with runtime
         iteration_id = self.workspace_manager.get_current_iteration_id(module_name=self.module_name)
-        await self.sync_client.sync_circuit_json(self.project_id, iteration_id)
-        logger.info(f"[AnaURPAgent._handle_vap_accept] StableCircuit and EvaluationOutput sync completed successfully")
+        await self.sync_client.sync_compiled_circuit(project_id=self.project_id, iteration_id=iteration_id,module_name=self.module_name)
+        logger.info(f"[AnaURPAgent._handle_vap_accept] StableCircuit and CompiledCircuit sync completed successfully")
 
         # 5. Send evaluation update to the runtime 
         await self.web_socket_client.emit_evaluation_update(task_id=vap_result.get("task_id"), decision=vap_result.get("decision"))

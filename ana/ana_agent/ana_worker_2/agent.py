@@ -103,17 +103,16 @@ class ANA_validation_agent:
         logger.info("[ANA_validation_agent.validate_circuit] Step 4: Syncing evaluation results...")
         output_dir = os.path.join(workspace, "eval_results")
         
-        if self.sync_client and self.project_id:
-             # Workflow 1.2: Runtime -> Agent download for Evaluation
-             await self.sync_client.sync_evaluation(self.project_id, iteration_id)
-        else:
-            raise ValueError(f"[ANA_validation_agent.validate_circuit] Project id or sync client is not set. Project id : {self.project_id}, Sync client : {self.sync_client}")
+        try:
+            # Workflow 1.2: Runtime -> Agent download for Evaluation
+            #NOTE Outdated call. This will no longer work. module name is a necessary parameter 
+            await self.sync_client.sync_evaluation(self.project_id, iteration_id)
+        except Exception as e:
+            raise ValueError(f"[ANA_validation_agent.validate_circuit] Failed to synchronize evalution results. Error: {e}")
             
-        logger.info("[ANA_validation_agent.validate_circuit] Step 4: Sync complete.")
-
         # 5. Delegate back to ANA-D
         # The return value provides all necessary info for ANA-D to continue.
-        logger.info("[ANA_validation_agent.validate_circuit] Step 5: Process complete. Returning results to orchestrator.")
+        logger.info("[ANA_validation_agent.validate_circuit] Step 5: Sync complete. Process complete. Returning results to orchestrator.")
         return {
             "task_id": task_id,
             "decision": decision,

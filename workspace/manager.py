@@ -604,47 +604,35 @@ class WorkspaceManager:
         # Symbolic links should include schematic_images/ dir, scud file and pin mapping file.
         
         links = [
-            ("schematic_images", self.project_root / module_name / "schematic_images"),
-            ("tsci_built_in_elements", self.project_root / module_name / "tsci_built_in_elements"),
+            ("schematic_images", self.project_root / module_name / "resources" / "schematic_images"),
+            ("tsci_built_in_elements", self.project_root / ".agent_skills" / "tscircuit_skills"),
         ]
         
         # 1. SCUD file link
-        # Priority 1: {circuit_name}.scud
-        # Priority 2: circuit.scud (legacy/fixed name)
-        # Priority 3: any .scud file found in project root
-        scud_src = None
-        if self.circuit_name:
-            p1 = self.project_root / module_name / f"{self.circuit_name[module_name]}.scud"
-            if p1.exists():
-                scud_src = p1
-        
-        if not scud_src:
-            p2 = self.project_root / module_name / "circuit.scud"
-            if p2.exists():
-                scud_src = p2
-                
-        if not scud_src:
-            for file in (self.project_root / module_name).iterdir():
-                if file.is_file() and file.suffix == ".scud":
-                    scud_src = file
-                    break
-        
-        if scud_src:
-            # We link it as its original name AND optionally as 'circuit.scud' for consistency
+        try:
+            scud_src  = self.project_root / module_name / f"{self.circuit_name[module_name]}.scud"
+            if not scud_src.exists():
+                raise Exception(f"Missing .scud file for {module_name}")
             links.append((scud_src.name, scud_src))
-            if scud_src.name != "circuit.scud":
-                links.append(("circuit.scud", scud_src))
-
+        except Exception as e:
+                raise ValueError(f"[WorkspaceManager._setup_iteration_symlinks] Failed to link .scud file. Error: {e}")
+                
+            
         # 2. Library imports link
         lib_imports_src = self.project_root / module_name / "lib" / "imports"
-        if lib_imports_src.exists() and lib_imports_src.is_dir():
+        try: 
+            if not lib_imports_src.is_dir():
+                raise Exception(f"Missing lib/import directory for {module_name}")
             # We link the whole lib/imports directory
             links.append(("lib/imports", lib_imports_src))
+        except Exception as e:
+            raise ValueError(f"[WorkspaceManager._setup_iteration_symlinks] Failed to link lib/imports. Error: {e}")
         
+
         for link_name, source in links:
             if not source.exists():
-                continue
-                
+                logger.warning(f"[WorkspaceManager._setup_iteration_symlinks] Missing source file: {source}")
+                continue        
             link_path = target_dir / link_name
             # Ensure parent directory exists for nested links
             link_path.parent.mkdir(parents=True, exist_ok=True)
@@ -746,7 +734,7 @@ class WorkspaceManager:
                     resolved_path= project_root / "eval_results"
             elif resource_type == "StableCircuit":
                 resolved_path= project_root / "Stable" / f"{res_circuit_name}.tsx"
-            elif resource_type == "EvaluationOutput":
+            elif resource_type == "CompiledCircuit":
                 resolved_path = project_root / "Stable" / "dist"
             
         if resolved_path:

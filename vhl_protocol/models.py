@@ -172,6 +172,7 @@ class SyncPayload(BaseModel):
     project_id: str
     sync_id: str = None
     iteration_id: Optional[str] = None
+    module_name:str = None
     resource_type: str # Library | Circuit | Evaluation | StableCircuit
     intent: Optional[str] = None # EVALUATION | ALIGNMENT | RESULT
     hash: Optional[str] = None

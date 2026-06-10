@@ -18,8 +18,8 @@ services:
       - STORAGE_BACKEND=${STORAGE_BACKEND:-minio}
 
       - GOOGLE_APPLICATION_CREDENTIALS=/root/.config/gcloud/application_default_credentials.json
-      - GOOGLE_CLOUD_PROJECT=virtual-hardware-laboratary
-      - VERTEXAI_PROJECT=virtual-hardware-laboratary
+      - GOOGLE_CLOUD_PROJECT=vertex-key-bridge
+      - VERTEXAI_PROJECT=vertex-key-bridge
       - VERTEXAI_LOCATION=us-central1
       
       - GEMINI_2_5_FLASH=vertex_ai/gemini-2.5-flash

@@ -27,16 +27,16 @@ class SyncClient:
         
         self.web_socket_client.add_subscriber(self.handle_runtime_message)
 
-    def _get_lock(self, project_id: str, resource_type: str) -> asyncio.Lock:
+    def _get_lock(self, project_id: str, resource_type: str,module_name: str) -> asyncio.Lock:
         """Get or create a lock for a specific project/resource pair."""
-        key = (project_id, resource_type)
+        key = (project_id, module_name, resource_type)
         if key not in self._locks:
             self._locks[key] = asyncio.Lock()
         return self._locks[key]
 
-    def get_resource_path(self, project_id: str, resource_type: Optional[str], iteration_id: Optional[str] = None) -> str:
+    def get_resource_path(self, project_id: str, resource_type: Optional[str],module_name: Optional[str] = None, iteration_id: Optional[str] = None) -> str:
         """Resolve the local filesystem path for a resource using standard workspace conventions."""
-        return str(self.workspace_manager.resolve_resource_path(resource_type=resource_type, project_id=project_id,  iteration_id=iteration_id))
+        return str(self.workspace_manager.resolve_resource_path(resource_type=resource_type,module_name=module_name, project_id=project_id,  iteration_id=iteration_id))
 
     async def handle_runtime_message(self, event: BaseEvent):
         """
@@ -104,10 +104,13 @@ class SyncClient:
         directly (e.g. from sync_evaluation_output) to initiate a proactive push.
         """
         sync_id = payload.sync_id
-        async with self._get_lock(payload.project_id, payload.resource_type):
+        if None in (payload.project_id,payload.resource_type,payload.module_name):
+            raise ValueError(f"[SyncClient.handle_upload_request] project_id, module_name and resource_type are required for sync. project_id:{payload.project_id}, module_name:{payload.module_name}, resource_type: {payload.resource_type}")
+        
+        async with self._get_lock(project_id=payload.project_id,resource_type= payload.resource_type,module_name=payload.module_name):
             logger.info(f"[SyncClient.handle_upload_request] Handling UPLOAD_REQUEST for {payload.resource_type} (sync_id={sync_id})")
 
-        path = Path(self.get_resource_path(payload.project_id, payload.resource_type, payload.iteration_id))
+        path = Path(self.get_resource_path(project_id=payload.project_id,resource_type= payload.resource_type,iteration_id= payload.iteration_id,module_name=payload.module_name))
         if not path.exists():
             logger.warning(f"[SyncClient.handle_upload_request] Resource path does not exist: {path}")
 
@@ -193,7 +196,7 @@ class SyncClient:
             - payload.blob_id       : the storage blob to download
             - payload.project_id    : project name; used as the project directory name in vhl-agent-backend; 
             - payload.resource_type : type of the resource being synced;  
-            - payload.iteration_id  : optional iteration_id for Evaluation/EvaluationOutput in ANA process; can be None for Library/Circuit/Project
+            - payload.iteration_id  : optional iteration_id for Evaluation/CompiledCircuit in ANA process; can be None for Library/Circuit/Project
         """
         try:
             async with self._get_lock(payload.project_id, payload.resource_type):
@@ -208,8 +211,10 @@ class SyncClient:
             await asyncio.to_thread(self.storage_client.download_file, payload.blob_id, str(tmp_file))
             logger.debug(f"[SyncClient.handle_download_request] Download completed for blob {payload.blob_id}")
 
-
-            target_path = self.get_resource_path(project_id=payload.project_id, resource_type=payload.resource_type, iteration_id=payload.iteration_id)
+            if None in (payload.project_id, payload.resource_type, payload.module_name):
+                raise ValueError(f"[SyncClient.handle_download_request] project_id, module_name and resource_type are required for sync. project_id:{payload.project_id}, module_name:{payload.module_name}, resource_type: {payload.resource_type}")
+        
+            target_path = self.get_resource_path(project_id=payload.project_id, resource_type=payload.resource_type, iteration_id=payload.iteration_id, module_name=payload.module_name)
             os.makedirs(os.path.dirname(target_path), exist_ok=True)
 
             if payload.blob_id and payload.blob_id.endswith(".zip"):                                
@@ -253,9 +258,9 @@ class SyncClient:
 
     # ─── Convenience Methods ──────────────────────────────────────────────────────
 
-    async def sync_circuit_json(self, project_id: str, iteration_id: str):
+    async def sync_compiled_circuit(self, project_id: str, iteration_id: str, module_name: str):
         """
-        Push local EvaluationOutput to the runtime.
+        Push local CompiledCircuit to the runtime.
 
         Uses the fundamental sync pattern: directly calls handle_upload_request,
         which uploads the artefact and emits DOWNLOAD_REQUEST to the receiver.
@@ -263,16 +268,19 @@ class SyncClient:
         and emits SYNC_COMPLETE independently.
         """
         sync_id = str(uuid.uuid4())
-        logger.info(f"[SyncClient.sync_evaluation_output] Syncing evaluation output for project {project_id}, iteration {iteration_id} (sync_id={sync_id})")
+        logger.info(f"[SyncClient.sync_compiled_circuit] Syncing evaluation output for project {project_id}, iteration {iteration_id} (sync_id={sync_id})")
 
-        local_path = self.get_resource_path(project_id, "EvaluationOutput", iteration_id)
+        if None in (project_id, iteration_id, module_name):
+            raise ValueError(f"[SyncClient.sync_compiled_circuit] project_id, module_name and resource_type are required for sync. project_id:{project_id}, module_name:{module_name}, iteration_id: {iteration_id}")
+        
+        local_path = self.get_resource_path(project_id=project_id, resource_type="CompiledCircuit",iteration_id= iteration_id,module_name=module_name)
         local_hash = compute_directory_hash(local_path) if os.path.exists(local_path) else None
 
         payload = SyncPayload(
             sync_id=sync_id,
             project_id=project_id,
             iteration_id=iteration_id,
-            resource_type="EvaluationOutput",
+            resource_type="CompiledCircuit",
             intent="RESULT",
             hash=local_hash,
             source=EventSource.VHL_AGENT_BACKEND,
@@ -283,15 +291,15 @@ class SyncClient:
         try:
             await self.web_socket_client.wait_for_event(
                 EventType.SYNC_COMPLETE,
-                filter_func=lambda e: e.payload.get("resource_type") == "EvaluationOutput" and e.payload.get("sync_id") == sync_id,
+                filter_func=lambda e: e.payload.get("resource_type") == "CompiledCircuit" and e.payload.get("sync_id") == sync_id,
                 timeout=60.0
             )
-            logger.info(f"[SyncClient.sync_evaluation] Evaluation sync completed (sync_id={sync_id})")
+            logger.info(f"[SyncClient.sync_compiled_circuit] Evaluation sync completed (sync_id={sync_id})")
         except asyncio.TimeoutError:
-            logger.error(f"[SyncClient.sync_evaluation] Timeout waiting for evaluation sync (sync_id={sync_id})")
+            logger.error(f"[SyncClient.sync_compiled_circuit] Timeout waiting for evaluation sync (sync_id={sync_id})")
             raise
 
-    async def sync_evaluation(self, project_id: str, iteration_id: str):
+    async def sync_evaluation(self, project_id: str, module_name: str, iteration_id: str):
         """
         Pull Evaluation results from the runtime.
 
@@ -301,7 +309,10 @@ class SyncClient:
         sync_id = str(uuid.uuid4())
         logger.info(f"[SyncClient.sync_evaluation] Requesting evaluation sync for project {project_id}, iteration {iteration_id} (sync_id={sync_id})")
 
-        local_path = self.get_resource_path(project_id, "Evaluation", iteration_id)
+        if None in (project_id, iteration_id, module_name):
+            raise ValueError(f"[SyncClient.sync_evaluation] project_id, module_name and resource_type are required for sync. project_id:{project_id}, module_name:{module_name}, iteration_id: {iteration_id}")
+        
+        local_path = self.get_resource_path(project_id=project_id, resource_type="Evaluation",iteration_id= iteration_id,module_name=module_name)
         local_hash = compute_directory_hash(local_path) if os.path.isdir(local_path) else (
             compute_file_hash(local_path) if os.path.exists(local_path) else None
         )
@@ -336,7 +347,9 @@ class SyncClient:
         """
         sync_id = str(uuid.uuid4())
         logger.info(f"[SyncClient.sync_library] Requesting library sync for project {project_id} (sync_id={sync_id})")
-
+        if None in (project_id):
+            raise ValueError(f"[SyncClient.sync_library] project_id is required for sync. project_id:{project_id}")
+        
         local_path = self.get_resource_path(project_id, "Library")
         local_hash = compute_directory_hash(local_path) if os.path.isdir(local_path) else (
             compute_file_hash(local_path) if os.path.exists(local_path) else None
@@ -362,7 +375,7 @@ class SyncClient:
             logger.error(f"[SyncClient.sync_library] Timeout waiting for library sync (sync_id={sync_id})")
             raise
 
-    async def sync_stable_circuit(self, project_id: str):
+    async def sync_stable_circuit(self, project_id: str,module_name :str):
         """
         Pull StableCircuit from the runtime.
 
@@ -370,8 +383,9 @@ class SyncClient:
         """
         sync_id = str(uuid.uuid4())
         logger.info(f"[SyncClient.sync_stable_circuit] Requesting stable circuit sync for project {project_id} (sync_id={sync_id})")
-
-        local_path = self.get_resource_path(project_id, "StableCircuit")
+        if None in (project_id,module_name):
+            raise ValueError(f"[SyncClient:sync_stable_circuit] Both project_id and module_name are required for sync. project_id:{project_id}, module_name:{module_name}")
+        local_path = self.get_resource_path(project_id=project_id, resource_type="StableCircuit", module_name=module_name)
         local_hash = compute_file_hash(local_path) if os.path.exists(local_path) else None
 
         payload = SyncPayload(
