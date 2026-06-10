@@ -1,4 +1,4 @@
-export type ResourceType = "Library" | "Circuit" | "Evaluation" | "StableCircuit" | "EvaluationOutput";
+export type ResourceType = "Library" | "Circuit" | "Evaluation" | "StableCircuit" | "CompiledCircuit";
 export type SyncIntent = "EVALUATION" | "ALIGNMENT" | "RESULT";
 
 export interface SyncPayload {

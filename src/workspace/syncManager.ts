@@ -42,7 +42,7 @@ export class SyncManager {
                 const name = data?.circuit_name || "circuit";
                 return path.join(projectRoot, `${name}.tsx`);
             }
-            case "EvaluationOutput":
+            case "CompiledCircuit":
                 return path.join(projectRoot, "dist");
         }
     }
