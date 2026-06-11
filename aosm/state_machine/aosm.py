@@ -311,7 +311,7 @@ class AOSM:
             project_root = self.workspace_manager.create_project(project_id, zip_present=zip_present)
 
             # Evaluate project creation success and update semantic db with the result. 
-            self.project_semantic_db = self.workspace_manager.sqlite_db
+            self.project_semantic_db = self.workspace_manager.db
             project_creation_evaluator = ProjectCreationEvaluator(db=self.project_semantic_db) # Module name is not relevant for project creation evaluator as of now since it only checks for the presence of a baseline snapshot in the db which is created during project creation workflow. We can consider refactoring this later to remove the module_name dependency from the evaluator if it continues to be irrelevant for its logic.
             project_creation_evaluator.evaluate() # With this step, evaluator will commit a semantic operation to the semantic db. Based on the status of this operation, agent registry should compute the readiness of the Archy agent.
             # TODO: 
@@ -351,7 +351,7 @@ class AOSM:
             try:
                 project_root = self.workspace_manager.load_project(project_id)
                 self.project_id = project_id
-                self.project_semantic_db = self.workspace_manager.sqlite_db
+                self.project_semantic_db = self.workspace_manager.db
                 
                 # Initialize all the agents
                 await self.register_agents(workspace_manager=self.workspace_manager)
@@ -558,10 +558,8 @@ class AOSM:
                 if self.project_id:
                     try:
                         # 2. Trigger sync for evaluation output (Agent to Runtime)
-                        # We need the iteration_id that was accepted.
-                        # iteration_dir looks like .../iteration_<uuid>
-                        iteration_id = Path(iteration_dir).name.replace("iteration_", "")
-                        await self.sync_client.sync_compiled_circuit(project_id=self.project_id, iteration_id=iteration_id, module_name=None)  # NOTE: Outdated implementation. this method should be called with proper module name. Earlier AOSM implementation was for single circuit synthesis. All the downstream methods are modified to support multi-module synthesis.
+                        # With MAW simplification, we always sync from "workspace"
+                        await self.sync_client.sync_compiled_circuit(project_id=self.project_id, iteration_id="workspace", module_name=None)  
                         
                         logger.info(f"[AOSM._handle_present_result] StableCircuit and CompiledCircuit sync completed successfully")
                         
@@ -569,11 +567,12 @@ class AOSM:
                         logger.warning(f"[AOSM._handle_present_result] StableCircuit sync failed or timed out: {e}")
 
             elif "REJECT" == decision:
-                # Instruct workspace manager to move all iteration directories to archives/    
-                logger.info("[AOSM._handle_present_result] Decision was REJECT. Archiving iterations.")
+                logger.info("[AOSM._handle_present_result] Decision was REJECT.")
             
-            # Move all iterations to archives
-            self.workspace_manager.move_iterations_to_archives()
+            # Move workspace content to archives
+            # NOTE: module_name needs to be resolved. Defaulting to 'main_module' if not found in payload
+            module_name = payload.get("module_name", "main_module")
+            self.workspace_manager.archive_workspace(module_name=module_name)
             
             # After presenting/handling, transition back to IDLE
             await self.transition_to(AOSMState.IDLE, f"Finished processing ANA result: {decision}")

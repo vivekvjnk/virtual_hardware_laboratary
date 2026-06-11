@@ -320,42 +320,29 @@ class AnaURPAgent(AbstractURPAgent):
                     logger.error(msg)
                     return False, msg
 
-
-                # Collect observations/user instructions from message payload
-                observations = message.payload.get("observations", []) if message.payload else []
-
-                # Track previous iteration (the one that was active before this call)
-                self._previous_iteration_dir = self.workspace_manager.previous_iteration_path[
-                    self.module_name
-                ]
-                
-                # Derive suffix for iteration ID inside WorkspaceManager
-                import uuid
-                iteration_id_suffix = str(uuid.uuid4()).split("-")[0][:8]
-                # prepare_iteration_with_files: creates iteration dir + copies stable circuit
-                self._iteration_dir = self.workspace_manager.prepare_iteration_with_files(
-                    source_file=str(stable_circuit_path),
-                    iteration_id_suffix=iteration_id_suffix,
+                # prepare_workspace: snapshots current truth and copies stable circuit into Workspace/
+                self._iteration_dir = self.workspace_manager.prepare_workspace(
                     module_name=self.module_name,
-                    observations=observations if observations else None,
+                    source_file=str(stable_circuit_path),
+                    observations=None,
                 )
-                
-
-
+                # Keep track of the most recent archive as "previous iteration" for ANA-W1 logic
+                archive_count = self.workspace_manager._archive_count.get(self.module_name, 0)
+                if archive_count > 0:
+                    self._previous_iteration_dir = self.workspace_manager.project_root / self.module_name / "Archives" / f"{archive_count:04d}"
+                else:
+                    self._previous_iteration_dir = None
             else:
-                # ---- 3. First synthesis — create a bare iteration directory ----
-                import uuid
+                # First synthesis — create a fresh Workspace/
                 self._previous_iteration_dir = None
-                iteration_id_suffix = str(uuid.uuid4()).split("-")[0][:8]
-                self._iteration_dir = self.workspace_manager.create_new_iteration(
-                    hash_val=iteration_id_suffix,
+                self._iteration_dir = self.workspace_manager.create_workspace(
                     module_name=self.module_name,
                 )
             if not self._iteration_dir:
-                raise RuntimeError("Failed to setup iteration directory.")
+                raise RuntimeError("Failed to setup workspace directory.")
 
             logger.info(
-                f"[AnaURPAgent._check_preconditions] Iteration directory ready: "
+                f"[AnaURPAgent._check_preconditions] Workspace ready: "
                 f"{self._iteration_dir}"
             )
             
@@ -514,9 +501,7 @@ class AnaURPAgent(AbstractURPAgent):
 
         iteration_dir = self._iteration_dir
         circuit_name = self.workspace_manager.circuit_name.get(self.module_name)
-        iteration_id = self.workspace_manager.get_current_iteration_id(
-            module_name=self.module_name
-        )
+        iteration_id = "workspace"
 
         # ---- Step 1: Run ANA-W2 (VAP) ----
         logger.info("[AnaURPAgent._check_postconditions] Launching ANA-W2 validation agent.")
@@ -530,6 +515,7 @@ class AnaURPAgent(AbstractURPAgent):
                 circuit_name=circuit_name,
                 workspace=str(iteration_dir),
                 iteration_id=iteration_id,
+                module_name=self.module_name
             )
         except Exception as e:
             msg = f"[AnaURPAgent._check_postconditions] ANA-W2 raised exception: {e}"
@@ -590,18 +576,17 @@ class AnaURPAgent(AbstractURPAgent):
 
         # 1. Promote circuit to Stable/
         self.workspace_manager.populate_stable(
-            iteration_id=str(iteration_dir),
             module_name=self.module_name,
         )
         logger.info(
-            f"[AnaURPAgent._handle_vap_accept] Stable/ populated from {iteration_dir}"
+            f"[AnaURPAgent._handle_vap_accept] Stable/ populated from Workspace/"
         )
 
-        # 2. Move all iteration directories to Archives/
-        self.workspace_manager.move_iterations_to_archives(
+        # 2. Move current workspace to Archives/
+        self.workspace_manager.archive_workspace(
             module_name=self.module_name
         )
-        logger.info("[AnaURPAgent._handle_vap_accept] Iterations archived.")
+        logger.info("[AnaURPAgent._handle_vap_accept] Workspace archived.")
     
 
         # 3. Record CIRCUIT_SYNTHESIS operation
@@ -623,8 +608,7 @@ class AnaURPAgent(AbstractURPAgent):
         )
 
         # 4. Sync project with runtime
-        iteration_id = self.workspace_manager.get_current_iteration_id(module_name=self.module_name)
-        await self.sync_client.sync_compiled_circuit(project_id=self.project_id, iteration_id=iteration_id,module_name=self.module_name)
+        await self.sync_client.sync_compiled_circuit(project_id=self.project_id, iteration_id="workspace",module_name=self.module_name)
         logger.info(f"[AnaURPAgent._handle_vap_accept] StableCircuit and CompiledCircuit sync completed successfully")
 
         # 5. Send evaluation update to the runtime 

@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class WorkspaceManager:
     """
     Workspace Manager for Virtual Hardware Laboratory.
-    Centralizes project creation, iteration management, and symbolic link setup.
+    Centralizes project creation, persistent workspace management, and symbolic link setup.
     """
     def __init__(self, workspace_root: Union[str, Path], debug: bool = False):
         self.workspace_root = Path(workspace_root)
@@ -34,40 +34,27 @@ class WorkspaceManager:
         self.project_modules: List[str] = []
         
         # VAP state variables
-        self.circuit_name: Optional[dict[str,str]] = None
-        self.current_iteration_path: dict[str, Optional[Path]] = {}
-        self._session_first_iteration: dict[str,bool] = True
-        self._iteration_count: Optional[dict[str,int]] = None
-        self.previous_iteration_path: Optional[dict[str,Path]] = None
-        self._session_iteration_count: dict[str,int] = 0
-        self.current_iteration_id: dict[str,str] = None
+        self.circuit_name: dict[str, str] = {}
+        self.workspace_path: dict[str, Optional[Path]] = {}
+        self._archive_count: dict[str, int] = {}
 
         logger.info(f"[WorkspaceManager.__init__] WorkspaceManager initialized with root: {self.workspace_root}")
 
-    def reset_iterations(self,module):
-        if self.current_iteration_path is not None and isinstance(self.current_iteration_path, dict):
-            self.current_iteration_path[module] = None
-        if self._session_first_iteration is not None and isinstance(self._session_first_iteration, dict):
-            self._session_first_iteration[module] = True
-        if self._iteration_count is not None and isinstance(self._iteration_count, dict):
-            self._iteration_count[module] = None
-        if self.previous_iteration_path is not None and isinstance(self.previous_iteration_path, dict):
-            self.previous_iteration_path[module] = None
-        if self._session_iteration_count is not None and isinstance(self._session_iteration_count, dict):
-            self._session_iteration_count[module] = 0
-        if self.current_iteration_id is not None and isinstance(self.current_iteration_id, dict):
-            self.current_iteration_id[module] = None
+    def reset_module_state(self, module: str):
+        """Resets the state for a specific module."""
+        self.workspace_path[module] = None
+        self._archive_count[module] = 0
+        self.circuit_name.pop(module, None)
 
     def close_project(self):
         """Resets the workspace manager to its initial state, closing any open project."""
         self.project_root = None
         self.project_id = None
-        self.circuit_name = None
         self.git = None
         self.db = None
         for module in self.project_modules:
-            self.reset_iterations(module=module)
-
+            self.reset_module_state(module)
+        self.project_modules = []
         logger.info("[WorkspaceManager.close_project] Project closed and state reset.")
 
 
@@ -110,51 +97,35 @@ class WorkspaceManager:
         # Initialize persistence for the loaded project
         self._init_project_persistence(self.project_root)
 
-        
-        # 1. Shadow Recovery: Try SQLite first
+        # Recover modules from DB
         modules_records = self.db.get_project_modules()
-        # TODO: Should circuit name be part of project setting?
-        # If yes, update workflow properly store circuit name for each module in project settings table
         if modules_records:
             self.project_modules = [m["module_name"] for m in modules_records]
-            circuit_name = self.db.get_project_setting("circuit_name")
-            if circuit_name:
-                self.circuit_name = circuit_name
+            for module in self.project_modules:
+                circuit_name = self.db.get_project_setting(f"{module}.circuit_name")
+                if circuit_name:
+                    self.circuit_name[module] = circuit_name
             logger.info(f"[WorkspaceManager.load_project] Recovered state from SQLite. Modules: {self.project_modules}")
 
-        # 4. Reconstruct iteration info
-        # Priority: Root Iterations, then modules
-        search_dirs = [self.project_root] + [self.project_root / m for m in self.project_modules]
-        latest_iteration_path = None
-        highest_iteration_count = -1
-
-        for base_dir in search_dirs:
-            iterations_dir = base_dir / "Iterations"
-            if iterations_dir.exists():
-                iterations = sorted(
-                    [d for d in iterations_dir.iterdir() if d.is_dir() and d.name[:4].isdigit()],
-                    key=lambda x: int(x.name[:4])
+        # Reconstruct workspace and archive info
+        for module in self.project_modules:
+            module_dir = self.project_root / module
+            
+            # Workspace
+            workspace_dir = module_dir / "Workspace"
+            if workspace_dir.exists():
+                self.workspace_path[module] = workspace_dir
+            
+            # Archives
+            archives_dir = module_dir / "Archives"
+            if archives_dir.exists():
+                archives = sorted(
+                    [d for d in archives_dir.iterdir() if d.is_dir() and d.name.isdigit()],
+                    key=lambda x: int(x.name)
                 )
-                if iterations:
-                    current_latest = iterations[-1]
-                    count = int(current_latest.name[:4])
-                    if count > highest_iteration_count:
-                        highest_iteration_count = count
-                        latest_iteration_path = current_latest
-                        # Set previous iteration if available in the same directory
-                        if len(iterations) > 1:
-                            self.previous_iteration_path = iterations[-2]
-                        else:
-                            self.previous_iteration_path = None
-
-        if latest_iteration_path:
-            self.current_iteration_path = latest_iteration_path
-            self._iteration_count = highest_iteration_count
-            logger.info(f"[WorkspaceManager.load_project] Reconstructed iteration state. Latest: {self.current_iteration_path.name}")
-        else:
-            self._iteration_count = 0
-            self.current_iteration_path = None
-            self.previous_iteration_path = None
+                self._archive_count[module] = int(archives[-1].name) if archives else 0
+            else:
+                self._archive_count[module] = 0
 
         logger.info(f"[WorkspaceManager.load_project] Project loaded: {self.project_id} at {self.project_root}")
         return self.project_root
@@ -168,13 +139,10 @@ class WorkspaceManager:
         # Initialize persistence for the new project
         self._init_project_persistence(self.project_root)
 
-
-        # Reset iteration state
-        self.current_iteration_path = None
-        self.previous_iteration_path = None
-        self._iteration_count = 0
-        
-        # Create lib directory in project root for library 
+        # Reset state
+        self.workspace_path = {}
+        self._archive_count = {}
+        self.circuit_name = {}
         (self.project_root / "lib").mkdir(exist_ok=True)
 
         restoration_result = {"project_created": True, "manifest": None}
@@ -203,7 +171,7 @@ class WorkspaceManager:
                             resource_name=file_info.get("name", file_key),
                             file_path=file_info.get("rel_path", ""),
                             resource_type="file",
-                            description="Bootstrap resource",
+                            description=f"Bootstrap module {m_name}",
                             checksum=file_info.get("checksum", "")
                         )
             
@@ -216,25 +184,12 @@ class WorkspaceManager:
             gitignore_path = self.project_root / ".gitignore"
             if not gitignore_path.exists():
                 gitignore_path.write_text(".vhl/\n.conversation/\n")
-            else:
-                content = gitignore_path.read_text()
-                to_append = []
-                if ".vhl/" not in content:
-                    to_append.append(".vhl/")
-                if ".conversation/" not in content:
-                    to_append.append(".conversation/")
-
-                if to_append:
-                    with open(gitignore_path, "a") as f:
-                        f.write("\n" + "\n".join(to_append) + "\n")
-                
-
             self.git.git.add_all()
             try:
                 self.record_operation(
                     module_name="root",
                     op_name="INITIALIZE",
-                    author="WORKSPACE_MANAER",
+                    author="WORKSPACE_MANAGER",
                     status="SUCCESS",
                     payload={"source": "zip_bootstrap" if zip_present else "empty_init"},
                     commit_message="INITIALIZE: Project Bootstrap"
@@ -248,19 +203,6 @@ class WorkspaceManager:
 
         logger.info(f"[WorkspaceManager.create_project] Project created at: {self.project_root}")
         return self.project_root
-    
-    def update_workspace(self):
-        """Updates the workspace state, such as regenerating the manifest."""
-        if not self.db:
-            raise RuntimeError("Project not loaded. SQLite manager not initialized.")
-            
-        # Reload modules from SQLite
-        modules_records = self.db.get_project_modules()
-        if modules_records:
-            self.project_modules = [m["module_name"] for m in modules_records]
-        
-        logger.info(f"[WorkspaceManager.update_workspace] Workspace updated. Current modules: {self.project_modules}")
-
     
     @property
     def module_names(self) -> List[str]:
@@ -315,53 +257,27 @@ class WorkspaceManager:
         return tree.get(module_name, {})
 
 
-    def create_module_directory(self, module_name: str, dir_path: str) -> Path:
-        """
-        Creates a directory inside a specific module and refreshes the manifest.
-        This allows all file operations to pass through the WorkspaceManager.
-        """
-        if not self.project_root:
-            raise RuntimeError("Project root not set.")
-        
-        module_path = self.project_root / module_name
-        if not module_path.exists():
-            raise FileNotFoundError(f"Module directory not found: {module_path}")
-            
-        target_dir = module_path / dir_path
-        target_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Git dynamically generates the tree view, no need to refresh static manifest.
-        
-        logger.info(f"[WorkspaceManager.create_module_directory] Created directory: {target_dir}")
-        return target_dir
-
     def setup_modules(self, project_root_path: Path, modules: List[str] = ["main_module"], system_boundary_doc: str = "system-boundary.md"):
         """Sets up the directory structure for multiple modules in a project."""
         for module in modules:
             # Module directory creation logic
             module_dir = project_root_path / module
             module_dir.mkdir(exist_ok=True)
-            # Create Iterations/ and Stable/ (with no contents inside them)
-            (module_dir / "Iterations").mkdir(exist_ok=True)
+            (module_dir / "Workspace").mkdir(exist_ok=True)
             (module_dir / "Stable").mkdir(exist_ok=True)
             (module_dir / "resources").mkdir(exist_ok=True)
             (module_dir / "Archives").mkdir(exist_ok=True)
             
-            # Create softlink to lib directory from project root for module to use library imports
+            # Symlinks
             lib_link = module_dir / "lib"
             if not os.path.lexists(lib_link):
                 rel_lib_source = os.path.relpath(project_root_path / "lib", lib_link.parent)
                 os.symlink(rel_lib_source, lib_link)
                 
-            # Create softlink to system_boundary_doc file
-            system_boundary_link = module_dir / system_boundary_doc
-            if not os.path.lexists(system_boundary_link) and (project_root_path / system_boundary_doc).exists():
-                rel_sys_boundary_source = os.path.relpath(project_root_path / system_boundary_doc, system_boundary_link.parent)
-                os.symlink(rel_sys_boundary_source, system_boundary_link)
-
-            logger.info(f"[WorkspaceManager.setup_modules] Module structure created at: {module_dir}")
-        
-        
+            sb_link = module_dir / system_boundary_doc
+            if not os.path.lexists(sb_link) and (project_root_path / system_boundary_doc).exists():
+                rel_sb_source = os.path.relpath(project_root_path / system_boundary_doc, sb_link.parent)
+                os.symlink(rel_sb_source, sb_link)
     def create_project_from_zip(self, project_id: str)-> Dict[str, Any]:
         """
         Restores project structure from the temporary zip directory.
@@ -400,234 +316,30 @@ class WorkspaceManager:
         else:
             logger.error(f"[WorkspaceManager.set_circuit_name] Triggered with None for circuit name")
 
-    def _get_next_iteration_number(self,module_name) -> int:
-        """Calculates and returns the next iteration number, maintaining state in a class member."""
-        if self._iteration_count[module_name] is None:
-            iterations_dir = self.project_root / module_name / "Iterations"
-            if iterations_dir.exists():
-                existing = [int(d.name[:4]) for d in iterations_dir.iterdir() if d.is_dir() and d.name[:4].isdigit()]
-                self._iteration_count[module_name] = max(existing) if existing else 0
-            else:
-                self._iteration_count[module_name] = 0
-        
-        self._iteration_count[module_name] += 1
-        return self._iteration_count[module_name]
-
-    def is_first_iteration(self,module_name) -> bool:
-        """Checks if this is the first iteration of the current session."""
-        return self._session_first_iteration[module_name]
-
-    def reset_first_iteration(self,module_name):
-        """Resets the first iteration flag."""
-        self._session_first_iteration[module_name] = False
-
-    def get_iteration_count(self,module_name) -> int:
-        """Returns the total number of iterations in the project."""
-        return self._iteration_count[module_name] if self._iteration_count[module_name] is not None else 0
-
-    def get_session_iteration_count(self,module_name) -> int:
-        """Returns the number of iterations started in the current session."""
-        return self._session_iteration_count[module_name]
-
-    def create_new_iteration(self, hash_val: str,module_name) -> Path:
-        """Creates a new iteration directory with symbolic links."""
+    def create_workspace(self, module_name: str) -> Path:
         if not self.project_root:
             raise RuntimeError("Project root not set.")
-        
-        iteration_number = self._get_next_iteration_number(module_name=module_name)
-        iteration_id = f"{iteration_number:04d}_{hash_val}"
-        iteration_path = self.project_root / module_name / "Iterations" / iteration_id
-        iteration_path.mkdir(exist_ok=True)
-        
-        # Update current/previous paths
-        if self.current_iteration_path[module_name]:
-            self.previous_iteration_path[module_name] = self.current_iteration_path[module_name]
-        self.current_iteration_path[module_name] = iteration_path
-        self._session_iteration_count[module_name] += 1
-        self.current_iteration_id[module_name] = iteration_id
+        workspace_path = self.project_root / module_name / "Workspace"
+        workspace_path.mkdir(exist_ok=True)
+        self.workspace_path[module_name] = workspace_path
+        self._setup_workspace_links(workspace_path, module_name)
+        return workspace_path
 
-        # Setup symbolic links
-        self._setup_iteration_symlinks(iteration_path)
-
-        # Copy .tsx files from previous iteration if it exists
-        if self.previous_iteration_path and self.previous_iteration_path.exists():
-            for tsx_file in self.previous_iteration_path.glob("*.tsx"):
-                dest = iteration_path / tsx_file.name
-                dest.unlink(missing_ok=True)
-                shutil.copy2(tsx_file, dest)
-                logger.info(f"[WorkspaceManager.create_new_iteration] Carried over {tsx_file.name} from previous iteration")
-        
-        logger.info(f"[WorkspaceManager.create_new_iteration] New iteration created: {iteration_path}")
-        return iteration_path
-
-    def prepare_iteration_with_files(self, source_file: str, iteration_id_suffix: str, module_name: str, observations=None) -> Path:
-        """Creates a new iteration and copies a specific source file into it as the circuit file."""
-        if not self.project_root:
-            raise RuntimeError("Project root not set")
-        if not self.circuit_name[module_name]:
-            raise RuntimeError("Circuit name not set")
-            
-        source_path = Path(source_file)
-        if not source_path.exists():
-            raise FileNotFoundError(f"Source file not found: {source_file}")
-
-        iteration_path = self.create_new_iteration(iteration_id_suffix,module_name=module_name)
-        dest_path = iteration_path / f"{self.circuit_name[module_name]}.tsx"
-        
-        if dest_path.exists():
-            dest_path.unlink()
-            
-        shutil.copy2(source_path, dest_path)
-        logger.info(f"[WorkspaceManager.prepare_iteration_with_files] Prepared iteration with file: {source_file} -> {dest_path}")
-
-        # IF observations are not None, copy it under observations.md file
-        if observations:
-            with open(iteration_path/f"{self.circuit_name[module_name]}.observations","w") as f:
-                f.write(str(observations))
-                logger.info(f"[WorkspaceManager.prepare_iteration_with_files] Updated observations...")
-        
-        return iteration_path
-
-    def get_circuit_path_from_stable(self, module_name) -> Path:
-        """Returns the path to the circuit file in the Stable directory."""
-        if not self.project_root:
-            raise RuntimeError("Project root not set")
-        if not self.circuit_name[module_name]:
-            raise RuntimeError("Circuit name not set")
-        return self.project_root / module_name / "Stable" / f"{self.circuit_name[module_name]}.tsx"    
-    
-    def get_scud_path(self, module_name) -> Path:
-        """Finds and returns the .scud file path in the current iteration."""
-        if not self.current_iteration_path[module_name]:
-            raise RuntimeError("Current iteration path not set")
-        scud_files = list(self.current_iteration_path[module_name].glob("*.scud"))
-        if not scud_files:
-            raise FileNotFoundError(f"No .scud file found in {self.current_iteration_path[module_name]}")
-        if len(scud_files) > 1:
-            # Prefer {circuit_name}.scud if multiple exist
-            if self.circuit_name[module_name]:
-                preferred = self.current_iteration_path[module_name] / f"{self.circuit_name[module_name]}.scud"
-                if preferred.exists():
-                    return preferred
-            logger.warning(f"[WorkspaceManager.get_scud_path] Multiple .scud files found in {self.current_iteration_path[module_name]}, returning first one: {scud_files[0]}")
-        return scud_files[0]
-
-    def get_library_path(self,module_name)->Path:
-        current_lib_path = self.current_iteration_path[module_name]/ "lib/imports"
-        return current_lib_path
-
-    def get_circuit_tsx_path(self,module_name) -> Path:
-        """Returns the path to the main circuit .tsx file in the current iteration."""
-        if not self.current_iteration_path[module_name]:
-            raise RuntimeError("Current iteration path not set")
-        if not self.circuit_name[module_name]:
-            raise RuntimeError("Circuit name not set")
-        return self.current_iteration_path[module_name] / f"{self.circuit_name[module_name]}.tsx"
-
-    def populate_stable(self, iteration_id: str, module_name) -> Path:
-        """Populates the Stable directory from specified iteration and sets up symbolic links."""
-        if not self.project_root:
-            raise RuntimeError("Project root not set.")
-        
-        stable_dir = self.project_root / module_name / "Stable"
-        
-        # Archive existing Stable directory if it has content
-        if stable_dir.exists() and any(stable_dir.iterdir()):
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            archive_stable_dir = self.project_root / module_name / "Archives" / "Stable" / timestamp
-            archive_stable_dir.mkdir(parents=True, exist_ok=True)
-            logger.info(f"[WorkspaceManager.populate_stable] Archiving existing Stable directory to {archive_stable_dir}")
-            
-            for item in stable_dir.iterdir():
-                # Don't archive symlinks if they are just part of the structure, 
-                # but usually Stable contains real files and some symlinks created by _setup_symlinks.
-                # If we want a clean slate, moving everything is safest.
-                shutil.move(item, archive_stable_dir / item.name)
-        
-        stable_dir.mkdir(exist_ok=True)
-        
-        # Determine iteration directory
-        if os.path.isabs(iteration_id):
-            iteration_dir = Path(iteration_id)
-        else:
-            iteration_dir = self.project_root / module_name / "Iterations" / iteration_id
-            
-        if not iteration_dir.exists():
-            raise FileNotFoundError(f"Iteration directory not found: {iteration_dir}")
-        
-        # Copy iteration files and directories to stable directory
-        for item in iteration_dir.iterdir(): # make sure we only copy files and directories that are not symlinks
-            if item.is_symlink():
-                continue
-            
-            if item.is_file():
-                shutil.copy(item, stable_dir)
-            elif item.is_dir():
-                shutil.copytree(item, stable_dir / item.name)
-        
-        # Setup symbolic links
-        self._setup_iteration_symlinks(stable_dir)
-        
-        logger.info(f"[WorkspaceManager.populate_stable] Stable directory populated at: {stable_dir}")
-        return stable_dir
-
-    def move_iterations_to_archives(self, module_name):
-        """Moves all directories under Iterations/ to a timestamped subdirectory in Archives/"""
-        if not self.project_root:
-            raise RuntimeError("Project root not set.")
-            
-        iterations_dir = self.project_root / module_name / "Iterations"
-        if not iterations_dir.exists():
-            return
-
-        # Check if there are any iterations to move
-        iterations = [item for item in iterations_dir.iterdir() if not item.is_symlink()]
-        if not iterations:
-            logger.info("[WorkspaceManager.move_iterations_to_archives] No iterations to archive.")
-            return
-
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        session_archive_dir = self.project_root / module_name / "Archives" / timestamp
-        session_archive_dir.mkdir(parents=True, exist_ok=True)
-        
-        for item in iterations:
-            shutil.move(item, session_archive_dir)
-        
-        logger.info(f"[WorkspaceManager.move_iterations_to_archives] Archived {len(iterations)} iterations to {session_archive_dir}")
-        
-        # Reset all variables related to iteration
-        self.reset_iterations() # TODO: module specific cleanup needs to be implemented 
-        logger.info(f"All iteration related paths are reset. Workspace manager is ready for next synthesis.")
-
-    def _setup_iteration_symlinks(self, target_dir: Path, module_name):
-        """Sets up symbolic links to project-level files and directories."""
-        # Symbolic links should include schematic_images/ dir, scud file and pin mapping file.
-        
+    def _setup_workspace_links(self, target_dir: Path, module_name: str):
         links = [
             ("schematic_images", self.project_root / module_name / "resources" / "schematic_images"),
             ("tsci_built_in_elements", self.project_root / ".agent_skills" / "tscircuit_skills"),
         ]
         
-        # 1. SCUD file link
-        try:
-            scud_src  = self.project_root / module_name / f"{self.circuit_name[module_name]}.scud"
-            if not scud_src.exists():
-                raise Exception(f"Missing .scud file for {module_name}")
-            links.append((scud_src.name, scud_src))
-        except Exception as e:
-                raise ValueError(f"[WorkspaceManager._setup_iteration_symlinks] Failed to link .scud file. Error: {e}")
-                
-            
-        # 2. Library imports link
-        lib_imports_src = self.project_root / module_name / "lib" / "imports"
-        try: 
-            if not lib_imports_src.is_dir():
-                raise Exception(f"Missing lib/import directory for {module_name}")
-            # We link the whole lib/imports directory
-            links.append(("lib/imports", lib_imports_src))
-        except Exception as e:
-            raise ValueError(f"[WorkspaceManager._setup_iteration_symlinks] Failed to link lib/imports. Error: {e}")
+        c_name = self.circuit_name.get(module_name)
+        if c_name:
+            scud_src = self.project_root / module_name / f"{c_name}.scud"
+            if scud_src.exists():
+                links.append((scud_src.name, scud_src))
         
+        lib_imports = self.project_root / module_name / "lib" / "imports"
+        if lib_imports.is_dir():
+            links.append(("lib/imports", lib_imports))
 
         for link_name, source in links:
             if not source.exists():
@@ -648,102 +360,151 @@ class WorkspaceManager:
             os.symlink(rel_source, link_path)
             logger.debug(f"[WorkspaceManager._setup_symlinks] Created symlink: {link_path} -> {rel_source}")
 
+    def archive_workspace(self, module_name: str) -> Optional[Path]:
+        if not self.project_root:
+            raise RuntimeError("Project root not set.")
+        
+        workspace_path = self.project_root / module_name / "Workspace"
+        if not workspace_path.exists() or not any(workspace_path.iterdir()):
+            return None
+
+        self._archive_count[module_name] = self._archive_count.get(module_name, 0) + 1
+        archive_id = f"{self._archive_count[module_name]:04d}"
+        archive_path = self.project_root / module_name / "Archives" / archive_id
+        archive_path.mkdir(parents=True, exist_ok=True)
+        
+        for item in workspace_path.iterdir():
+            if item.is_symlink():
+                continue
+            if item.is_file():
+                shutil.copy2(item, archive_path)
+            elif item.is_dir():
+                shutil.copytree(item, archive_path / item.name)
+        
+        logger.info(f"Archived workspace for {module_name} to {archive_path}")
+        return archive_path
+
+    def prepare_workspace(self, module_name: str, source_file: str, observations: Optional[str] = None) -> Path:
+        if not self.circuit_name.get(module_name):
+            raise RuntimeError(f"Circuit name not set for {module_name}")
+
+        self.archive_workspace(module_name)
+        workspace_path = self.create_workspace(module_name)
+        dest_path = workspace_path / f"{self.circuit_name[module_name]}.tsx"
+        shutil.copy2(Path(source_file), dest_path)
+        
+        if observations:
+            (workspace_path / f"{self.circuit_name[module_name]}.observations").write_text(str(observations))
+        return workspace_path
+
+    def get_circuit_path_from_stable(self, module_name) -> Path:
+        """Returns the path to the circuit file in the Stable directory."""
+        if not self.project_root:
+            raise RuntimeError("Project root not set")
+        c_name = self.circuit_name.get(module_name)
+        if not c_name:
+            raise RuntimeError(f"Circuit name not set for {module_name}")
+        return self.project_root / module_name / "Stable" / f"{c_name}.tsx"
+    def get_scud_path(self, module_name) -> Path:
+        """Finds and returns the .scud file path."""
+        # Preference: Workspace, then module root
+        workspace_scud = list((self.project_root / module_name / "Workspace").glob("*.scud"))
+        if workspace_scud: return workspace_scud[0]
+        root_scud = list((self.project_root / module_name).glob("*.scud"))
+        if root_scud: return root_scud[0]
+        raise FileNotFoundError(f"No .scud found for {module_name}")
+
+    def populate_stable(self, module_name: str) -> Path:
+        """Promotes current Workspace/ content to Stable/"""
+        if not self.project_root:
+            raise RuntimeError("Project root not set.")
+        
+        module_dir = self.project_root / module_name
+        workspace_dir = module_dir / "Workspace"
+        stable_dir = module_dir / "Stable"
+        
+        # Archive previous stable if exists
+        if stable_dir.exists() and any(stable_dir.iterdir()):
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            archive_stable = module_dir / "Archives" / f"stable_{ts}"
+            archive_stable.mkdir(parents=True)
+            for item in stable_dir.iterdir():
+                if not item.is_symlink():
+                    shutil.move(item, archive_stable / item.name)
+        
+        stable_dir.mkdir(exist_ok=True)
+        if workspace_dir.exists():
+            for item in workspace_dir.iterdir():
+                if not item.is_symlink():
+                    if item.is_file():
+                        shutil.copy2(item, stable_dir)
+                    elif item.is_dir():
+                        shutil.copytree(item, stable_dir / item.name)
+        
+        self._setup_workspace_links(stable_dir, module_name)
+        return stable_dir
+
+    def resolve_resource_path(self, project_id: str, module_name: Optional[str], resource_type: str, iteration_id: Optional[str] = None) -> Path:
+        if not project_id and resource_type == "ProjectZip":
+            temp_dir = self.workspace_root / ZIP_TEMP_DIR
+            temp_dir.mkdir(parents=True, exist_ok=True)
+            return temp_dir
+
+        if not module_name:
+            if resource_type == "Library":
+                return self.workspace_root / project_id / "lib" / "imports"
+            raise ValueError("module_name required")
+
+        project_module_root = self.workspace_root / project_id / module_name
+        c_name = self.circuit_name.get(module_name) or self.db.get_project_setting(f"{module_name}.circuit_name")
+
+        if resource_type == "Circuit":
+            if not iteration_id or iteration_id in ["workspace", "current"]:
+                return project_module_root / "Workspace" / f"{c_name}.tsx"
+            return project_module_root / "Archives" / iteration_id / f"{c_name}.tsx"
+        elif resource_type == "Evaluation":
+            if not iteration_id or iteration_id in ["workspace", "current"]:
+                return project_module_root / "Workspace" / "eval_results"
+            return project_module_root / "Archives" / iteration_id / "eval_results"
+        elif resource_type == "StableCircuit":
+            return project_module_root / "Stable" / f"{c_name}.tsx"
+        elif resource_type == "CompiledCircuit":
+            return project_module_root / "Stable" / "dist"
+        elif resource_type == "Library":
+             return project_module_root / "lib" / "imports"
+
+        raise ValueError(f"Unknown resource type: {resource_type}")
+
     def get_workspace_info(self, module_name=None) -> Dict[str, Any]:
         """Returns information about the current workspace status."""
+        if not module_name:
+            if not self.project_modules: return {"project_id": self.project_id}
+            module_name = self.project_modules[0]
         is_synthesizable = False
         is_synthesis_completed = False
-        if not module_name:
-            module_name = self.module_names[0] # TODO: Prepare proper worksapce info for all modules
         if self.project_root:
-            has_schematic_images = (self.project_root / module_name / "schematic_images").exists() and (self.project_root / module_name / "schematic_images").is_dir()
-            has_user_artefacts = (self.project_root / module_name / "resources").exists() and (self.project_root / module_name / "resources").is_dir()
+            res_dir = self.project_root / module_name / "resources"
+            has_sc = (res_dir / "schematic_images").is_dir()
             scud_files = list((self.project_root / module_name).glob("*.scud"))
-            
-            # Also check if resources has any images
-            has_images = False
-            if has_user_artefacts:
-                has_images = any(f.suffix.lower() in ['.png', '.jpg', '.jpeg'] for f in (self.project_root / module_name / "resources").iterdir() if f.is_file())
-
-            logger.info(f"[WorkspaceManager.get_workspace_info] has_schematic_images: {has_schematic_images}, has_user_artefacts: {has_user_artefacts}, has_images: {has_images}, scud_files: {scud_files}")
-
-            if has_schematic_images and has_user_artefacts and has_images and scud_files:
+            has_img = any(f.suffix.lower() in ['.png', '.jpg', '.jpeg'] for f in res_dir.iterdir() if f.is_file()) if res_dir.exists() else False
+            if has_sc and has_img and scud_files:
                 is_synthesizable = True
-                # If circuit_name is not set, try to infer it from scud file
-                if not self.circuit_name[module_name]:
-                    self.circuit_name = scud_files[0].stem
+                if not self.circuit_name.get(module_name):
+                    self.circuit_name[module_name] = scud_files[0].stem
 
-            if self.circuit_name:
-                stable_path = self.project_root / module_name / "Stable" / f"{self.circuit_name}.tsx"
-                if stable_path.exists():
+            if self.circuit_name.get(module_name):
+                if (self.project_root / module_name / "Stable" / f"{self.circuit_name[module_name]}.tsx").exists():
                     is_synthesis_completed = True
 
         return {
             "project_id": self.project_id,
-            "project_manifest": self.git.get_tree_view(),
-            # VAP information
-            "current_iteration_path": str(self.current_iteration_path) if self.current_iteration_path else None,
-            "previous_iteration_path": str(self.previous_iteration_path) if self.previous_iteration_path else None,
-            "iteration_count": self._iteration_count if hasattr(self, "_iteration_count") else 0,
+            "project_manifest": self.git.get_tree_view() if self.git else {},
+            "workspace_path": str(self.workspace_path.get(module_name)),
+            "archive_count": self._archive_count.get(module_name, 0),
             "is_synthesizable": is_synthesizable,
-            "circuit_name": self.circuit_name,
+            "circuit_name": self.circuit_name.get(module_name),
             "is_synthesis_completed": is_synthesis_completed
         }
-
-    def get_current_iteration_path(self, module_name):
-        return self.current_iteration_path[module_name]
-    
-    def get_current_iteration_id(self, module_name):
-        return self.current_iteration_id[module_name]
-
-    # NOTE: Location 1: Direct reference to project directory structure
-    def resolve_resource_path(self,resource_type: str, module_name:Optional[str]=None, project_id: Optional[str]=None,  iteration_id: Optional[str] = None) -> Path:
-        """Resolve the local filesystem path for a resource using workspace conventions."""
-        if (not project_id) and (resource_type == "ProjectZip"):
-            # for ProjectZip resource type, project_id will not be provided(as it's not yet created)
-            # In that case, create a temporary directory under workspace root and return that path for zip extraction. 
-            # The temp directory will be deleted after use.
-            temp_dir = self.workspace_root / ZIP_TEMP_DIR
-            temp_dir.mkdir(parents=True, exist_ok=True)
-            logger.info(f"[WorkspaceManager.resolve_resource_path] No project_id provided. Returning temporary directory for zip extraction: {temp_dir}")
-            return temp_dir
-        
-        resolved_path = None
-        
-        if not module_name:
-            project_root = self.workspace_root / project_id 
-            logger.warning("[WorkspaceManger.resolve_resource_path] module_name is None. Only supported operation is Library resolution")
-            if resource_type == "Library":
-                resolved_path= project_root / "lib" / "imports"
-            else:
-                raise ValueError("[WorkspaceManager.resolve_resource_path] module_name is None. Only Library path resolution is allowed")
-        else:
-            project_root = self.workspace_root / project_id / module_name
-            # Determine circuit name for path resolution
-            res_circuit_name = self.circuit_name[module_name]
-            if resource_type == "Library":
-                resolved_path= project_root / "lib" / "imports"
-            elif resource_type == "Circuit":
-                if iteration_id:
-                    resolved_path = project_root / "Iterations" / iteration_id / f"{res_circuit_name}.tsx"
-                else:
-                    resolved_path= project_root / f"{res_circuit_name}.tsx"
-            elif resource_type == "Evaluation":
-                if iteration_id:
-                    resolved_path= project_root / "Iterations" / iteration_id / "eval_results"
-                else:
-                    resolved_path= project_root / "eval_results"
-            elif resource_type == "StableCircuit":
-                resolved_path= project_root / "Stable" / f"{res_circuit_name}.tsx"
-            elif resource_type == "CompiledCircuit":
-                resolved_path = project_root / "Stable" / "dist"
-            
-        if resolved_path:
-            logger.info(f"[WorkspaceManager.resolve_resource_path] resolved resource path: {resolved_path}")
-            return resolved_path
-        raise ValueError(f"[WorkspaceManager.resolve_resource_path]Unknown resource type: {resource_type}")
-
-    # Git Worktree Support
-    # ====================
     def ensure_git_repo(self):
         """Ensures that the current project root is a git repository."""
         if not self.project_root:
@@ -967,14 +728,3 @@ class WorkspaceManager:
         rows = self.db.conn.execute(query, params).fetchall()
         return [self._build_operation(row) for row in rows]
 
-    def _query(self, sql: str, params=None, write: bool = False):
-        """Internal escape hatch for raw SQL queries (Debug mode only)."""
-        if not self.debug:
-            raise RuntimeError("Raw query only allowed in debug mode.")
-            
-        params = params or []
-        if write:
-            with self.db.conn:
-                return self.db.conn.execute(sql, params).fetchall()
-        else:
-            return self.db.conn.execute(sql, params).fetchall()

@@ -27,9 +27,10 @@ class SyncClient:
         
         self.web_socket_client.add_subscriber(self.handle_runtime_message)
 
-    def _get_lock(self, project_id: str, resource_type: str,module_name: str) -> asyncio.Lock:
+    def _get_lock(self, project_id: str, resource_type: str,module_name: str=None) -> asyncio.Lock:
         """Get or create a lock for a specific project/resource pair."""
-        key = (project_id, module_name, resource_type)
+        key = (project_id, module_name, resource_type) if module_name else (project_id,resource_type)
+        
         if key not in self._locks:
             self._locks[key] = asyncio.Lock()
         return self._locks[key]
@@ -211,8 +212,8 @@ class SyncClient:
             await asyncio.to_thread(self.storage_client.download_file, payload.blob_id, str(tmp_file))
             logger.debug(f"[SyncClient.handle_download_request] Download completed for blob {payload.blob_id}")
 
-            if None in (payload.project_id, payload.resource_type, payload.module_name):
-                raise ValueError(f"[SyncClient.handle_download_request] project_id, module_name and resource_type are required for sync. project_id:{payload.project_id}, module_name:{payload.module_name}, resource_type: {payload.resource_type}")
+            if None is (payload.resource_type):
+                raise ValueError(f"[SyncClient.handle_download_request] resource_type is required for sync. resource_type: {payload.resource_type}")
         
             target_path = self.get_resource_path(project_id=payload.project_id, resource_type=payload.resource_type, iteration_id=payload.iteration_id, module_name=payload.module_name)
             os.makedirs(os.path.dirname(target_path), exist_ok=True)
@@ -347,7 +348,7 @@ class SyncClient:
         """
         sync_id = str(uuid.uuid4())
         logger.info(f"[SyncClient.sync_library] Requesting library sync for project {project_id} (sync_id={sync_id})")
-        if None in (project_id):
+        if None is (project_id):
             raise ValueError(f"[SyncClient.sync_library] project_id is required for sync. project_id:{project_id}")
         
         local_path = self.get_resource_path(project_id, "Library")

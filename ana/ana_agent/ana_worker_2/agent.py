@@ -32,7 +32,7 @@ class ANA_validation_agent:
         self.storage_url = storage_url
         self.mcp_manager = mcp_manager
 
-    async def validate_circuit(self, circuit_name: str, workspace: str, iteration_id: str) -> Dict[str, Any]:
+    async def validate_circuit(self, circuit_name: str, workspace: str, iteration_id: str, module_name: str) -> Dict[str, Any]:
         """
         Process the circuit file: upload to object store, invoke VAP, poll for status, and collect results.
         """
@@ -47,6 +47,7 @@ class ANA_validation_agent:
             blob_id = await self.sync_client.handle_upload_request(SyncPayload(
                 sync_id=str(uuid.uuid4()),
                 project_id=self.project_id,
+                module_name=module_name,
                 resource_type="Circuit",
                 iteration_id=iteration_id,
                 intent="EVALUATION",
@@ -67,12 +68,13 @@ class ANA_validation_agent:
                 {
                     "circuit_name": circuit_name,
                     "blob_id": blob_id,
-                    "iteration_id": iteration_id
+                    "iteration_id": iteration_id,
+                    "module_name": module_name
                 }
             )
         else:
             logger.info("[ANA_validation_agent.validate_circuit] Using WebSockets for VAP execution")
-            await self.web_socket_client.emit_vap_execute(circuit_name, blob_id, iteration_id=iteration_id)
+            await self.web_socket_client.emit_vap_execute(circuit_name, blob_id, iteration_id=iteration_id, module_name=module_name)
             
             # Wait for the VAP_COMPLETE event
             response = await self.web_socket_client.wait_for_event(
@@ -105,8 +107,7 @@ class ANA_validation_agent:
         
         try:
             # Workflow 1.2: Runtime -> Agent download for Evaluation
-            #NOTE Outdated call. This will no longer work. module name is a necessary parameter 
-            await self.sync_client.sync_evaluation(self.project_id, iteration_id)
+            await self.sync_client.sync_evaluation(self.project_id, module_name, iteration_id)
         except Exception as e:
             raise ValueError(f"[ANA_validation_agent.validate_circuit] Failed to synchronize evalution results. Error: {e}")
             
