@@ -2,6 +2,7 @@ import { WebSocket } from "ws";
 import { randomUUID } from "crypto";
 import * as path from "path";
 import * as fs from "fs/promises";
+import { existsSync } from "fs";
 import { WORKSPACE_DIR } from "../config/paths.js";
 import type { WebSocketMessage, AgentMessage } from "../server/types.js";
 import { RuntimeSender, VapContext } from "./types.js";
@@ -181,6 +182,11 @@ export class VHLRuntime implements RuntimeSender {
                 const projectDir = path.join(this.workspaceDir, project_id);
                 setProjectDir(projectDir);
 
+                // Check for Workspace directory
+                const workspaceDir = path.join(projectDir, "Workspace");
+                const hasWorkspace = existsSync(workspaceDir);
+                const activeProjectDir = hasWorkspace ? workspaceDir : projectDir;
+
                 this.setProjectState({
                     project_id: project_id,
                     project_name: project_id,
@@ -204,7 +210,7 @@ export class VHLRuntime implements RuntimeSender {
 
                 // Start dev server for the project if newly created or if synthesis is not completed
                 if (msg.type === "PROJECT_CREATED" || !this.projectState.is_synthesis_completed) {
-                    await this.webui.startDevServer(projectDir, entryFile, this.projectState.circuit_name);
+                    await this.webui.startDevServer(activeProjectDir, entryFile, this.projectState.circuit_name);
                 }
 
                 this.setProjectState({ runtime_status: "initialized" });
@@ -309,13 +315,19 @@ export class VHLRuntime implements RuntimeSender {
 
     public async onStableCircuitUpdated(circuitName: string): Promise<void> {
         console.log(`[VHLRuntime] Stable circuit updated: ${circuitName}`);
-        
+
         this.setProjectState({ circuit_name: circuitName });
 
         if (this.projectState.project_dir) {
             const entryFile = `${circuitName}.tsx`;
-            await this.webui.startDevServer(this.projectState.project_dir, entryFile, circuitName);
-            await this.webui.captureSnapshots(this.projectState.project_dir, entryFile);
+
+            // Check for Workspace directory
+            const workspaceDir = path.join(this.projectState.project_dir, "Workspace");
+            const hasWorkspace = existsSync(workspaceDir);
+            const activeProjectDir = hasWorkspace ? workspaceDir : this.projectState.project_dir;
+
+            await this.webui.startDevServer(activeProjectDir, entryFile, circuitName);
+            await this.webui.captureSnapshots(activeProjectDir, entryFile);
         }
     }
 }

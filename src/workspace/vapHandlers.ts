@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
 import * as fs from "fs/promises";
+import { existsSync } from "fs";
 import * as path from "path";
 import {
     compressDirectory
@@ -29,15 +30,21 @@ export async function handleVapExecute(
         const datetime = new Date().toISOString().replace(/[:.]/g, "-");
         console.log(`[VHLRuntime] Setting up COW workspace for circuit: ${circuit_name} (Task: ${taskId})`);
 
+        // Determine the source directory for the COW clone.
+        // If "Workspace" directory exists, use it as the source for evaluation.
+        const workspaceDir = path.join(projectDir, "Workspace");
+        const hasWorkspace = existsSync(workspaceDir);
+        const cowSourceDir = hasWorkspace ? workspaceDir : projectDir;
+
         // 1. Create COW Workspace (hardlink clone)
-        paths = await COWWorkspaceManager.createEvaluationWorkspace(taskId, projectDir);
+        paths = await COWWorkspaceManager.createEvaluationWorkspace(taskId, cowSourceDir);
 
         // Determine results directory in the main workspace (for persistence)
         let resultsDir: string;
-        if (iteration_id) {
-            resultsDir = path.join(projectDir, "iterations", iteration_id, "eval_results");
+        if (!iteration_id || iteration_id === "workspace" || iteration_id === "current") {
+            resultsDir = path.join(projectDir, "Workspace", "eval_results");
         } else {
-            resultsDir = path.join(projectDir, "eval_results");
+             resultsDir = path.join(projectDir, "Archives", iteration_id, "eval_results");
         }
         await fs.mkdir(resultsDir, { recursive: true });
 
@@ -134,8 +141,12 @@ export async function handleVapDecision(
 
     try {
         if (decision === "ACCEPT") {
-            console.log(`[VHLRuntime] Committing changes for task ${taskId} to ${projectDir}`);
-            await COWWorkspaceManager.commit(taskId, projectDir, circuitName || undefined);
+            const workspaceDir = path.join(projectDir, "Workspace");
+            const hasWorkspace = existsSync(workspaceDir);
+            const cowTargetDir = hasWorkspace ? workspaceDir : projectDir;
+
+            console.log(`[VHLRuntime] Committing changes for task ${taskId} to ${cowTargetDir}`);
+            await COWWorkspaceManager.commit(taskId, cowTargetDir, circuitName || undefined);
             // Stable circuit and circuitjson are updated 
             sender.onStableCircuitUpdated(circuitName);
 

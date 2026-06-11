@@ -23,24 +23,25 @@ export class SyncManager {
         // Match the layout in Python SyncClient
         const projectRoot = path.join(this.workspaceDir, projectId);
 
+        let basePath: string;
+        if (!iterationId || iterationId === "workspace" || iterationId === "current") {
+            basePath = path.join(projectRoot, "Workspace");
+        } else {
+            basePath = path.join(projectRoot, "Archives", iterationId);
+        }
+
         switch (resourceType) {
             case "Library":
                 return path.join(projectRoot, "lib/imports");
             case "Circuit": {
                 const name = data?.circuit_name || "circuit";
-                if (iterationId) {
-                    return path.join(projectRoot, "iterations", iterationId, `${name}.tsx`);
-                }
-                return path.join(projectRoot, `${name}.tsx`);
+                return path.join(basePath, `${name}.tsx`);
             }
             case "Evaluation":
-                if (iterationId) {
-                    return path.join(projectRoot, "iterations", iterationId, "eval_results");
-                }
-                return path.join(projectRoot, "eval_results");
+                return path.join(basePath, "eval_results");
             case "StableCircuit": {
                 const name = data?.circuit_name || "circuit";
-                return path.join(projectRoot, `${name}.tsx`);
+                return path.join(projectRoot, "Stable", `${name}.tsx`);
             }
             case "CompiledCircuit":
                 return path.join(projectRoot, "dist");
