@@ -141,8 +141,8 @@ class AnaURPAgent(AbstractURPAgent):
         self.project_id: Optional[str] = None
 
         # Iteration state — set fresh in pre-conditions each invocation
-        self._iteration_dir: Optional[Path] = None
-        self._previous_iteration_dir: Optional[Path] = None
+        self._workspace_dir: Optional[Path] = None
+        
 
         # Error payload forwarded from a REJECT post-condition into the next
         # process() call so ANA-W1 can self-correct.
@@ -181,6 +181,13 @@ class AnaURPAgent(AbstractURPAgent):
         self.project_id = context.project_id
         config = context.config
 
+        # ------- Workspace configuration ----
+        self._workspace_dir = self.workspace_manager.create_workspace(module_name=self.module_name)
+        logger.info(
+            f"[AnaURPAgent._on_initialize] Initialized for module='{self.module_name}', "
+            f"project='{self.project_id}'"
+        )
+
         # ---- LLM setup ----
         if not self.llm:
             api_key = os.getenv("LLM_API_KEY", "dummy_key")
@@ -213,17 +220,20 @@ class AnaURPAgent(AbstractURPAgent):
 
         # ---- Agent ----
         submodule_root = Path(__file__).resolve().parent
-        # ANA-W1 prompt files are used directly; URP ANA delegates to run_ana_w1_agent
-        # for the actual LLM work (W1 path), so no separate system prompt is needed
-        # here for the outer agent.  The Conversation below serves as the
-        # persistence/condensation container across iterations.
         tools = [
             Tool(name=FileEditorTool.name),
         ]
+        submodule_root = Path(__file__).resolve().parent
+        sys_prompt_path = os.path.join(submodule_root, "ana_prompt.j2")
+
+        sys_prompt_kwargs = self.workspace_manager.get_maw_workspace_info(self.module_name)
+
         self.agent = Agent(
             llm=self.llm,
             tools=tools,
             condenser=pipeline,
+            system_prompt_filename=sys_prompt_path,
+            system_prompt_kwargs=sys_prompt_kwargs,
         )
 
         # ---- Conversation (persistence enables condensation across iterations) ----
@@ -241,10 +251,6 @@ class AnaURPAgent(AbstractURPAgent):
             persistence_dir=persistence_dir,
         )
 
-        logger.info(
-            f"[AnaURPAgent._on_initialize] Initialized for module='{self.module_name}', "
-            f"project='{self.project_id}', persistence_dir='{persistence_dir}'"
-        )
 
     def _conversation_callback(self, event: Event):
         if isinstance(event, LLMConvertibleEvent):
@@ -266,13 +272,10 @@ class AnaURPAgent(AbstractURPAgent):
            SUCCESS entry for this module.
            - If found  → synthesis has happened before. This is either an
              error-correction or user-triggered improvement iteration.
-             Copy Stable/ circuit into the new iteration directory.
-           - If not found → first-time synthesis. Create a bare iteration directory.
+             Copy Stable/ circuit into the workspace directory.
+           - If not found → first-time synthesis. Circuit is yet to be synthesised 
         2. Create new iteration directory via WorkspaceManager.
         3. Stash iteration paths on self for use by process() and post-conditions.
-
-        NOTE: The first-iteration flag from the legacy SM is intentionally
-        dropped — DB state is the single source of truth.
         """
         logger.info(
             f"[AnaURPAgent._check_preconditions] module='{self.module_name}'"
@@ -292,25 +295,21 @@ class AnaURPAgent(AbstractURPAgent):
                 (ANA_AGENT_ID, ANA_OPERATION_NAME, self.module_name),
             ).fetchone()
 
-            is_first_synthesis = prior_synthesis is None
-
-            if is_first_synthesis:
+            # First synthesis — Do nothing..
+            if not prior_synthesis:
                 logger.info(
                     "[AnaURPAgent._check_preconditions] No prior synthesis found. "
                     "Operating in first-synthesis mode."
                 )
+            # ---- 2. If prior synthesis exists, prepare workspace with stable circuit ----
             else:
                 logger.info(
                     "[AnaURPAgent._check_preconditions] Prior synthesis detected. "
                     "Operating in error-correction / improvement mode."
-                )
-
-            # ---- 2. If prior synthesis exists, prepare iteration with stable circuit ----
-            if not is_first_synthesis:
+                )         
                 stable_circuit_path = self.workspace_manager.get_circuit_path_from_stable(
                     module_name=self.module_name
                 )
-
                 if not stable_circuit_path.is_file():
                     msg = (
                         f"[AnaURPAgent._check_preconditions] Prior synthesis recorded but "
@@ -321,38 +320,17 @@ class AnaURPAgent(AbstractURPAgent):
                     return False, msg
 
                 # prepare_workspace: snapshots current truth and copies stable circuit into Workspace/
-                self._iteration_dir = self.workspace_manager.prepare_workspace(
-                    module_name=self.module_name,
-                    source_file=str(stable_circuit_path),
-                    observations=None,
-                )
-                # Keep track of the most recent archive as "previous iteration" for ANA-W1 logic
-                archive_count = self.workspace_manager._archive_count.get(self.module_name, 0)
-                if archive_count > 0:
-                    self._previous_iteration_dir = self.workspace_manager.project_root / self.module_name / "Archives" / f"{archive_count:04d}"
-                else:
-                    self._previous_iteration_dir = None
-            else:
-                # First synthesis — create a fresh Workspace/
-                self._previous_iteration_dir = None
-                self._iteration_dir = self.workspace_manager.create_workspace(
+                self.workspace_manager.prepare_workspace(
                     module_name=self.module_name,
                 )
-            if not self._iteration_dir:
-                raise RuntimeError("Failed to setup workspace directory.")
+                
+            if not self._workspace_dir:
+                raise RuntimeError("[AnaURPAgent._check_preconditions] Failed to setup workspace directory.")
 
             logger.info(
                 f"[AnaURPAgent._check_preconditions] Workspace ready: "
-                f"{self._iteration_dir}"
+                f"{self._workspace_dir}"
             )
-            
-            # TODO: populate the _runtime_info with iteration workspace paths
-            # * `{{ circuit }}.scud`
-            # * `resources/`
-            # * `resources/schematic_images/`
-            # * `tsci_built_in_elements/`
-            # * `lib/imports/`
-            # * `eval_results/`
             
             return True, "Pre-conditions satisfied. Iteration directory created."
 
@@ -386,23 +364,17 @@ class AnaURPAgent(AbstractURPAgent):
         """
         logger.info(
             f"[AnaURPAgent.process] Starting ANA-W1 for module='{self.module_name}', "
-            f"iteration='{self._iteration_dir}'"
+            f"iteration='{self._workspace_dir}'"
         )
 
-        current_iter_dir = self._iteration_dir
-
-        self._pending_error_message = None  # consumed
+        self._pending_error_message = None  #NOTE: orchestrator should consume last error message before calling process again
 
         user_message = message.payload["text"]
         
         
         logger.info(
-            f"[AnaURPAgent.process] Mode: "
-            f"{'error-correction' if previous_iter_dir else 'synthesis'}, "
-            f"observations={len(observations)}, "
-            f"circuit_name='{circuit_name}'"
+            f"[AnaURPAgent.process] Sending messsage: {user_message}"
         )
-
 
         self.conversation.send_message(
             Message(
@@ -431,25 +403,6 @@ class AnaURPAgent(AbstractURPAgent):
         payload = ProcessResultPayload(text=response)
         return ProcessResult(outcome=process_outcome, payload=payload)
 
-    def _prepare_orchestrator_message()->None:
-        """
-        Paths to derive from workspacemanager
-
-        * `{{ circuit }}.scud`
-        * `resources/`
-        * `resources/schematic_images/`
-        * `tsci_built_in_elements/`
-        * `lib/imports/`
-        * `eval_results/`
-
-        Under `resources/` you may find datasheets, reference designs module boundary document and system boundary document. 
-        Under `resources/schematic_images/` you may find the reference schematic design of the main ASIC in the module. You can use this as a reference for your design. 
-        Under `lib/imports/` you can find the non-trivial components for the module imported by the Librarian agent in the system.
-        Under `tsci_built_in_elements` you can find all the trivial tsci standard library component descriptions. You may refer them if needed. 
-        `eval_results/` directory appears after first evaluation iteration. You may find the logs from previous circuit evaluation under this directory.
-        
-        """
-        pass
     # ------------------------------------------------------------------
     # Post-conditions  (maps: handle_trigger_w2 + handle_authorize + handle_exit_success)
     # ------------------------------------------------------------------
@@ -483,7 +436,7 @@ class AnaURPAgent(AbstractURPAgent):
         4. Return (False, reject_reason) — URP framework will emit TASK_POSTCONDITIONS_VIOLATED
            which triggers a new corrective invocation with ANA in error-correction mode.
         """
-        if not self._iteration_dir:
+        if not self._workspace_dir:
             process_result.category = FailureCategory.INFRASTRUCTURE_FAILURE
             return False, "Iteration directory not set — cannot run W2 validation."
         
@@ -493,13 +446,13 @@ class AnaURPAgent(AbstractURPAgent):
         )
         if not circuit_tsx_path.exists():
             process_result.category = FailureCategory.AGENTIC_FAILURE
-            return False,f"ANA-W1 did not produce a circuit .tsx file in {self._iteration_dir}."
+            return False,f"ANA-W1 did not produce a circuit .tsx file in {self._workspace_dir}."
         logger.info(
-            f"[AnaURPAgent._check_postconditions] module='{self.module_name}', iteration='{self._iteration_dir}', circuit_tsx_path='{circuit_tsx_path}"
+            f"[AnaURPAgent._check_postconditions] module='{self.module_name}', iteration='{self._workspace_dir}', circuit_tsx_path='{circuit_tsx_path}"
         )
 
 
-        iteration_dir = self._iteration_dir
+        iteration_dir = self._workspace_dir
         circuit_name = self.workspace_manager.circuit_name.get(self.module_name)
         iteration_id = "workspace"
 
@@ -537,7 +490,7 @@ class AnaURPAgent(AbstractURPAgent):
         # NOTE: following handlers update the process_result.category if any failures occur.
         if vap_decision == "ACCEPT":
             try:
-                return await self._handle_vap_accept(vap_result=vap_result, iteration_dir=iteration_dir) 
+                return await self._handle_vap_accept(vap_result=vap_result) 
             except e:
                 msg = (f"[AnaURPAgent._handle_vap_accept] Failed: {e}")
                 logger.error(msg)
@@ -546,7 +499,7 @@ class AnaURPAgent(AbstractURPAgent):
 
         elif vap_decision == "REJECT":
             process_result.category = FailureCategory.VALIDATION_FAILURE
-            return await self._handle_vap_reject(vap_result=vap_result,iteration_dir=iteration_dir)
+            return await self._handle_vap_reject(vap_result=vap_result)
         else:
             msg = (
                 f"[AnaURPAgent._check_postconditions] Unexpected VAP decision: "
@@ -561,7 +514,7 @@ class AnaURPAgent(AbstractURPAgent):
     # ------------------------------------------------------------------
 
     async def _handle_vap_accept(
-        self, vap_result: dict, iteration_dir: Path,
+        self, vap_result: dict,
     ) -> tuple[bool, str]:
         """
         Handle VAP ACCEPT:
@@ -625,7 +578,7 @@ class AnaURPAgent(AbstractURPAgent):
         )
         
     async def _handle_vap_reject(
-        self, vap_result: dict, iteration_dir: Path
+        self, vap_result: dict,
     ) -> tuple[bool, str]:
         """
         Handle VAP REJECT:
@@ -639,7 +592,7 @@ class AnaURPAgent(AbstractURPAgent):
             "context for next iteration."
         )
 
-        eval_results_dir = iteration_dir / "eval_results"
+        eval_results_dir = self.workspace_manager.workspace_path.get(self.module_name) / "eval_results"
         error_summary_parts = [
             "The circuit failed VAP evaluation. Please analyse the following evaluation "
             "output file and correct the circuit accordingly.(first 4000 characters of the output log files are attached here for your reference)\n"
@@ -692,7 +645,9 @@ class AnaURPAgent(AbstractURPAgent):
 
 
     # VAP iteration handling 
-
+    @property
+    async def pending_error(self):
+        return self._pending_error_message
     # ------------------------------------------------------------------
     # Shutdown
     # ------------------------------------------------------------------

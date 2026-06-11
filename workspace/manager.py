@@ -105,6 +105,8 @@ class WorkspaceManager:
                 circuit_name = self.db.get_project_setting(f"{module}.circuit_name")
                 if circuit_name:
                     self.circuit_name[module] = circuit_name
+                else: #NOTE: Support for legacy project loading. Remove this code later
+                    self.set_circuit_name(name=f"{module}.tsx", module=module)
             logger.info(f"[WorkspaceManager.load_project] Recovered state from SQLite. Modules: {self.project_modules}")
 
         # Reconstruct workspace and archive info
@@ -278,6 +280,7 @@ class WorkspaceManager:
             if not os.path.lexists(sb_link) and (project_root_path / system_boundary_doc).exists():
                 rel_sb_source = os.path.relpath(project_root_path / system_boundary_doc, sb_link.parent)
                 os.symlink(rel_sb_source, sb_link)
+            self.set_circuit_name(name=f"{module}.tsx",module=module)
     def create_project_from_zip(self, project_id: str)-> Dict[str, Any]:
         """
         Restores project structure from the temporary zip directory.
@@ -324,7 +327,15 @@ class WorkspaceManager:
         self.workspace_path[module_name] = workspace_path
         self._setup_workspace_links(workspace_path, module_name)
         return workspace_path
-
+    def get_maw_workspace_info(self, module_name):
+        workspace_path = self.workspace_path[module_name]
+        return {
+        "workspace": workspace_path,
+        "scud_path": workspace_path / f"{module_name}.scud",
+        "resources": workspace_path / "resources",
+        "library_path": workspace_path / "lib",
+        "circuit": workspace_path / f"{module_name}.tsx"
+        }
     def _setup_workspace_links(self, target_dir: Path, module_name: str):
         links = [
             ("schematic_images", self.project_root / module_name / "resources" / "schematic_images"),
@@ -345,16 +356,14 @@ class WorkspaceManager:
             if not source.exists():
                 logger.warning(f"[WorkspaceManager._setup_iteration_symlinks] Missing source file: {source}")
                 continue        
+            
             link_path = target_dir / link_name
+            if os.path.lexists(link_path):
+                logger.debug(f"[WorkspaceManager._setup_iteration_symlinks] Link already exists: {link_path}")
+                continue
+            
             # Ensure parent directory exists for nested links
             link_path.parent.mkdir(parents=True, exist_ok=True)
-            # Remove if exists (could be a broken link or an old one)
-            if os.path.lexists(link_path):
-                if link_path.is_symlink() or link_path.is_file():
-                    link_path.unlink()
-                elif link_path.is_dir():
-                    shutil.rmtree(link_path)
-            
             # Create a relative symlink for better portability
             rel_source = os.path.relpath(source, link_path.parent)
             os.symlink(rel_source, link_path)
@@ -384,17 +393,19 @@ class WorkspaceManager:
         logger.info(f"Archived workspace for {module_name} to {archive_path}")
         return archive_path
 
-    def prepare_workspace(self, module_name: str, source_file: str, observations: Optional[str] = None) -> Path:
+    def prepare_workspace(self, module_name: str) -> Path:
         if not self.circuit_name.get(module_name):
             raise RuntimeError(f"Circuit name not set for {module_name}")
 
         self.archive_workspace(module_name)
         workspace_path = self.create_workspace(module_name)
-        dest_path = workspace_path / f"{self.circuit_name[module_name]}.tsx"
-        shutil.copy2(Path(source_file), dest_path)
+        dest_path = workspace_path / self.circuit_name[module_name]
         
-        if observations:
-            (workspace_path / f"{self.circuit_name[module_name]}.observations").write_text(str(observations))
+        # copy stable circuit only if the workspace doesn't contain circuit code
+        if not dest_path.exists():
+            stable_circuit_path = self.get_circuit_path_from_stable(module_name=module_name)
+            shutil.copy2(stable_circuit_path, dest_path)
+        
         return workspace_path
 
     def get_circuit_path_from_stable(self, module_name) -> Path:
@@ -413,6 +424,8 @@ class WorkspaceManager:
         root_scud = list((self.project_root / module_name).glob("*.scud"))
         if root_scud: return root_scud[0]
         raise FileNotFoundError(f"No .scud found for {module_name}")
+    def get_workspace_path(self,module_name) -> Path:
+        return self.workspace_path[module_name]
 
     def populate_stable(self, module_name: str) -> Path:
         """Promotes current Workspace/ content to Stable/"""
