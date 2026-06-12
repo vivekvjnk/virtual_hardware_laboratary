@@ -1,15 +1,17 @@
 import asyncio
 import logging
 from typing import Any, Dict, Callable, Optional
-from vhl_common.urp.data_types import LastTaskOutcome, MessageEnvelope, ProcessResult
+from vhl_common.urp.data_types import LastTaskOutcome, MessageEnvelope, ProcessResult, FailureCategory
 from vhl_protocol.models import AgentStatus
 from archy_agent.main import prepare_archy_workspace
-from ..exceptions import AgentNotFoundError
+from ..exceptions import AgentNotFoundError, InfrastructureError
 from .abstract_controller import AbstractController
 
 logger = logging.getLogger(__name__)
 
 OUTCOME_WAIT_TIMEOUT = 600
+MAX_VALIDATION_FAILURES = 5
+MAX_AGENT_FAILURES = 10
 
 class Workflow1Controller(AbstractController):
     """Controller responsible for orchestrating Workflow 1 (Archy -> Librarian -> ANA-D)
@@ -103,7 +105,7 @@ class Workflow1Controller(AbstractController):
             # Update initial status
             status = self._supervisor.get_agent_state(archy_agent_id).get("status")
             if self._on_status_update:
-                self._on_status_update("archy", status)
+                self._on_status_update(archy_agent_id, status)
 
             # 4. Wait For Outcome & Advance Workflow
             start_time = asyncio.get_event_loop().time()
@@ -142,7 +144,7 @@ class Workflow1Controller(AbstractController):
             # Update final status
             final_status = self._supervisor.get_agent_state(archy_agent_id).get("status")
             if self._on_status_update:
-                self._on_status_update("archy", final_status)
+                self._on_status_update(archy_agent_id, final_status)
 
         finally:
             # Release Agent
@@ -175,7 +177,7 @@ class Workflow1Controller(AbstractController):
             # Update initial status
             status = self._supervisor.get_agent_state(librarian_agent_id).get("status")
             if self._on_status_update:
-                self._on_status_update("librarian", status)
+                self._on_status_update(librarian_agent_id, status)
 
             # 3. Wait For Outcome & Advance Workflow
             start_time = asyncio.get_event_loop().time()
@@ -215,8 +217,134 @@ class Workflow1Controller(AbstractController):
             # Update final status
             final_status = self._supervisor.get_agent_state(librarian_agent_id).get("status")
             if self._on_status_update:
-                self._on_status_update("librarian", final_status)
+                self._on_status_update(librarian_agent_id, final_status)
 
         finally:
             # Release Agent
             await self._supervisor.release(self.controller_id, librarian_agent_id)
+
+    async def handle_ana(self, module_name: str, timeout: float = 1200) -> None:
+        """Sequential member of Workflow 1: ANA-D."""
+        logger.info(f"[{self.controller_id}.handle_ana] Starting ANA-D processing for module: {module_name}")
+        ana_agent_id = f"{module_name}.ana"
+        
+        # Internal counters
+        validation_failure_count = 0
+        agent_failure_count = 0
+
+        # 1. Claim Agent
+        try:
+            acquired = await self._supervisor.claim(self.controller_id, ana_agent_id)
+        except AgentNotFoundError:
+            raise RuntimeError(f"ANA agent '{ana_agent_id}' was not initialized at startup.")
+        if not acquired:
+            raise RuntimeError(f"Workflow1Controller failed to claim agent {ana_agent_id}")
+
+        try:
+            # 2. Send Initial Synthesis Request
+            message = MessageEnvelope(
+                type="SYNTHESIZE_CIRCUIT",
+                payload={"text": "Please synthesize the circuit based on the SCUD and imported components."},
+                sender="orchestrator",
+                receiver=ana_agent_id
+            )
+            await self._supervisor.send(ana_agent_id, message)
+
+            # Update initial status
+            status = self._supervisor.get_agent_state(ana_agent_id).get("status")
+            if self._on_status_update:
+                self._on_status_update(ana_agent_id, status)
+
+            # 3. Wait for outcomes and handle them
+            start_time = asyncio.get_event_loop().time()
+            
+            while (asyncio.get_event_loop().time() - start_time) < timeout:
+                process_result = await self.wait_for_outcome(
+                    ana_agent_id, 
+                    timeout=timeout - (asyncio.get_event_loop().time() - start_time)
+                )
+                
+                outcome = process_result.outcome
+                category = process_result.category
+                
+                logger.info(f"[{self.controller_id}.handle_ana] Received outcome: {outcome}, category: {category}")
+
+                # Case 1 — Success
+                if outcome == LastTaskOutcome.TASK_COMPLETED and category == FailureCategory.NONE:
+                    logger.info(f"[{self.controller_id}.handle_ana] ANA-D successfully completed synthesis.")
+                    return
+
+                # Case 5 — Infrastructure Failure
+                elif category == FailureCategory.INFRASTRUCTURE_FAILURE:
+                    logger.error(f"[{self.controller_id}.handle_ana] Infrastructure failure detected: {process_result}")
+                    raise InfrastructureError(f"Infrastructure failure during ANA-D execution: {process_result}")
+
+                # Case 6 — HIL Required
+                elif outcome == LastTaskOutcome.WAITING_FOR_USER_INPUT:
+                    logger.warning(f"[{self.controller_id}.handle_ana] ANA-D waiting for user input. Entering wait mode.")
+                    continue
+
+                # Case 2 — Validation Failure
+                elif outcome == LastTaskOutcome.TASK_COMPLETED and category == FailureCategory.VALIDATION_FAILURE:
+                    validation_failure_count += 1
+                    if validation_failure_count > MAX_VALIDATION_FAILURES:
+                        logger.warning(f"[{self.controller_id}.handle_ana] Max validation failures reached ({MAX_VALIDATION_FAILURES}). Escalating to HIL.")
+                        continue
+                    
+                    logger.info(f"[{self.controller_id}.handle_ana] Validation failure #{validation_failure_count}. Retrying ANA.")
+                    retry_message = MessageEnvelope(
+                        type="RETRY_SYNTHESIS",
+                        payload={"text": "Please analyze latest validation results and correct the circuit."},
+                        sender="orchestrator",
+                        receiver=ana_agent_id
+                    )
+                    await self._supervisor.send(ana_agent_id, retry_message)
+
+                # Case 3 — Agent Failed To Produce Artifact (Missing Artifact)
+                elif outcome == LastTaskOutcome.TASK_COMPLETED and category == FailureCategory.AGENTIC_FAILURE:
+                    agent_failure_count += 1
+                    if agent_failure_count > MAX_AGENT_FAILURES:
+                        logger.warning(f"[{self.controller_id}.handle_ana] Max agent failures reached ({MAX_AGENT_FAILURES}). Escalating to HIL.")
+                        continue
+                    
+                    logger.info(f"[{self.controller_id}.handle_ana] Agentic failure (missing artifact) #{agent_failure_count}. Retrying ANA.")
+                    retry_message = MessageEnvelope(
+                        type="RETRY_SYNTHESIS",
+                        payload={"text": "Previous task completed without producing the required circuit artifact.\n\nPlease generate the missing .tsx file."},
+                        sender="orchestrator",
+                        receiver=ana_agent_id
+                    )
+                    await self._supervisor.send(ana_agent_id, retry_message)
+
+                # Case 4 — Agent Stuck Mid-Execution
+                elif outcome == LastTaskOutcome.TASK_FAILED and category == FailureCategory.AGENTIC_FAILURE:
+                    agent_failure_count += 1
+                    if agent_failure_count > MAX_AGENT_FAILURES:
+                        logger.warning(f"[{self.controller_id}.handle_ana] Max agent failures reached ({MAX_AGENT_FAILURES}). Escalating to HIL.")
+                        continue
+                    
+                    logger.info(f"[{self.controller_id}.handle_ana] Agentic failure (stuck) #{agent_failure_count}. Sending 'Continue'.")
+                    continue_message = MessageEnvelope(
+                        type="CONTINUE",
+                        payload={"text": "Continue"},
+                        sender="orchestrator",
+                        receiver=ana_agent_id
+                    )
+                    await self._supervisor.send(ana_agent_id, continue_message)
+                
+                else:
+                    logger.warning(f"[{self.controller_id}.handle_ana] Received unhandled outcome/category: {outcome}/{category}. Waiting for HIL.")
+                    continue
+
+            raise TimeoutError("ANA-D did not reach terminal SUCCESS state within timeout")
+
+        finally:
+            # Update final status
+            try:
+                final_status = self._supervisor.get_agent_state(ana_agent_id).get("status")
+                if self._on_status_update:
+                    self._on_status_update(ana_agent_id, final_status)
+            except Exception:
+                pass
+            # Release Agent
+            await self._supervisor.release(self.controller_id, ana_agent_id)

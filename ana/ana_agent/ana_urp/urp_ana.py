@@ -77,7 +77,6 @@ class AnaContext:
     sqlite_manager: SQLiteManager
     web_socket_client: VHLWebSocketClient
     sync_client: SyncClient
-    project_id: str
     config: AnaConfig = field(default_factory=AnaConfig)
 
 
@@ -138,7 +137,6 @@ class AnaURPAgent(AbstractURPAgent):
         self.module_name: Optional[str] = None
         self.web_socket_client: Optional[VHLWebSocketClient] = None
         self.sync_client: Optional[SyncClient] = None
-        self.project_id: Optional[str] = None
 
         # Iteration state — set fresh in pre-conditions each invocation
         self._workspace_dir: Optional[Path] = None
@@ -173,14 +171,12 @@ class AnaURPAgent(AbstractURPAgent):
         self.module_name = context.module_name
         self.web_socket_client = context.web_socket_client
         self.sync_client = context.sync_client
-        self.project_id = context.project_id
         config = context.config
 
         # ------- Workspace configuration ----
         self._workspace_dir = self.workspace_manager.create_workspace(module_name=self.module_name)
         logger.info(
             f"[AnaURPAgent._on_initialize] Initialized for module='{self.module_name}', "
-            f"project='{self.project_id}'"
         )
 
         # ---- LLM setup ----
@@ -455,7 +451,7 @@ class AnaURPAgent(AbstractURPAgent):
             w2_agent = ANA_validation_agent(
                 web_socket_client=self.web_socket_client,
                 sync_client=self.sync_client,
-                project_id=self.project_id,
+                project_id=self.workspace_manager.project_name,
             )
             vap_result = await w2_agent.validate_circuit(
                 circuit_name=circuit_name,
@@ -554,7 +550,7 @@ class AnaURPAgent(AbstractURPAgent):
         )
 
         # 4. Sync project with runtime
-        await self.sync_client.sync_compiled_circuit(project_id=self.project_id, iteration_id="workspace",module_name=self.module_name)
+        await self.sync_client.sync_compiled_circuit(project_id=self.workspace_manager.project_name, iteration_id="workspace",module_name=self.module_name)
         logger.info(f"[AnaURPAgent._handle_vap_accept] StableCircuit and CompiledCircuit sync completed successfully")
 
         # 5. Send evaluation update to the runtime 

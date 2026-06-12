@@ -31,3 +31,8 @@ class ControlClaimError(SupervisorError):
 class InvalidSupervisorStateError(SupervisorError):
     """Raised when an action is performed that is invalid in the current supervisor state."""
     pass
+
+
+class InfrastructureError(SupervisorError):
+    """Raised when an infrastructure failure occurs during workflow execution."""
+    pass
