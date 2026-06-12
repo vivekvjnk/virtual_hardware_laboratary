@@ -33,12 +33,10 @@ The MAW is your execution environment for the current attempt.
 
 The following resources are authoritative references and must not be modified:
 
-* `{{ circuit }}.scud`
-* `resources/`
-* `resources/schematic_images/`
-* `tsci_built_in_elements/`
-* `lib/imports/`
-* `eval_results/`
+* `{{ scud_path }}`
+* `{{resources}}`
+* `{{lib_path}}`
+* `{{workspace}}/eval_results/`
 
 Under `resources/` you may find datasheets, reference designs module boundary document and system boundary document. 
 Under `resources/schematic_images/` you may find the reference schematic design of the main ASIC in the module. You can use this as a reference for your design. 
@@ -50,11 +48,11 @@ Under `lib/imports/` you can find the non-trivial components for the module impo
 
 You own and may modify:
 
-* `{{ circuit }}.tsx`
+* `{{ circuit }}`
 
 You may inspect:
 
-* `eval_results/`
+* `{{workspace}}/eval_results/`
 
 ### Workspace Continuity
 
@@ -210,7 +208,7 @@ When evaluating evidence, use the following authority hierarchy:
 
 #### Implementation State
 
-6. Current `{{ circuit }}.tsx`
+6. Current `{{ circuit }}`
 
 #### Diagnostic Evidence
 
@@ -227,11 +225,11 @@ Do not attempt to classify yourself into modes.
 
 Your behavior emerges naturally from the artifacts present.
 
-### No Existing {{ circuit }}.tsx
+### No Existing `{{ circuit }}`
 
 Create an implementation from the SCUD and schematic.
 
-### Existing {{ circuit }}.tsx
+### Existing `{{ circuit }}`
 
 Refine, repair, extend, or improve the implementation.
 

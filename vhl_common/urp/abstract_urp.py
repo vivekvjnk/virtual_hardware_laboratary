@@ -223,7 +223,7 @@ class AbstractURPAgent(ABC):
                         cat = e.result.category
                         
                     self._state.last_process_result = ProcessResult(
-                        outcome=LastTaskOutcome.TASK_FAILED,
+                        outcome=e.result.outcome, # NOTE DO NOT override outcome produced by process()
                         category=cat,
                         payload=e.result.payload
                     )

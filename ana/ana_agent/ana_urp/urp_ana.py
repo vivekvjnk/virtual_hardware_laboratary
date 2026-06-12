@@ -156,22 +156,17 @@ class AnaURPAgent(AbstractURPAgent):
 
     def _on_initialize(self, context: AnaContext) -> None:
         """
-        MAW (Model–Agent–Workspace) setup.
-
-        Responsibilities (mapped from state machine initialisation):
+        Responsibilities
         - Parse and validate AnaContext.
         - Initialise LLM, condenser, Agent, and Conversation objects.
         - Bind WorkspaceManager, SQLiteManager, and protocol clients.
+        - MAW (Mirrored-Attempt-Workspace) setup.
         - The Conversation is opened with persistence so that condensation
           across error-correction iterations is possible.
         """
         # Accept both raw dict (from URP runtime) and AnaContext instance
-        try:
-            if isinstance(context, dict):
-                context = AnaContext(**context)
-        except Exception as e:
-            logger.error(f"[AnaURPAgent._on_initialize] Failed to parse AnaContext: {e}")
-            raise ValueError(f"Invalid configuration for AnaURPAgent: {e}")
+        if isinstance(context, AnaContext):
+            raise ValueError(f"Invalid configuration for AnaURPAgent. context is not an instance of AnaContext")
 
         self.workspace_manager = context.workspace
         self.sqlite_manager = context.sqlite_manager
@@ -204,8 +199,6 @@ class AnaURPAgent(AbstractURPAgent):
 
         # ---- Condenser pipeline (mirrors ANA-W1 pattern) ----
         # LargeFileSurgicalCondenser keeps file-editor events compact.
-        # LLMSummarizingCondenser provides a rolling summary window for the
-        # broader conversation so context does not blow up across iterations.
         surgical_condenser = LargeFileSurgicalCondenser(
             threshold_bytes=10240,
             target_tool="file_editor",
@@ -325,7 +318,7 @@ class AnaURPAgent(AbstractURPAgent):
                 )
                 
             if not self._workspace_dir:
-                raise RuntimeError("[AnaURPAgent._check_preconditions] Failed to setup workspace directory.")
+                return False, "[AnaURPAgent] Pre-conditions failed. Failed to setup workspace directory."
 
             logger.info(
                 f"[AnaURPAgent._check_preconditions] Workspace ready: "
@@ -488,25 +481,25 @@ class AnaURPAgent(AbstractURPAgent):
 
         # ---- Step 2: Act on VAP decision ----
         # NOTE: following handlers update the process_result.category if any failures occur.
-        if vap_decision == "ACCEPT":
-            try:
-                return await self._handle_vap_accept(vap_result=vap_result) 
-            except e:
-                msg = (f"[AnaURPAgent._handle_vap_accept] Failed: {e}")
-                logger.error(msg)
-                process_result.category = FailureCategory.INFRASTRUCTURE_FAILURE
-                return False, msg
+        try:
+            if vap_decision == "ACCEPT":
+                    return await self._handle_vap_accept(vap_result=vap_result) 
 
-        elif vap_decision == "REJECT":
-            process_result.category = FailureCategory.VALIDATION_FAILURE
-            return await self._handle_vap_reject(vap_result=vap_result)
-        else:
-            msg = (
-                f"[AnaURPAgent._check_postconditions] Unexpected VAP decision: "
-                f"'{vap_decision}'. Treating as REJECT."
-            )
+            elif vap_decision == "REJECT":
+                process_result.category = FailureCategory.VALIDATION_FAILURE
+                return await self._handle_vap_reject(vap_result=vap_result)
+            else:
+                msg = (
+                    f"[AnaURPAgent._check_postconditions] Unexpected VAP decision: "
+                    f"'{vap_decision}'. Treating as REJECT."
+                )
+                logger.error(msg)
+                process_result.category = FailureCategory.VALIDATION_FAILURE
+                return False, msg
+        except e:
+            msg = (f"[AnaURPAgent._handle_vap_accept] Failed: {e}")
             logger.error(msg)
-            process_result.category = FailureCategory.VALIDATION_FAILURE
+            process_result.category = FailureCategory.INFRASTRUCTURE_FAILURE
             return False, msg
 
     # ------------------------------------------------------------------

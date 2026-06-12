@@ -127,12 +127,14 @@ class Workflow1Controller(AbstractController):
                 if process_result.outcome is LastTaskOutcome.TASK_COMPLETED:
                     found_completion = True
                     break
-                elif process_result.outcome.value is LastTaskOutcome.TASK_FAILED:
+                elif process_result.outcome in [LastTaskOutcome.TASK_FAILED,LastTaskOutcome.WAITING_FOR_USER_INPUT]:
                     logger.warning(
                         f"[{self.controller_id}.handle_archy] Archy returned {process_result}. Waiting for HIL resolution..."
                     )
                     await asyncio.sleep(self.poll_interval)
                     continue
+                else:
+                    raise ValueError(f"Last task outcome is in un-attainable state.. Something is seriously wrong dude... Last_task_outcome: {process_result.outcome}")
 
             if not found_completion:
                 raise TimeoutError("Archy did not reach SUCCESS within timeout")
@@ -198,12 +200,14 @@ class Workflow1Controller(AbstractController):
                 if process_result.outcome is LastTaskOutcome.TASK_COMPLETED:
                     found_completion = True
                     break
-                elif process_result.outcome is LastTaskOutcome.TASK_FAILED:
+                elif process_result.outcome in [LastTaskOutcome.TASK_FAILED,LastTaskOutcome.WAITING_FOR_USER_INPUT]:
                     logger.warning(
                         f"[{self.controller_id}.handle_librarian] Librarian returned {process_result}. Waiting for HIL resolution..."
                     )
                     await asyncio.sleep(self.poll_interval)
                     continue
+                else:
+                    raise ValueError(f"Last task outcome is in un-attainable state.. Something is seriously wrong dude... Last_task_outcome: {process_result.outcome}")
 
             if not found_completion:
                 raise TimeoutError("Librarian did not reach SUCCESS within timeout")
