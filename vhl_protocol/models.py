@@ -170,10 +170,10 @@ class HILRequestPayload(BaseModel):
 
 class SyncPayload(BaseModel):
     project_id: str
+    resource_type: str # Library | Circuit | Evaluation | StableCircuit
     sync_id: str = None
     iteration_id: Optional[str] = None
-    module_name:str = None
-    resource_type: str # Library | Circuit | Evaluation | StableCircuit
+    module_name:Optional[str] = None
     intent: Optional[str] = None # EVALUATION | ALIGNMENT | RESULT
     hash: Optional[str] = None
     blob_id: Optional[str] = None

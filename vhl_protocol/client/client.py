@@ -163,14 +163,15 @@ class VHLWebSocketClient:
         # Also notify local subscribers
         await self._notify_subscribers(event)
 
-    async def emit(self, event_type: EventType, payload: BaseModel, artifact_id: Optional[str] = None):
+    async def emit(self, event_type: EventType, payload: BaseModel, artifact_id: Optional[str] = None, target: Optional[str]=None):
         """Creates and enqueues an event for delivery."""
         source = EventSource.VHL_AGENT_BACKEND if self.role == "agent" or self.role == "vhl_agent_backend" else EventSource.VHL_RUNTIME
         event = BaseEvent(
             type=event_type,
             source=source,
             artifact_id=artifact_id,
-            payload=payload.model_dump(by_alias=True)
+            payload=payload.model_dump(by_alias=True),
+            target=target
         )
         await self._send_queue.put(event)
         # Also notify local subscribers

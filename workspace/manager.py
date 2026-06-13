@@ -506,7 +506,7 @@ class WorkspaceManager:
                     self.circuit_name[module_name] = scud_files[0].stem
 
             if self.circuit_name.get(module_name):
-                if (self.project_root / module_name / "Stable" / f"{self.circuit_name[module_name]}.tsx").exists():
+                if (self.project_root / module_name / "Stable" / f"{self.circuit_name[module_name]}").exists():
                     is_synthesis_completed = True
 
         return {

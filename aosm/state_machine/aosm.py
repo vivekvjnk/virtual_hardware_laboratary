@@ -22,11 +22,13 @@ from archy_agent.main import orchestrate_archy, prepare_archy_workspace
 from archy_agent.urp_archy import ArchyURPAgent, ArchyConfig
 
 from librarian_agent.urp_librarian import LibrarianURPAgent, LibrarianConfig
+from ana_agent.ana_urp.urp_ana import AnaURPAgent, AnaConfig, AnaContext
 from librarian_agent.stub import process_scud_stub
 from vhl_common.utils import handle_errors
 from vhl_common.project_state_manager.evaluators.project_creation_evaluator import ProjectCreationEvaluator
 from archy.archy_agent.archy_evaluator import ArchyEvaluator
 from librarian.librarian_agent.librarian_evaluator import LibrarianEvaluator
+from ana.ana_agent.ana_evaluator import AnaEvaluator
 
 
 from vhl_common.urp.data_types import LastTaskOutcome
@@ -107,6 +109,7 @@ class AOSM:
         
         archy_status = self.agent_state["archy"]
         librarian_status = self.agent_state["librarian"]
+        ana_status = self.agent_state["ana"]
         
         for agent_id, data in system_view.items():
             if "archy" in agent_id:
@@ -115,11 +118,14 @@ class AOSM:
             elif "librarian" in agent_id:
                 librarian_status = data["status"]
                 self.agent_state["librarian"] = librarian_status
+            elif "ana" in agent_id:
+                ana_status = data["status"]
+                self.agent_state["ana"] = ana_status
                 
         await self.web_socket_client.emit_agent_state(
             archy=archy_status,
             librarian=librarian_status,
-            ana=self.agent_state["ana"],
+            ana=ana_status,
             aosm=self.agent_state["aosm"]
         )
 
@@ -170,6 +176,8 @@ class AOSM:
                         self.agent_state["archy"] = data["status"]
                     elif "librarian" in agent_id:
                         self.agent_state["librarian"] = data["status"]
+                    elif "ana" in agent_id:
+                        self.agent_state["ana"] = data["status"]
                         
                 agent_states = {k: v.name if hasattr(v, 'name') else str(v) for k, v in self.agent_state.items()}
                 
@@ -483,6 +491,35 @@ class AOSM:
             librarian_state = self.supervisor.get_agent_state(librarian_agent_id)
             self.update_agent_status("librarian", librarian_state["status"])
 
+            # ----ANA setup----
+            ana_agent_id = f"{module_name}.ana"
+            ana_descriptor = AgentDescriptor(
+                agent_id=ana_agent_id,
+                name=f"{module_name} ANA",
+                version="1.0",
+                capabilities=["CIRCUIT_SYNTHESIS", "CIRCUIT_ERROR_CORRECTION"],
+                accepted_message_types=["SYNTHESIZE_CIRCUIT", "RETRY_SYNTHESIS", "CONTINUE"]
+            )
+            register_agent_if_absent(descriptor=ana_descriptor, factory_func=AnaURPAgent, name=ana_agent_id)
+
+            factory = get_agent_factory(name=ana_agent_id)
+            ana_agent = factory.factory_func(descriptor=factory.descriptor)
+            ana_context = AnaContext(
+                module_name=module_name,
+                workspace=self.workspace_manager,
+                sqlite_manager=self.project_semantic_db,
+                web_socket_client=self.web_socket_client,
+                sync_client=self.sync_client,
+                config=AnaConfig(conversation_persistence=True)
+            )
+            ana_agent.initialize(context=ana_context, emit_callback=lambda msg: None)
+
+            logger.info("Starting ANA agent")
+            await ana_agent.start()
+            self.supervisor.attach_agent(ana_agent)
+            ana_state = self.supervisor.get_agent_state(ana_agent_id)
+            self.update_agent_status("ana", ana_state["status"])
+
     
     async def _handle_idle(self, event: BaseEvent):
         """
@@ -765,7 +802,10 @@ class AOSM:
             librarian_evaluator = LibrarianEvaluator(self.project_semantic_db, module_name=module_name)
             librarian_evaluator.evaluate()
             # 3. Step 3: ANA-D
-            await self.handle_ana()
+            await self.workflow_controller.handle_ana(module_name=module_name, timeout=timeout)
+            ana_evaluator = AnaEvaluator(self.project_semantic_db, module_name=module_name)
+            ana_evaluator.evaluate()
+
             # send workflow 1 completion event to UI/runtime
             await self.web_socket_client.emit_event(BaseEvent(
                 type=EventType.WORKFLOW_COMPLETED,
@@ -777,14 +817,6 @@ class AOSM:
             logger.error(f"[AOSM.run_workflow_1] Sequential Workflow 1 failed: {e}", exc_info=True)
 
 
-    async def handle_ana(self) -> None:
-        """
-        Sequential member of Workflow 1: ANA-D.
-        1. Initializes and runs the ANA-D state machine in a waitable manner.
-        2. Evaluates the generated circuit code and applies decisions.
-        """
-        logger.info(f"[AOSM.handle_ana] Starting ANA-D processing...")
-        logger.info(f"[AOSM.handle_ana] Finished ANA-D")
 
 def main():
     # Test stub

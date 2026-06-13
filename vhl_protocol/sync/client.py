@@ -363,7 +363,7 @@ class SyncClient:
             hash=local_hash,  # Let runtime skip upload if hashes already match
             source=EventSource.VHL_AGENT_BACKEND,
         )
-        await self.web_socket_client.emit(EventType.UPLOAD_REQUEST, payload)
+        await self.web_socket_client.emit(EventType.UPLOAD_REQUEST, payload,target="vhl_runtime")
 
         try:
             await self.web_socket_client.wait_for_event(

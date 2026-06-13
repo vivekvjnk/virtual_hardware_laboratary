@@ -163,7 +163,7 @@ class AnaURPAgent(AbstractURPAgent):
           across error-correction iterations is possible.
         """
         # Accept both raw dict (from URP runtime) and AnaContext instance
-        if isinstance(context, AnaContext):
+        if not isinstance(context, AnaContext):
             raise ValueError(f"Invalid configuration for AnaURPAgent. context is not an instance of AnaContext")
 
         self.workspace_manager = context.workspace
