@@ -58,22 +58,21 @@ async def test_archy_urp_agent(workspace_manager, replay_llm):
     prepare_archy_workspace(workspace_manager=workspace_manager)
     
     # 2. Setup Agent Dependencies
-    # Use ReplayLLM if available for deterministic regression testing
-    # For now, we'll try to find a snapshot in the module directory if it exists
+    # We'll let the agent initialize its own LLM using the factory.
+    # To enable replay, we set the VHL_E2E_REPLAY_DIR environment variable.
     module_path = workspace_manager.module_paths["bms-monitor-module"]
     persistence_dir = module_path / ".conversation"
     
     if persistence_dir.exists():
-        llm = replay_llm.from_persistence(str(persistence_dir))
+        os.environ["VHL_E2E_REPLAY_DIR"] = str(persistence_dir.parent)
+        # Note: get_llm_for_agent will look for persistence_dir.parent/<module_name>/<agent_type>
+        # In our case, it will look for str(persistence_dir.parent)/bms-monitor-module/archy
+        # But the existing snapshot is at bms-monitor-module/.conversation
+        # So I'll adjust the environment variable or the directory structure if needed.
+        # For this test, we can just keep the existing manual setup or fix the factory.
+        llm = replay_llm.from_persistence(str(persistence_dir), current_workspace=str(workspace_manager.project_root))
     else:
-        # Fallback to real LLM or dummy for structural testing
-        api_key = os.getenv("LLM_API_KEY", "dummy_key")
-        model = os.getenv("LLM_MODEL", "anthropic/claude-sonnet-4-5-20250929")
-        llm = LLM(
-            usage_id="archy-regression-test",
-            model=model,
-            api_key=SecretStr(api_key),
-        )
+        llm = None # Will be created by agent
         
     # 3. Initialize Agent with Event Capturer
     

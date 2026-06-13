@@ -41,6 +41,8 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 
+from vhl_common.llm import get_llm_for_agent
+
 # Attach the same file handler to the openhands logger to capture its logs
 openhands_logger = logging.getLogger("openhands")
 logger = setup_dedicated_logger("archy_agent", "archy_agent.log", extra_loggers=[openhands_logger])
@@ -269,17 +271,10 @@ class ArchyURPAgent(AbstractURPAgent):
 
         
         if not self.llm:
-            api_key = os.getenv("LLM_API_KEY")
-            if not api_key:
-                logger.warning("[ArchyURPAgent] LLM_API_KEY environment variable is not set. Using dummy key for initialization check.")
-                api_key = "dummy_key"
-            base_url = os.getenv("LLM_BASE_URL")
-            model = os.getenv("LLM_MODEL", "anthropic/claude-sonnet-4-5-20250929")
-            self.llm = LLM(
-                usage_id="archy-scud-architect",
-                model=model,
-                base_url=base_url,
-                api_key=SecretStr(api_key),
+            self.llm = get_llm_for_agent(
+                agent_id=f"{context.module_name}.archy",
+                workspace_path=str(context.workspace.project_root),
+                usage_id="archy-scud-architect"
             )
 
         surgical_condenser = LargeFileSurgicalCondenser(

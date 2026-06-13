@@ -34,6 +34,8 @@ from workspace.manager import WorkspaceManager
 from vhl_common.project_state_manager import SQLiteManager
 from vhl_protocol.sync.client import SyncClient
 from vhl_common.urp.data_types import ProcessResult, ProcessResultPayload, LastTaskOutcome, FailureCategory
+from vhl_common.llm import get_llm_for_agent
+
 # Setup dedicated logger for librarian
 logger = setup_dedicated_logger("librarian_agent", "librarian_agent.log")
 
@@ -141,17 +143,10 @@ class LibrarianURPAgent(AbstractURPAgent):
 
         # Setup LLM
         if not self.llm:
-            api_key = os.getenv("LLM_API_KEY")
-            if not api_key:
-                logger.warning("[LibrarianURPAgent._on_initialize] LLM_API_KEY environment variable is not set. Using dummy key.")
-                api_key = "dummy_key"
-            base_url = os.getenv("LLM_BASE_URL")
-            model = os.getenv("LLM_MODEL", "anthropic/claude-sonnet-4-5-20250929")
-            self.llm = LLM(
-                usage_id="librarian_agent",
-                model=model,
-                base_url=base_url,
-                api_key=SecretStr(api_key),
+            self.llm = get_llm_for_agent(
+                agent_id=f"{self.module_name}.librarian",
+                workspace_path=str(self.workspace_manager.project_root),
+                usage_id="librarian_agent"
             )
 
         # Setup Agent

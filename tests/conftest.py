@@ -1,8 +1,8 @@
 import pytest
 
-from fixtures.replay_snapshot_test_llm.replay_callback import ObservationDriftCallback
-from fixtures.replay_snapshot_test_llm.replay_llm import ReplayLLM
-from fixtures.replay_snapshot_test_llm.snapshot import SnapshotLoader
+from vhl_common.llm.replay_callback import ObservationDriftCallback
+from vhl_common.llm.replay_llm import ReplayLLM
+from vhl_common.llm.snapshot import SnapshotLoader
 
 
 @pytest.fixture

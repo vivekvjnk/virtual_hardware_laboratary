@@ -42,6 +42,8 @@ from ana_agent.ana_worker_1 import run_ana_w1_agent
 from ana_agent.ana_worker_2.agent import ANA_validation_agent
 from ana_agent.ana_evaluator import AGENT_ID as ANA_AGENT_ID, OPERATION_NAME as ANA_OPERATION_NAME, AnaEvaluator
 
+from vhl_common.llm import get_llm_for_agent
+
 # Dedicated logger for ANA URP agent
 logger = setup_dedicated_logger("ana_urp_agent", "ana_urp_agent.log")
 
@@ -181,16 +183,10 @@ class AnaURPAgent(AbstractURPAgent):
 
         # ---- LLM setup ----
         if not self.llm:
-            api_key = os.getenv("LLM_API_KEY", "dummy_key")
-            if api_key == "dummy_key":
-                logger.warning("[AnaURPAgent._on_initialize] LLM_API_KEY not set. Using dummy key.")
-            base_url = os.getenv("LLM_BASE_URL")
-            model = os.getenv("LLM_MODEL", "anthropic/claude-sonnet-4-5-20250929")
-            self.llm = LLM(
-                usage_id="ana_urp_agent",
-                model=model,
-                base_url=base_url,
-                api_key=SecretStr(api_key),
+            self.llm = get_llm_for_agent(
+                agent_id=f"{self.module_name}.ana",
+                workspace_path=str(self.workspace_manager.project_root),
+                usage_id="ana_urp_agent"
             )
 
         # ---- Condenser pipeline (mirrors ANA-W1 pattern) ----
