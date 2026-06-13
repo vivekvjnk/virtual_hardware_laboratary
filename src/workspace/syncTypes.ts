@@ -2,10 +2,11 @@ export type ResourceType = "Library" | "Circuit" | "Evaluation" | "StableCircuit
 export type SyncIntent = "EVALUATION" | "ALIGNMENT" | "RESULT";
 
 export interface SyncPayload {
-    sync_id: string;
     project_id: string;
-    iteration_id?: string | null;
     resource_type: ResourceType;
+    sync_id: string;
+    iteration_id?: string | null;
+    module_name?: string | null;
     intent?: SyncIntent | null;
     hash?: string | null;
     blob_id?: string | null;

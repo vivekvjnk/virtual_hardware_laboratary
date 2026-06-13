@@ -80,7 +80,19 @@ export class VHLWebUI {
                 console.log(`[VHLWebUI] Dev server already running for ${projectPath} with ${entryFile}`);
                 return;
             }
-            
+            // --- NEW: Check explicit entryFile existence and fallback to "." if missing ---
+            if (entryFile !== ".") {
+                const fullProjectPath = path.isAbsolute(projectPath) ? projectPath : path.join(this.workspaceDir, projectPath);
+                const fullEntryPath = path.resolve(fullProjectPath, entryFile);
+
+                try {
+                    await fs.stat(fullEntryPath);
+                } catch (err) {
+                    console.warn(`[VHLWebUI] Specified entryFile "${entryFile}" not found at ${fullEntryPath}. Defaulting to "."`);
+                    entryFile = ".";
+                }
+            }
+            // -----------------------------------------------------------------------------
             if (this.devServerProcess) {
                 console.log("[VHLWebUI] Stopping existing dev server...");
                 const processToKill = this.devServerProcess;

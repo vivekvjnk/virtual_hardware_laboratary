@@ -117,6 +117,7 @@ export class SyncManager {
                 });
                 return;
             }
+            const module_name = payload.module_name;
             // ────────────────────────────────────────────────────────────────────
 
             const blobId = isDirectory
@@ -135,7 +136,6 @@ export class SyncManager {
                     await pushObject(localPath, blobId);
                 }
             }
-
             // Notify receiver: they can now download. Include our local hash for integrity check.
             await this.sender.send({
                 id: randomUUID(),
@@ -144,7 +144,12 @@ export class SyncManager {
                 timestamp: new Date().toISOString(),
                 artifact_id: null,
                 payload: {
-                    sync_id, project_id, iteration_id, resource_type, intent,
+                    project_id,
+                    sync_id,
+                    resource_type,
+                    iteration_id,
+                    module_name,
+                    intent,
                     blob_id: blobId,
                     hash: localHash,  // Our local hash — receiver uses this for integrity check
                     data

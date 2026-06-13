@@ -206,7 +206,7 @@ export class VHLRuntime implements RuntimeSender {
                     break;
                 }
 
-                const entryFile = this.projectState.circuit_name ? `${this.projectState.circuit_name}.tsx` : "index.circuit.tsx";
+                const entryFile = this.projectState.circuit_name ? `${this.projectState.circuit_name}` : "index.circuit.tsx";
 
                 // Start dev server for the project if newly created or if synthesis is not completed
                 if (msg.type === "PROJECT_CREATED" || !this.projectState.is_synthesis_completed) {
