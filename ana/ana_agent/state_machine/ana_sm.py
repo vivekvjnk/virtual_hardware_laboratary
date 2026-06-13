@@ -391,13 +391,13 @@ class ANADStateMachine:
                     library_path = library_path,
                 )
             
-            if not os.path.exists(self.workspace_manager.get_circuit_tsx_path()):
+            if not os.path.exists(self.workspace_manager.get_circuit_tsx_path()): #NOTE: Outdated method. Replaced with get_maw_workspace_circuit_path(module_name)
                 logger.error(f"[ANADStateMachine._handle_trigger_w1] ANA-W1 did not produce circuit file")
                 # Check if any circuit file(ending with .tsx) is present in the current iteration directory
                 circuit_paths = current_iter_dir.glob("*.tsx")
                 if circuit_paths:
                     logger.warning(f"[ANADStateMachine._handle_trigger_w1] Renaming agent given circuit name {circuit_paths[0]} to {self.workspace_manager.get_circuit_tsx_path()}")
-                    shutil.move(circuit_paths[0],str(self.workspace_manager.get_circuit_tsx_path()))
+                    shutil.move(circuit_paths[0],str(self.workspace_manager.get_circuit_tsx_path())) #NOTE: Outdated method. Replaced with get_maw_workspace_circuit_path(module_name)
                 else:
                     result_msg["hil_wait_packet"] = {"reason":"ANA_ERROR", "message": "ANA-W1 did not produce circuit file"}
                     result_msg["proposed_next_state"] = State.PREPARE_HIL

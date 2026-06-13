@@ -340,18 +340,9 @@ class WorkspaceManager:
         links = [
             ("schematic_images", self.project_root / module_name / "resources" / "schematic_images"),
             ("tsci_built_in_elements", self.project_root / ".agent_skills" / "tscircuit_skills"),
+            (f"{module_name}.scud", self.get_scud_path(module_name=module_name)),
+            ("lib", self.project_root / "lib")
         ]
-        
-        c_name = self.circuit_name.get(module_name)
-        if c_name:
-            scud_src = self.project_root / module_name / f"{c_name}.scud"
-            if scud_src.exists():
-                links.append((scud_src.name, scud_src))
-        
-        lib_imports = self.project_root / module_name / "lib" / "imports"
-        if lib_imports.is_dir():
-            links.append(("lib/imports", lib_imports))
-
         for link_name, source in links:
             if not source.exists():
                 logger.warning(f"[WorkspaceManager._setup_iteration_symlinks] Missing source file: {source}")
@@ -416,6 +407,8 @@ class WorkspaceManager:
         if not c_name:
             raise RuntimeError(f"Circuit name not set for {module_name}")
         return self.project_root / module_name / "Stable" / f"{c_name}.tsx"
+    def get_maw_workspace_circuit_path(self,module_name) -> Path:
+        return self.get_workspace_path(module_name=module_name) / self.circuit_name.get(module_name)
     def get_scud_path(self, module_name) -> Path:
         """Finds and returns the .scud file path."""
         # Preference: Workspace, then module root

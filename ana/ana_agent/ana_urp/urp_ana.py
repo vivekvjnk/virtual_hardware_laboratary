@@ -430,7 +430,7 @@ class AnaURPAgent(AbstractURPAgent):
             return False, "Iteration directory not set — cannot run W2 validation."
         
         # Confirm ANA-W1 produced the expected circuit file
-        circuit_tsx_path = self.workspace_manager.get_circuit_tsx_path(
+        circuit_tsx_path = self.workspace_manager.get_maw_workspace_circuit_path(
             module_name=self.module_name
         )
         if not circuit_tsx_path.exists():

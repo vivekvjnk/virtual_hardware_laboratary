@@ -14,7 +14,7 @@ def run_ana_w1_stub(workspace: str, circuit_name: str, **kwargs):
     """
     logger.info(f"[run_ana_w1_stub] Mocking synthesis for {circuit_name}\n Input params: {workspace}, {kwargs}")
     
-    # The target location expected by WorkspaceManager.get_circuit_tsx_path()
+    # The target location expected by WorkspaceManager.get_maw_workspace_circuit_path()
     target_path = Path(workspace) / f"{circuit_name}.tsx"
     
     prev_dir = kwargs.get("previous_iteration_dir")
