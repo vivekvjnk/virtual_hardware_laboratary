@@ -19,7 +19,7 @@ from openhands.sdk import (
     LLM,
     )
 
-from workspace.manager import WorkspaceManager
+from vhl_common.workspace_manager.manager import WorkspaceManager
 
 PROJECT_ID = "bms-project_77df0190"
 
@@ -60,17 +60,17 @@ async def test_archy_urp_agent(workspace_manager, replay_llm):
     # 2. Setup Agent Dependencies
     # We'll let the agent initialize its own LLM using the factory.
     # To enable replay, we set the VHL_E2E_REPLAY_DIR environment variable.
-    module_path = workspace_manager.module_paths["bms-monitor-module"]
+    module_name = "bms-monitor-module"
+    module_path = workspace_manager.module_paths[module_name]
     persistence_dir = module_path / ".conversation"
     
     if persistence_dir.exists():
-        os.environ["VHL_E2E_REPLAY_DIR"] = str(persistence_dir.parent)
         # Note: get_llm_for_agent will look for persistence_dir.parent/<module_name>/<agent_type>
         # In our case, it will look for str(persistence_dir.parent)/bms-monitor-module/archy
         # But the existing snapshot is at bms-monitor-module/.conversation
         # So I'll adjust the environment variable or the directory structure if needed.
         # For this test, we can just keep the existing manual setup or fix the factory.
-        llm = replay_llm.from_persistence(str(persistence_dir), current_workspace=str(workspace_manager.project_root))
+        llm = replay_llm.from_persistence(str(os.environ["VHL_E2E_REPLAY_DIR"]),agent_id=f"{module_name}.archy", current_workspace=str(workspace_manager.project_root))
     else:
         llm = None # Will be created by agent
         

@@ -127,8 +127,17 @@ class Workflow1Controller(AbstractController):
                 #       - If AgentStatus.PROCESSING ==> HIL user has sent some message 
                 # Decision logic
                 if process_result.outcome is LastTaskOutcome.TASK_COMPLETED:
-                    found_completion = True
-                    break
+                    if process_result.category is FailureCategory.NONE:
+                        found_completion = True
+                        break
+                    elif process_result.category is FailureCategory.AGENTIC_FAILURE:
+                        logger.warning(f"[{self.controller_id}.handle_archy] Archy returned {process_result}. Waiting for HIL resolution...")
+                        await asyncio.sleep(self.poll_interval)
+                        continue
+                    else:
+                        raise ValueError(f"Last task is in un-attainable state.. Something is seriously wrong dude... Last_task_result: {process_result}")
+
+                    
                 elif process_result.outcome in [LastTaskOutcome.TASK_FAILED,LastTaskOutcome.WAITING_FOR_USER_INPUT]:
                     logger.warning(
                         f"[{self.controller_id}.handle_archy] Archy returned {process_result}. Waiting for HIL resolution..."
@@ -200,8 +209,16 @@ class Workflow1Controller(AbstractController):
                 #       - If AgentStatus.PROCESSING ==> HIL user has sent some message 
                 # Decision logic
                 if process_result.outcome is LastTaskOutcome.TASK_COMPLETED:
-                    found_completion = True
-                    break
+                    if process_result.category is FailureCategory.NONE:
+                        found_completion = True
+                        break
+                    elif process_result.category is FailureCategory.AGENTIC_FAILURE:
+                        logger.warning(f"[{self.controller_id}.handle_libraian] Librarian returned {process_result}. Waiting for HIL resolution...")
+                        await asyncio.sleep(self.poll_interval)
+                        continue
+                    else:
+                        raise ValueError(f"Last task is in un-attainable state.. Something is seriously wrong dude... Last_task_result: {process_result}")
+
                 elif process_result.outcome in [LastTaskOutcome.TASK_FAILED,LastTaskOutcome.WAITING_FOR_USER_INPUT]:
                     logger.warning(
                         f"[{self.controller_id}.handle_librarian] Librarian returned {process_result}. Waiting for HIL resolution..."

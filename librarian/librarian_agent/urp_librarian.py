@@ -30,7 +30,7 @@ from archy_agent.archy_evaluator import AGENT_ID as ARCHY_AGENT_ID, OPERATION_NA
 from vhl_common.urp.abstract_urp import AbstractURPAgent
 from vhl_common.urp.data_types import AgentDescriptor, MessageEnvelope
 from vhl_common.utils import setup_dedicated_logger
-from workspace.manager import WorkspaceManager
+from vhl_common.workspace_manager.manager import WorkspaceManager
 from vhl_common.project_state_manager import SQLiteManager
 from vhl_protocol.sync.client import SyncClient
 from vhl_common.urp.data_types import ProcessResult, ProcessResultPayload, LastTaskOutcome, FailureCategory
@@ -142,11 +142,12 @@ class LibrarianURPAgent(AbstractURPAgent):
         self.library_path = str(self.workspace_manager.project_root / "lib" / "imports")
 
         # Setup LLM
+        module_path = self.workspace_manager.module_paths[self.module_name]
         if not self.llm:
             self.llm = get_llm_for_agent(
                 agent_id=f"{self.module_name}.librarian",
-                workspace_path=str(self.workspace_manager.project_root),
-                usage_id="librarian_agent"
+                module_name= self.module_name,
+                workspace_path=str(module_path),
             )
 
         # Setup Agent
@@ -185,11 +186,12 @@ class LibrarianURPAgent(AbstractURPAgent):
         )
 
         # Setup Conversation
+        
         self.conversation = Conversation(
             agent=self.agent,
-            workspace=str(self.workspace_manager.project_root),
+            workspace=str(module_path),
             callbacks=[self._conversation_callback],
-            persistence_dir=str(self.workspace_manager.project_root / ".conversation") if config.conversation_persistence else None
+            persistence_dir=str(module_path / ".conversation") if config.conversation_persistence else None
         )
 
     def _conversation_callback(self, event: Event):

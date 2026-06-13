@@ -4,7 +4,6 @@ version = "0.1.0"
 description = "VHL Agentic Orchestration State Machine"
 dependencies = [
     "vhl-protocol",
-    "vhl-workspace",
     "ana",
     "boto3",
     "librarian",

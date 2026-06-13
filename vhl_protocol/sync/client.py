@@ -10,7 +10,7 @@ import tempfile
 from pathlib import Path
 import asyncio
 import uuid, shutil
-from workspace.manager import WorkspaceManager
+from vhl_common.workspace_manager.manager import WorkspaceManager
 
 logger = logging.getLogger(__name__)
 

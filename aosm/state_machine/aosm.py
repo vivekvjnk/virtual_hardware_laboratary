@@ -13,7 +13,7 @@ from vhl_protocol.sync.client import SyncClient
 import uuid
 from ana_agent.state_machine.mcp_manager import MCPManager
 from ana_agent.state_machine import ANADStateMachine
-from workspace.manager import WorkspaceManager
+from vhl_common.workspace_manager.manager import WorkspaceManager
 
 from vhl_common.urp.data_types import AgentContext, MessageEnvelope, AgentDescriptor
 from vhl_common.urp.agent_registry import register_agent_if_absent, get_agent_factory
@@ -615,89 +615,6 @@ class AOSM:
             await self.transition_to(AOSMState.IDLE, f"Finished processing ANA result: {decision}")
 
 
-    # --- Agent nodes begin--- #    
-    # ANA
-    @handle_errors(on_error="_aosm_error_transition")
-    async def _handle_trigger_ana(self, event: BaseEvent):
-
-        if event.type == EventType.STATE_TRANSITION:
-            logger.info(f"[AOSM._handle_trigger_ana] Triggering ANA-D on state entry.")
-            # Check, under which condition ANA is triggered. Circuit synthesis or circuit correction
-            observations = self.current_message.get("observations", None)
-            circuit_id = self.current_message.get("circuit_id")
-
-            logger.info(f"[AOSM._handle_trigger_ana] Circuit name/id: {circuit_id}, observations: {observations}")
-            
-            if not observations:
-                logger.info(f"[AOSM._handle_trigger_ana] Ana is in synthesis mode. Observations is None")
-            
-            
-            # Initialize inbox queue for bidirectional communication
-            self.ana_inbox = asyncio.Queue()
-            
-            self.active_ana_sm = ANADStateMachine(
-                workspace_manager=self.workspace_manager,
-                circuit_name=circuit_id,
-                observations=observations,
-                web_socket_client=self.web_socket_client,
-                sync_client=self.sync_client,
-                project_id=self.project_id,
-                max_auto_fixes=5,
-                parent_notify=self._parent_notify,
-                inbox_queue=self.ana_inbox
-            )
-            # Run the ANA-D state machine in a background task to keep AOSM responsive
-            self.update_agent_status("ana", AgentStatus.RUNNING)
-            asyncio.create_task(self.active_ana_sm.run())
-            await self.transition_to(AOSMState.WAIT_FOR_ANA, "ANA-D started")
-        else:
-            logger.info(f"[AOSM._handle_trigger_ana] Received event: {event.type}")
-    
-    # --- Agent nodes end--- #
-    async def _handle_wait_for_ana(self, event: BaseEvent):
-
-        if event.type == EventType.ANA_NOTIFY:
-            # Handle notification from ANA (e.g., HIL_REQUEST)
-            logger.info(f"[AOSM._handle_wait_for_ana] ANA notification: {event.payload}")
-            
-            ana_event = event.payload.get("reason")
-            ana_task_id = event.payload.get("task_id")
-            
-            if ana_event == "HIL_REQUIRED":
-                # Maybe notify UI that HIL is required
-                await self.web_socket_client.emit_status_update(
-                    status="waiting_for_input",
-                    message=event.payload.get("message")
-                )
-            elif ana_event == "ERROR":
-                await self.web_socket_client.emit_status_update(
-                    status="ana_error",
-                    message=event.payload.get("message")
-                )
-            elif ana_event == "EXIT":
-                # Start the wait in the background so the main loop can continue 
-                # to process incoming events (like DEV_SERVER_READY)
-                ana_decision = event.payload.get("decision")
-                asyncio.create_task(self._ana_deicsion_wait_and_transition(event, ana_task_id, ana_decision))
-
-            else:
-                raise ValueError(f"Unknown ANA notification reason: {ana_event}")
-
-            
-        elif event.type == EventType.HUMAN_INPUT:
-            # Relaying human input to ANA's inbox
-            if self.ana_inbox:
-                logger.info(f"[AOSM._handle_wait_for_ana] Relaying human input to ANA: {event.payload}")
-                content = event.payload.get("content", "")
-                
-                # Check for abort command
-                if content.lower() == "abort":
-                    await self.ana_inbox.put({"event": "abort", "data": None})
-                else:
-                    await self.ana_inbox.put({"event": "human_response", "data": content})
-            else:
-                logger.warning("[AOSM._handle_wait_for_ana] Received human input but ANA inbox is not initialized")
-    
     async def _handle_cancel_pipeline(self, event: BaseEvent):
         logger.info("[AOSM._handle_cancel_pipeline] Cleaning up cancelled pipeline...")
         await self.transition_to(AOSMState.IDLE, "Cleanup complete")
@@ -802,9 +719,9 @@ class AOSM:
             librarian_evaluator = LibrarianEvaluator(self.project_semantic_db, module_name=module_name)
             librarian_evaluator.evaluate()
             # 3. Step 3: ANA-D
-            await self.workflow_controller.handle_ana(module_name=module_name, timeout=timeout)
-            ana_evaluator = AnaEvaluator(self.project_semantic_db, module_name=module_name)
-            ana_evaluator.evaluate()
+            # await self.workflow_controller.handle_ana(module_name=module_name, timeout=timeout)
+            # ana_evaluator = AnaEvaluator(self.project_semantic_db, module_name=module_name)
+            # ana_evaluator.evaluate()
 
             # send workflow 1 completion event to UI/runtime
             await self.web_socket_client.emit_event(BaseEvent(

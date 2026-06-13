@@ -340,7 +340,7 @@ class WorkspaceManager:
         links = [
             ("schematic_images", self.project_root / module_name / "resources" / "schematic_images"),
             ("tsci_built_in_elements", self.project_root / ".agent_skills" / "tscircuit_skills"),
-            (f"{module_name}.scud", self.get_scud_path(module_name=module_name)),
+            (f"{module_name}.scud", self.project_root / module_name / f"{module_name}.scud"),
             ("lib", self.project_root / "lib")
         ]
         for link_name, source in links:

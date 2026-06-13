@@ -44,7 +44,7 @@ class ReplayLLM(TestLLM):
         # Dynamically replace the old workspace path with the current workspace in tool call arguments
         if current_workspace:
             import re
-            # Matches various /tmp/ paths used in tests, including vhl_e2e_workspace and pytest-of-vivekv
+            # Matches various /tmp/ paths used in tests, including vhl_e2e_workspace and pytest
             pattern = re.compile(r'/tmp/(vhl_e2e_workspace_[^/]+|pytest-of-[^/]+/pytest-[^/]+)/[^/]+')
             for msg in messages:
                 if msg.tool_calls:

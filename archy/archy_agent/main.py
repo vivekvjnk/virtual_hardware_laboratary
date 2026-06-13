@@ -4,7 +4,7 @@ import logging
 from typing import Union, Optional
 from pathlib import Path
 from PIL import Image, ImageEnhance, ImageOps, ImageDraw
-from workspace.manager import WorkspaceManager
+from vhl_common.workspace_manager.manager import WorkspaceManager
 
 from dotenv import load_dotenv
 load_dotenv()  # Load environment variables from .env file

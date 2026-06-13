@@ -4,7 +4,7 @@ import shutil
 from pathlib import Path
 from vhl_common.git_client import GitClient
 from vhl_common.project_state_manager import GitClientWrapper, SQLiteManager
-from workspace.manager import WorkspaceManager
+from vhl_common.workspace_manager.manager import WorkspaceManager
 from workspace.models import Operation, Artifact, FileChange
 
 @pytest.fixture

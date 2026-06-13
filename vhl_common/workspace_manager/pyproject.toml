@@ -1,5 +1,5 @@
 [project]
-name = "vhl-workspace"
+name = "workspace"
 version = "0.1.0"
 description = "VHL Workspace Management"
 dependencies = []

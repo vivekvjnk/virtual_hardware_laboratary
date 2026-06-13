@@ -33,7 +33,7 @@ from vhl_common.urp.data_types import ProcessResult, ProcessResultPayload, LastT
 from vhl_common.urp.data_types import AgentDescriptor, MessageEnvelope
 import logging
 from vhl_common.utils import setup_dedicated_logger
-from workspace.manager import WorkspaceManager
+from vhl_common.workspace_manager.manager import WorkspaceManager
 from vhl_common.project_state_manager import SQLiteManager
 
 
@@ -266,15 +266,24 @@ class ArchyURPAgent(AbstractURPAgent):
 
         config = self.build_config(context=context)
         logger.info(f"[ArchyURPAgent._on_initialize] Built config for Archy: {config}")
+        
+        self.module_name = context.module_name
+        self.workspace_manager = context.workspace
+        self.sqlite_manager = context.sqlite_manager
+        # Optional arguments
+        image_path = config.image_path
+        system_boundary_path = config.system_boundary_path
+        module_boundary_path = config.module_boundary_path
+        datasheet_path = config.datasheet_path
+        eval_design_path = config.eval_design_path
 
         # Agent-sdk Agent setup -- Begin
-
-        
+        module_path = self.workspace_manager.module_paths[self.module_name]
         if not self.llm:
             self.llm = get_llm_for_agent(
                 agent_id=f"{context.module_name}.archy",
-                workspace_path=str(context.workspace.project_root),
-                usage_id="archy-scud-architect"
+                module_name= self.module_name,
+                workspace_path=str(module_path),
             )
 
         surgical_condenser = LargeFileSurgicalCondenser(
@@ -311,23 +320,12 @@ class ArchyURPAgent(AbstractURPAgent):
         )   
         # Agent-sdk Agent setup -- End
 
-        # -------- Move to initialization : Start ---------- #
-        # Extract module-specific configuration from context
-        self.module_name = context.module_name
-        self.workspace_manager = context.workspace
-        self.sqlite_manager = context.sqlite_manager
-        # Optional arguments
-        image_path = config.image_path
-        system_boundary_path = config.system_boundary_path
-        module_boundary_path = config.module_boundary_path
-        datasheet_path = config.datasheet_path
-        eval_design_path = config.eval_design_path
+        
 
         if not all([self.module_name, self.workspace_manager, image_path]):
             logger.warning(f"[ArchyURPAgent._on_initialize] Missing required configuration in context: module_name, workspace, or image_path. Agent may fail if these are not provided in the first message.")
             # raise ValueError(f"Missing required configuration in context: module_name, workspace, or image_path: config={config}")
-        module_path = self.workspace_manager.module_paths[self.module_name]
-        
+
         sys_prompt_kwargs = {
             "module_name": self.module_name,
             "workspace": str(module_path),
@@ -356,6 +354,7 @@ class ArchyURPAgent(AbstractURPAgent):
         
         # If persistence is enabled, create .conversation/ directory inside workspace and set it as persistence_dir for Conversation.
 
+        
         self.conversation = Conversation(
             agent=self.agent,
             workspace=str(module_path),

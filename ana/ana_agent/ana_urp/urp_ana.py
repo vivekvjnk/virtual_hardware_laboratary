@@ -32,7 +32,7 @@ from openhands.sdk.conversation.state import (
 from vhl_common.urp.abstract_urp import AbstractURPAgent
 from vhl_common.urp.data_types import AgentDescriptor, MessageEnvelope
 from vhl_common.utils import setup_dedicated_logger
-from workspace.manager import WorkspaceManager
+from vhl_common.workspace_manager.manager import WorkspaceManager
 from vhl_common.project_state_manager import SQLiteManager
 from vhl_protocol.sync.client import SyncClient
 from vhl_protocol.client.client import VHLWebSocketClient
@@ -181,12 +181,13 @@ class AnaURPAgent(AbstractURPAgent):
             f"[AnaURPAgent._on_initialize] Initialized for module='{self.module_name}', "
         )
 
+        module_path = self.workspace_manager.module_paths[self.module_name] /  "Workspace"
         # ---- LLM setup ----
         if not self.llm:
             self.llm = get_llm_for_agent(
                 agent_id=f"{self.module_name}.ana",
-                workspace_path=str(self.workspace_manager.project_root),
-                usage_id="ana_urp_agent"
+                module_name= self.module_name,
+                workspace_path=str(module_path),
             )
 
         # ---- Condenser pipeline (mirrors ANA-W1 pattern) ----
@@ -222,18 +223,12 @@ class AnaURPAgent(AbstractURPAgent):
         )
 
         # ---- Conversation (persistence enables condensation across iterations) ----
-        persistence_dir = None
-        if config.conversation_persistence and self.workspace_manager.project_root:
-            persistence_dir = str(
-                self.workspace_manager.project_root / self.module_name / ".conversation"
-            )
-
+        
         self.conversation = Conversation(
             agent=self.agent,
-            workspace=str(self.workspace_manager.project_root / self.module_name)
-            if self.workspace_manager.project_root else ".",
+            workspace=str(module_path),
             callbacks=[self._conversation_callback],
-            persistence_dir=persistence_dir,
+            persistence_dir=str(module_path / ".conversation") if config.conversation_persistence else None,
         )
 
 

@@ -2,7 +2,7 @@ import pytest
 import shutil
 import sys
 from pathlib import Path
-from workspace.manager import WorkspaceManager
+from vhl_common.workspace_manager.manager import WorkspaceManager
 
 PROJECT_NAME = "bms-project_77df0190"
 # Set logging level to DEBUG for detailed output during tests
