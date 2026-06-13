@@ -4,7 +4,7 @@ from typing import Any
 
 from .snapshot import SnapshotLoader
 from openhands.sdk.testing.test_llm import TestLLM
-
+from pathlib import Path
 
 class ReplayLLM(TestLLM):
     """A mock LLM that loads scripted responses from a conversation snapshot.
@@ -16,7 +16,7 @@ class ReplayLLM(TestLLM):
     @classmethod
     def from_persistence(
         cls,
-        persistence_dir: str,
+        persistence_dir: Path,
         conversation_id: str | None = None,
         *,
         model: str = "test-model",

@@ -187,7 +187,7 @@ class AnaURPAgent(AbstractURPAgent):
             self.llm = get_llm_for_agent(
                 agent_id=f"{self.module_name}.ana",
                 module_name= self.module_name,
-                workspace_path=str(module_path),
+                workspace_path=str(self.workspace_manager.project_root),
             )
 
         # ---- Condenser pipeline (mirrors ANA-W1 pattern) ----

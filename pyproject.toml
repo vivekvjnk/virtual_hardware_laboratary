@@ -13,7 +13,6 @@ dependencies = [
     "python-dotenv>=1.2.1",
     "ana",
     "vhl-protocol",
-    "vhl-workspace",
     "aosm",
     "archy",
     "librarian",
@@ -49,7 +48,6 @@ openhands-tools = { git = "https://github.com/vivekvjnk/agent-sdk.git", branch =
 
 ana = { workspace = true }
 vhl-protocol = { workspace = true }
-vhl-workspace = { workspace = true }
 aosm = { workspace = true }
 archy = { workspace = true }
 librarian = { workspace = true }

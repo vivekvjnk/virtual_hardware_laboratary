@@ -10,6 +10,7 @@ from openhands.sdk.event import ActionEvent, Event, MessageEvent, ObservationEve
 from openhands.sdk.io import LocalFileStore
 from openhands.sdk.llm.message import Message
 from openhands.sdk.logger import get_logger
+from pathlib import Path
 
 logger = get_logger(__name__)
 
@@ -18,7 +19,7 @@ class SnapshotLoader:
     """Helper class to discover and load events from persistence snapshots."""
 
     @staticmethod
-    def resolve_path(base_path: str, conversation_id: str | None = None) -> str:
+    def resolve_path(base_path: Path, conversation_id: str | None = None) -> str:
         """Resolve the actual conversation directory from a base path.
 
         Args:
@@ -33,13 +34,13 @@ class SnapshotLoader:
         if conversation_id:
             try:
                 conv_id = uuid.UUID(conversation_id)
-                return BaseConversation.get_persistence_dir(base_path, conv_id)
+                return BaseConversation.get_persistence_dir(base_path/".conversation" , conv_id)
             except ValueError:
                 # Fallback if ID is not a valid UUID string
-                return os.path.join(base_path, conversation_id)
+                return base_path / conversation_id
 
         # Discovery logic: check if base_path is a direct conversation dir
-        if os.path.exists(os.path.join(base_path, EVENTS_DIR)):
+        if (base_path / EVENTS_DIR).exists():
             return base_path
 
         # Scan subdirectories for the first one containing an events/ folder
@@ -50,8 +51,8 @@ class SnapshotLoader:
                 if os.path.isdir(os.path.join(base_path, d))
             ]
             for d in subdirs:
-                potential = os.path.join(base_path, d)
-                if os.path.exists(os.path.join(potential, EVENTS_DIR)):
+                potential = base_path / d
+                if (potential / EVENTS_DIR).exists():
                     logger.debug(f"Resolved snapshot subdirectory: {potential}")
                     return potential
         except Exception as e:

@@ -283,7 +283,7 @@ class ArchyURPAgent(AbstractURPAgent):
             self.llm = get_llm_for_agent(
                 agent_id=f"{context.module_name}.archy",
                 module_name= self.module_name,
-                workspace_path=str(module_path),
+                workspace_path=str(self.workspace_manager.project_root),
             )
 
         surgical_condenser = LargeFileSurgicalCondenser(
