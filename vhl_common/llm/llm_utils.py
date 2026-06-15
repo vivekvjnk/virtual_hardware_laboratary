@@ -28,12 +28,10 @@ def get_llm_for_agent(
         An LLM instance.
     """
     replay_base = os.getenv("VHL_E2E_REPLAY_DIR")
-    if replay_base:
-        replay_base_path = Path(replay_base)
-    if replay_base:
-        logger.info(f"[llm_utils.get_llm_for_agent]VHL_E2E_REPLAY_DIR is set: {replay_base_path}")
-        agent_replay_dir = replay_base_path / module_name
-        if agent_replay_dir.exists():
+    agent_replay_dir = Path(replay_base) / module_name
+    if agent_replay_dir.exists():
+        conversation_id = conversation_map(agent_id=agent_id)
+        if conversation_id:
             logger.info(f"[llm_utils.get_llm_for_agent]Using replay LLM for agent: {agent_id}")
             return ReplayLLM.from_persistence(
                 agent_replay_dir,
@@ -41,9 +39,8 @@ def get_llm_for_agent(
                 usage_id=agent_id,
                 current_workspace=workspace_path
             )
-        else:
-            logger.warning(f"[llm_utils.get_llm_for_agent]Replay directory does not exist for agent: {agent_id} at {agent_replay_dir}")
-    
+    else:
+        logger.warning(f"[llm_utils.get_llm_for_agent]Replay directory does not exist for agent: {agent_id} at {agent_replay_dir}")
     # Fallback to standard LLM creation
     logger.info(f"[llm_utils.get_llm_for_agent]Using standard LLM for agent: {agent_id}")
     api_key = os.getenv("LLM_API_KEY")
@@ -58,7 +55,7 @@ def get_llm_for_agent(
         api_key=SecretStr(api_key),
     )
 
-def conversation_map(agent_id) -> str:
+def conversation_map(agent_id) -> str|None:
     """
     Default snapshot-replay conversation directory map for testing purpose.
     A snapshot conversation with the provided conversation ID is saved under tests/resources/ directory.
@@ -70,5 +67,6 @@ def conversation_map(agent_id) -> str:
     |Librarian  | communication-bridge |8f969075c755447ca8c7f2a4b0336542|
     """
     conversation_map = {"communication-bridge.archy"    :"bc950f6d6ba546459b7021ac181edd9b",
-                        "communication-bridge.librarian":"8f969075c755447ca8c7f2a4b0336542"}
+                        "communication-bridge.librarian":"8f969075c755447ca8c7f2a4b0336542",
+                        "communication-bridge.ana"      :"675b377535524296b69ae9c368afc040"}
     return conversation_map.get(agent_id)

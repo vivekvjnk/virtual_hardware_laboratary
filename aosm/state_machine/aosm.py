@@ -719,9 +719,9 @@ class AOSM:
             librarian_evaluator = LibrarianEvaluator(self.project_semantic_db, module_name=module_name)
             librarian_evaluator.evaluate()
             # 3. Step 3: ANA-D
-            # await self.workflow_controller.handle_ana(module_name=module_name, timeout=timeout)
-            # ana_evaluator = AnaEvaluator(self.project_semantic_db, module_name=module_name)
-            # ana_evaluator.evaluate()
+            await self.workflow_controller.handle_ana(module_name=module_name, timeout=timeout)
+            ana_evaluator = AnaEvaluator(self.project_semantic_db, module_name=module_name)
+            ana_evaluator.evaluate()
 
             # send workflow 1 completion event to UI/runtime
             await self.web_socket_client.emit_event(BaseEvent(

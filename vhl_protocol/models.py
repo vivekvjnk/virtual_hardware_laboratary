@@ -149,6 +149,7 @@ class VAPExecutePayload(BaseModel):
     circuit_name: str
     blob_id: str
     iteration_id: str
+    module_name: str
 
 class VAPCompletePayload(BaseModel):
     task_id: str

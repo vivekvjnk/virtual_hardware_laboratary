@@ -37,7 +37,7 @@ class ANA_validation_agent:
         Process the circuit file: upload to object store, invoke VAP, poll for status, and collect results.
         """
         # Find path of the specified circuit file
-        circuit_path = os.path.join(workspace, f"{circuit_name}.tsx")
+        circuit_path = os.path.join(workspace, f"{circuit_name}")
 
         # 1. Sync the circuit tsx file to Runtime
         logger.info(f"[ANA_validation_agent.validate_circuit] Step 1: Syncing {circuit_path} to VHL Runtime...")

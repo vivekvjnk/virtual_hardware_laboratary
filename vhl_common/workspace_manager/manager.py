@@ -406,7 +406,7 @@ class WorkspaceManager:
         c_name = self.circuit_name.get(module_name)
         if not c_name:
             raise RuntimeError(f"Circuit name not set for {module_name}")
-        return self.project_root / module_name / "Stable" / f"{c_name}.tsx"
+        return self.project_root / module_name / "Stable" / c_name
     def get_maw_workspace_circuit_path(self,module_name) -> Path:
         return self.get_workspace_path(module_name=module_name) / self.circuit_name.get(module_name)
     def get_scud_path(self, module_name) -> Path:
@@ -466,14 +466,14 @@ class WorkspaceManager:
 
         if resource_type == "Circuit":
             if not iteration_id or iteration_id in ["workspace", "current"]:
-                return project_module_root / "Workspace" / f"{c_name}.tsx"
-            return project_module_root / "Archives" / iteration_id / f"{c_name}.tsx"
+                return project_module_root / "Workspace" / c_name
+            return project_module_root / "Archives" / iteration_id / c_name
         elif resource_type == "Evaluation":
             if not iteration_id or iteration_id in ["workspace", "current"]:
                 return project_module_root / "Workspace" / "eval_results"
             return project_module_root / "Archives" / iteration_id / "eval_results"
         elif resource_type == "StableCircuit":
-            return project_module_root / "Stable" / f"{c_name}.tsx"
+            return project_module_root / "Stable" / c_name
         elif resource_type == "CompiledCircuit":
             return project_module_root / "Stable" / "dist"
         elif resource_type == "Library":
