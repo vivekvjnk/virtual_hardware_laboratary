@@ -22,7 +22,7 @@ export async function handleVapExecute(
     let paths: any = null;
     try {
         console.log("[VHLRuntime] Processing VAP_EXECUTE");
-        const { circuit_name, blob_id, iteration_id } = msg.payload;
+        const { circuit_name, blob_id, iteration_id, module_name } = msg.payload;
         if (!circuit_name || !blob_id) {
             throw new Error("Missing circuit_name or blob_id in VAP_EXECUTE payload");
         }
@@ -54,7 +54,7 @@ export async function handleVapExecute(
         const localPath = await pullObject(blob_id, tempPullDir);
 
         // 3. Inject circuit into the evaluation workspace (breaks hardlink)
-        const relativeTsxPath = `${circuit_name}.tsx`;
+        const relativeTsxPath = circuit_name;
         await COWWorkspaceManager.injectProvisionalFile(localPath, relativeTsxPath, taskId);
 
         // Cleanup temp pull dir
