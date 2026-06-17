@@ -14,6 +14,8 @@ services:
     networks:
       - vhl-network
     
+    user: "${UID:-1000}:${GID:-1000}"
+    
     environment:
       - VHL_TRANSPORT=http
       - PORT=8080
@@ -21,10 +23,15 @@ services:
       - VHL_LIBRARY_DIR=/app/lib
       - SNAPSHOT_PORT=8083
       - MINIO_ENDPOINT=minio
+      - VHL_WORKSPACE_DIR=${VHL_WORKSPACE_DIR:-/workspace}
+      - HOME=/app
      
       # Defaults to 'minio' locally
       - STORAGE_BACKEND=${STORAGE_BACKEND:-minio}
       - OBJECT_STORE_BUCKET=vhl
+
+    volumes:
+      - ${VHL_WORKSPACE_HOST_PATH:-./workspace}:/workspace:z
 
     restart: unless-stopped
 

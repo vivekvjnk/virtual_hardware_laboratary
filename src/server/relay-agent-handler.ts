@@ -72,7 +72,7 @@ export class RelayAgentHandler implements AgentHandler {
             }
             return
         }    
-        if (this.role === ROLE_WEBUI) {
+        if (this.role === ROLE_WEBUI || this.role == ROLE_TEST_OBSERVER) {
             // UI (WebUI) -> Agent (Backend)
             if (RelayAgentHandler.agentClient) {
                 console.debug("[Websocket Relay] WebUI -> Agent backend", msg.type)
@@ -180,7 +180,14 @@ export class RelayAgentHandler implements AgentHandler {
             this.role = ROLE_TEST_OBSERVER
             RelayAgentHandler.observerClients.add(send)
             console.log("RelayAgentHandler: Test Observer client identified")
-            send({ type: "OBSERVER_READY", payload: { message: "Test observation active" } } as any)
+
+            // Notify observer of existing connections
+            if (RelayAgentHandler.agentClient) {
+                send({ type: "AGENT_CONNECTED", source: ROLE_AGENT_BACKEND } as any)
+            }
+            if (RelayAgentHandler.runtimeClient) {
+                send({ type: "WORKSPACE_CONNECTED", source: ROLE_RUNTIME } as any)
+            }
         }
     }
 

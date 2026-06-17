@@ -171,24 +171,8 @@ export class COWWorkspaceManager {
     /**
      * Initializes a new project directory with standard folder structure from manifest and tsci init.
      */
-    static async initializeProject(projectDir: string, manifest: any = {}): Promise<void> {
+    static async initializeProject(projectDir: string): Promise<void> {
         console.log(`[COW] Initializing project directory: ${projectDir}`);
-        await fs.mkdir(projectDir, { recursive: true });
-
-        // Create first-level module directories identified in the manifest
-        if (manifest && typeof manifest === 'object') {
-            for (const [key, value] of Object.entries(manifest)) {
-                // If the value is an object, it represents a module/directory
-                if (typeof value === 'object' && value !== null) {
-                    const moduleDir = path.join(projectDir, key);
-                    console.log(`[COW] Creating module directory from manifest: ${key}`);
-                    await fs.mkdir(moduleDir, { recursive: true });
-                }
-            }
-        }
-
-        // Always ensure lib directory exists in project root 
-        // await fs.mkdir(path.join(projectDir, "lib"), { recursive: true });
 
         try {
             console.log(`[COW] Running tsci init in ${projectDir}`);

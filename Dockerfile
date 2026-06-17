@@ -20,8 +20,8 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Bun and PNPM
-RUN curl -fsSL https://bun.sh/install | bash
-ENV BUN_INSTALL="/root/.bun"
+RUN curl -fsSL https://bun.sh/install | BUN_INSTALL=/opt/bun bash
+ENV BUN_INSTALL="/opt/bun"
 ENV PATH="$BUN_INSTALL/bin:$PATH"
 RUN npm install -g pnpm
 
@@ -69,8 +69,8 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy Bun (for tscircuit if needed)
-COPY --from=builder /root/.bun /root/.bun
-ENV BUN_INSTALL="/root/.bun"
+COPY --from=builder /opt/bun /opt/bun
+ENV BUN_INSTALL="/opt/bun"
 ENV PATH="$BUN_INSTALL/bin:$PATH"
 
 # Copy the entire /app folder (already pruned and built)
@@ -92,10 +92,13 @@ ENV PATH="/app/venv/bin:/app/node_modules/.bin:${PATH}" \
     VHL_LIBRARY_DIR=/app/lib \
     RUNFRAME_STANDALONE_FILE_PATH=/app/runframe_bundle/standalone.min.js \
     TSCI_SKIP_CLI_UPDATE=true \
-    VHL_PROJECT_ROOT=/app
+    VHL_PROJECT_ROOT=/app \
+    VHL_WORKSPACE_DIR=/workspace \
+    HOME=/app
 
-# Initialize runtime directories
-RUN mkdir -p /app/lib /app/circuits 
+# Create workspace directory and ensure /app and /opt/bun are writable for any user
+RUN mkdir -p /workspace /app/.tmp /app/lib /app/circuits /app/.vhl_eval && \
+    chmod -R 777 /app /workspace /opt/bun
 
 # Expose required ports
 EXPOSE 8080 8081 8082 8083 1080 3020

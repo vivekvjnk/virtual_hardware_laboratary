@@ -56,7 +56,7 @@ export class VHLRuntime implements RuntimeSender {
         console.log(`[VHLRuntime] Connecting to ${this.serverUrl}...`);
 
         // Start dev server in workspace root aggressively
-        this.webui.startDevServer(this.workspaceDir);
+        // this.webui.startDevServer(this.workspaceDir);
 
         return new Promise((resolve) => {
             this.ws = new WebSocket(this.serverUrl);
@@ -179,13 +179,9 @@ export class VHLRuntime implements RuntimeSender {
                 const { project_id, workspace_info } = msg.payload;
                 console.log(`[VHLRuntime] Project ${msg.type === "PROJECT_CREATED" ? 'created' : 'loaded'}:`, project_id);
                 
-                const projectDir = path.join(this.workspaceDir, project_id);
-                setProjectDir(projectDir);
-
-                // Check for Workspace directory
-                const workspaceDir = path.join(projectDir, "Workspace");
-                const hasWorkspace = existsSync(workspaceDir);
-                const activeProjectDir = hasWorkspace ? workspaceDir : projectDir;
+                const projectRootDir = path.join(this.workspaceDir, `${project_id}_root`);
+                const projectDir = path.join(projectRootDir, project_id);
+                setProjectDir(projectDir); // NOTE: Project root refactor
 
                 this.setProjectState({
                     project_id: project_id,
@@ -200,17 +196,16 @@ export class VHLRuntime implements RuntimeSender {
 
                 // Move project initialization to COWWorkspaceManager
                 try {
-                    await COWWorkspaceManager.initializeProject(projectDir, workspace_info?.project_manifest);
+                    await COWWorkspaceManager.initializeProject(projectDir);
                 } catch (error: any) {
                     this.sendError("TSCI_INIT_FAILED", error.message);
                     break;
                 }
-
                 const entryFile = this.projectState.circuit_name ? `${this.projectState.circuit_name}` : "index.circuit.tsx";
-
+                
                 // Start dev server for the project if newly created or if synthesis is not completed
                 if (msg.type === "PROJECT_CREATED" || !this.projectState.is_synthesis_completed) {
-                    await this.webui.startDevServer(activeProjectDir, entryFile, this.projectState.circuit_name);
+                    await this.webui.startDevServer(projectDir, entryFile, this.projectState.circuit_name);
                 }
 
                 this.setProjectState({ runtime_status: "initialized" });
