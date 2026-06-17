@@ -103,6 +103,7 @@ class ArchyURPAgent(AbstractURPAgent):
         self.llm = llm
         self.agent = None
         self.workspace_manager = None
+        self.agent_workspace_path = None
         self.module_name = None
         self.sqlite_manager = None
 
@@ -123,41 +124,78 @@ class ArchyURPAgent(AbstractURPAgent):
 
         Sample module directory structure:
         ```
-        "bms-monitor-module": {
-            "system-boundary.md": "",
-            "resources": {
-                "schematic_images": {
-                    "bms-monitor-module_preprocessed_segments": {
-                        "segments_overview_with_bboxes.png": "c4c7a25d2cd9d6b4772262979f191f8a1fa52cf0b00dbbc081de4f9f4d6e3a7f",
-                        "segment_3.png": "1657d1ccbf9599faa6d7d4cf251aa4f29ea3ff98e331964caacf72c5632fbf31",
-                        "segment_2.png": "713a9c5252280a0febf0e87759fc632905a6e207d26b6e730594ca81779d47a1",
-                        "segment_1.png": "cbaec98689d63572935d3751d6a7ef10b454cc625a21a5ac60018934ad386b44",
-                        "segment_0.png": "15c51cd122874edd43f54ed73b79902b41db38a8155f41801badbc60ff9642a3"
-                    },
-                    "bms-monitor-module_preprocessed.png": "58e6f9885e374403f1a5753a9fa94514ec3ddde69d85f86f0885cabcc72cf862"
-                },
-                "bq79616-datasheet.md": "29d9c4bce3c8d577b8be4b53199c507d8ba1262bdfbf1212be556058db295320",
-                "bms-monitor-module-boundary.md": "4c248ba6e7a0382642d3834d7a90032f2770853771d02d0d40eb03d7b323347a",
-                "BQ79616-eval-board.md": "401a878b1ef893ecf343a4015026ef6a0d4ea33b5770047beeeab2a4b738004b"
-            },
-            "lib": "",
-            "Stable": {},
-            "Iterations": {},
-            "Archives": {}
+            bms-project_b91a00ec_root
+            └── bms-project_b91a00ec # Stable worktree
+                ├── bms-monitor-module # Module name
+                │   └── Workspace # This should be the workspace root path
+                │       ├── lib -> ../../lib
+                │       ├── resources
+                │       │   ├── bms-monitor-module-boundary.md
+                │       │   ├── bq79616-datasheet.md
+                │       │   ├── BQ79616-eval-board.md
+                │       │   └── schematic_images
+                │       │       └── bms-monitor-module_preprocessed.png
+                │       └── system-boundary.md -> ../../system-boundary.md
+                ├── communication-bridge
+                │   └── Workspace
+                │       ├── lib -> ../../lib
+                │       ├── resources
+                │       │   ├── BQ79600-eval-board.md
+                │       │   ├── bq79600-q1-datasheet.md
+                │       │   ├── communication-bridge-boundary.md
+                │       │   └── schematic_images
+                │       │       ├── bq79600_eval_part_1.png
+                │       │       └── bq79600_eval_part_2.png
+                │       └── system-boundary.md -> ../../system-boundary.md
+                ├── current-sensing
+                │   └── Workspace
+                │       ├── lib -> ../../lib
+                │       ├── resources
+                │       │   ├── amc1301-datasheet.md
+                │       │   ├── amc130x-eval-board.md
+                │       │   └── schematic_images
+                │       │       └── am130x_eval_board.png
+                │       └── system-boundary.md -> ../../system-boundary.md
+                ├── high-voltage-power-supply
+                │   └── Workspace
+                │       ├── lib -> ../../lib
+                │       ├── resources
+                │       │   ├── schematic_images
+                │       │   │   └── ucc28881_eval_board.png
+                │       │   ├── ucc28881-datasheet.md
+                │       │   └── ucc28881-eval-board.md
+                │       └── system-boundary.md -> ../../system-boundary.md
+                ├── index.circuit.tsx
+                ├── lib
+                ├── low-voltage-power-supply
+                │   └── Workspace
+                │       ├── lib -> ../../lib
+                │       ├── resources
+                │       │   ├── schematic_images
+                │       │   │   └── ucc28750_eval_board.png
+                │       │   ├── ucc28750-datasheet.md
+                │       │   └── ucc28750-eval-board.md
+                │       └── system-boundary.md -> ../../system-boundary.md
+                ├── microcontroller-module
+                │   └── Workspace
+                │       ├── lib -> ../../lib
+                │       ├── resources
+                │       │   ├── schematic_images
+                │       │   │   └── LAUNCHXL2_TMS57012_RM46.pdf
+                │       │   ├── TMS57012-launchpad-eval-board.md
+                │       │   ├── tms570ls1227-datasheet.md
+                │       │   └── tms75012-reference-manual.md
+                │       └── system-boundary.md -> ../../system-boundary.md
+                ├── package.json
+                ├── system-boundary.md
+                ├── tscircuit.config.json
+                └── tsconfig.json
         ```
         """
-        # Step 1: Identify which module to work with.
-        # Use the first available module from the workspace manager.
-        workspace_manager = context.workspace
-        module_paths = workspace_manager.module_paths
-        if not module_paths:
-            raise ValueError(
-                f"[build_context] No modules found in project '{workspace_manager.project_name}'. "
-                "Ensure the workspace is prepared before calling build_context."
-            )
-        module_path = module_paths.get(context.module_name)
         
-        logger.info(f"[build_context] Building context for module: {context.module_name}")
+        self.agent_workspace_path = self.workspace_manager.get_agent_workspace(module_name=context.module_name)
+
+        logger.info(f"[build_context] Building context for module: {context.module_name}; Agent workspace path: {self.agent_workspace_path}")
 
         # Step 2: Locate key resources by inspecting the filesystem directly.
         # The manifest tree stores hashes for files and dicts for dirs, but we
@@ -165,8 +203,8 @@ class ArchyURPAgent(AbstractURPAgent):
 
         # --- Required: preprocessed schematic image ---
         # Convention established by prepare_archy_workspace:
-        #   {module}/resources/schematic_images/{stem}_preprocessed.png
-        schematic_images_dir = module_path / "resources" / "schematic_images"
+        #   {module}/Workspace/resources/schematic_images/{stem}_preprocessed.png
+        schematic_images_dir = self.agent_workspace_path / "resources" / "schematic_images"
         image_path: Optional[Path] = None
         if schematic_images_dir.exists():
             # Prefer the *_preprocessed.png produced by prepare_archy_workspace
@@ -193,21 +231,21 @@ class ArchyURPAgent(AbstractURPAgent):
         # before resolving to an absolute path.
         system_boundary_path: Optional[str] = None
         for candidate_name in ("system-boundary.md",):
-            candidate = module_path / candidate_name
+            candidate = self.agent_workspace_path / candidate_name
             if os.path.lexists(candidate):          # detects the link itself
                 if candidate.exists():              # target is reachable
                     system_boundary_path = str(candidate.resolve())
                 else:
                     logger.warning(
                         f"[build_config] '{candidate_name}' exists as a symlink in "
-                        f"'{module_path}' but its target is not reachable: {candidate}. "
+                        f"'{self.agent_workspace_path}' but its target is not reachable: {candidate}. "
                         "system_boundary_path will be omitted from config."
                     )
                 break
 
         # --- Optional: module boundary, datasheet, eval design ---
         # These live directly inside {module}/resources/ (not in schematic_images/)
-        resources_dir = module_path / "resources"
+        resources_dir = self.agent_workspace_path / "resources"
         module_boundary_path: Optional[str] = None
         datasheet_path: Optional[str] = None
         eval_design_path: Optional[str] = None
@@ -263,13 +301,13 @@ class ArchyURPAgent(AbstractURPAgent):
         except Exception as e:
             logger.error(f"Failed to parse ArchyConfig from context.configuration: {e}")
             raise ValueError(f"Invalid configuration for ArchyURPAgent: {e}")
-
-        config = self.build_config(context=context)
-        logger.info(f"[ArchyURPAgent._on_initialize] Built config for Archy: {config}")
         
         self.module_name = context.module_name
         self.workspace_manager = context.workspace
         self.sqlite_manager = context.sqlite_manager
+
+        config = self.build_config(context=context)
+        logger.info(f"[ArchyURPAgent._on_initialize] Built config for Archy: {config}")
         # Optional arguments
         image_path = config.image_path
         system_boundary_path = config.system_boundary_path
@@ -278,7 +316,6 @@ class ArchyURPAgent(AbstractURPAgent):
         eval_design_path = config.eval_design_path
 
         # Agent-sdk Agent setup -- Begin
-        module_path = self.workspace_manager.module_paths[self.module_name]
         if not self.llm:
             self.llm = get_llm_for_agent(
                 agent_id=f"{context.module_name}.archy",
@@ -326,9 +363,10 @@ class ArchyURPAgent(AbstractURPAgent):
             logger.warning(f"[ArchyURPAgent._on_initialize] Missing required configuration in context: module_name, workspace, or image_path. Agent may fail if these are not provided in the first message.")
             # raise ValueError(f"Missing required configuration in context: module_name, workspace, or image_path: config={config}")
 
+        agent_workspace_path = self.workspace_manager.get_agent_workspace(self.module_name)
         sys_prompt_kwargs = {
             "module_name": self.module_name,
-            "workspace": str(module_path),
+            "workspace": str(agent_workspace_path),
             "image_path": image_path,
             "system_boundary_path": system_boundary_path,
             "module_boundary_path": module_boundary_path,
@@ -357,9 +395,9 @@ class ArchyURPAgent(AbstractURPAgent):
         
         self.conversation = Conversation(
             agent=self.agent,
-            workspace=str(module_path),
+            workspace=str(agent_workspace_path),
             callbacks=[self._conversation_callback],
-            persistence_dir=str(module_path / ".conversation") if config.conversation_persistence else None
+            persistence_dir=str(agent_workspace_path / ".conversation") if config.conversation_persistence else None
             
         )
 
@@ -391,20 +429,9 @@ class ArchyURPAgent(AbstractURPAgent):
     
     async def _check_postconditions(self, message: MessageEnvelope, result: ProcessResult) -> tuple[bool, str]:
         # Check if the module directory contains <module_name>.scud document. If not, return false with missing scud document as response message. If yes move to next step
-        #   1. Get the module path from workspace manager
-        if not self.workspace_manager or not self.module_name:
-            return False, "Workspace manager or module name is not initialized."
-        
-        module_paths = self.workspace_manager.module_paths
-        if self.module_name not in module_paths:
-            result.category = FailureCategory.INFRASTRUCTURE_FAILURE
-            return False, f"Module '{self.module_name}' path not found in workspace manager."
-        
-        module_path = module_paths[self.module_name]
-        
-        #   2. Check if <module_name>.scud document is present in the module path directory 
+        #   1. Check if <module_name>.scud document is present in the module path directory 
         scud_file_name = f"{self.module_name}.scud"
-        scud_file = module_path / scud_file_name
+        scud_file = self.agent_workspace_path / scud_file_name
         if not scud_file.exists():
             result.category = FailureCategory.AGENTIC_FAILURE
             return False, f"Missing scud document: {scud_file_name} is not present in module directory."
