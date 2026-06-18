@@ -317,18 +317,6 @@ class AOSM:
             
             logger.info(f"[AOSM._handle_startup] Creating new project: {project_id}")
             project_root = self.workspace_manager.create_project(project_id, zip_present=zip_present)
-
-            # Evaluate project creation success and update semantic db with the result. 
-            self.project_semantic_db = self.workspace_manager.db
-            project_creation_evaluator = ProjectCreationEvaluator(db=self.project_semantic_db) # Module name is not relevant for project creation evaluator as of now since it only checks for the presence of a baseline snapshot in the db which is created during project creation workflow. We can consider refactoring this later to remove the module_name dependency from the evaluator if it continues to be irrelevant for its logic.
-            project_creation_evaluator.evaluate() # With this step, evaluator will commit a semantic operation to the semantic db. Based on the status of this operation, agent registry should compute the readiness of the Archy agent.
-            # TODO: 
-            # Current implementation of ProjectCreationEvaluator uses hardcoded Agent ID and Operation Name(defined in the evaluator implementation code), so we can directly use those values in the Archy agent readiness function to check the status of the project creation workflow. Later, depending on the evolution of the evaluators, we can consider a standardized way to define and query these values.
-            
-
-            # Now initialize all the agents
-            await self.register_agents(workspace_manager=self.workspace_manager)
-            
             # Store project root information in class variable
             self.project_root_info = self.workspace_manager.get_workspace_info()
             
@@ -342,6 +330,26 @@ class AOSM:
                     "workspace_info": self.project_root_info
                 }
             ))
+            logger.info("[AOSM._handle_startup] Waiting for DEV_SERVER_READY event ")
+            # Wait for DEV_SERVER_READY event from vhl-runtime
+            await self.web_socket_client.wait_for_event(event_type=EventType.DEV_SERVER_READY,timeout=60000)
+            logger.info("[AOSM._handle_startup] Received DEV_SERVER_READY event. Moving forward")
+            # Commit workspace after vhl-runtime is setup
+            self.workspace_manager.commit_workspace(author="AOSM",commit_msg="VHL-Runtime initialized", op_name="RUNTIME_INITIALIZATION",status="SUCCESS", payload={"source":"vhl-runtime"})
+
+            # Create worktrees for all modules 
+            self.workspace_manager.setup_worktrees()
+
+            # Evaluate project creation success and update semantic db with the result. 
+            self.project_semantic_db = self.workspace_manager.db
+            project_creation_evaluator = ProjectCreationEvaluator(db=self.project_semantic_db) # Module name is not relevant for project creation evaluator as of now since it only checks for the presence of a baseline snapshot in the db which is created during project creation workflow. We can consider refactoring this later to remove the module_name dependency from the evaluator if it continues to be irrelevant for its logic.
+            result,description = project_creation_evaluator.evaluate() # With this step, evaluator will commit a semantic operation to the semantic db. Based on the status of this operation, agent registry should compute the readiness of the Archy agent.
+            # TODO: 
+            # Current implementation of ProjectCreationEvaluator uses hardcoded Agent ID and Operation Name(defined in the evaluator implementation code), so we can directly use those values in the Archy agent readiness function to check the status of the project creation workflow. Later, depending on the evolution of the evaluators, we can consider a standardized way to define and query these values.
+            logger.info(f"[AOSM._handle_startup] Project creation evaluation result: {result}; Description: {description}")
+
+            # Now initialize all the agents
+            await self.register_agents(workspace_manager=self.workspace_manager)
             
             # Transition to IDLE state
             await self.transition_to(AOSMState.IDLE, f"Project {project_id} created successfully")

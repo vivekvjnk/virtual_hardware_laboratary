@@ -31,20 +31,28 @@ def test_project_creation_evaluator_success(db_setup):
         checksum="12345"
     )
     
-    # 3. Setup last semantic operation: INITIALIZE by WORKSPACE_MANAGER (or WORKSPACE_MANAER)
+    # 3. Setup semantic operations: INITIALIZE and RUNTIME_INITIALIZATION
     # We first need an artifact snapshot to reference
     git_meta = {
         "commit_hash": "init_commit_hash",
         "parent_commit_hash": None,
         "changed_files": []
     }
-    snapshot_id = db.record_operation(
+    db.record_operation(
         git_metadata=git_meta,
         module_name="root",
         op_name="INITIALIZE",
         author="WORKSPACE_MANAGER",
         status="SUCCESS",
         payload={"source": "empty_init"}
+    )
+    db.record_operation(
+        git_metadata=git_meta,
+        module_name="root",
+        op_name="RUNTIME_INITIALIZATION",
+        author="AOSM",
+        status="SUCCESS",
+        payload={"source": "vhl-runtime"}
     )
     
     # Run evaluator (which now evaluates and commits)
@@ -70,7 +78,8 @@ def test_project_creation_evaluator_failures(db_setup):
     result, description = evaluator.check_rules()
     assert result == "FAILURE"
     assert "No entries found in project_modules" in description
-    assert "Last semantic operation is not INITIALIZE by WORKSPACE_MANAGER" in description
+    assert "INITIALIZE operation by WORKSPACE_MANAGER not found" in description
+    assert "RUNTIME_INITIALIZATION operation by AOSM not found" in description
     assert "No artifact snapshot found with INITIALIZE commit message" in description
 
     # Add a module but no resource

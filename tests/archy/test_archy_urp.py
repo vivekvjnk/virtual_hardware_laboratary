@@ -35,6 +35,8 @@ def setup_workspace(agent_workspace: Path) -> WorkspaceManager:
     branch_name = f"test-branch-{timestamp}"
     dest_project = agent_workspace / PROJECT_ID
     
+    # NOTE: Outdated code. spawn_worktree method is no longer available in workspace manager. 
+    # TODO: Migrate to new workspace manager implementation
     workspace_manager = template_manager.spawn_worktree(dest_project, branch_name)
     
     # 3. Return the workspace manager instance for use in tests
@@ -46,6 +48,8 @@ def workspace_manager(tmp_path):
     wm = setup_workspace(tmp_path)
     yield wm
     # Cleanup: remove the worktree after the test
+    # NOTE: Outdated code. cleanup method is no longer available in workspace manager
+    # TODO: Migrate to new workspacemanager
     wm.cleanup()
 
 @pytest.mark.asyncio
@@ -70,7 +74,7 @@ async def test_archy_urp_agent(workspace_manager, replay_llm):
         # But the existing snapshot is at bms-monitor-module/.conversation
         # So I'll adjust the environment variable or the directory structure if needed.
         # For this test, we can just keep the existing manual setup or fix the factory.
-        llm = replay_llm.from_persistence(str(os.environ["VHL_E2E_REPLAY_DIR"]),agent_id=f"{module_name}.archy", current_workspace=str(workspace_manager.project_root))
+        llm = replay_llm.from_persistence(str(os.environ["VHL_E2E_REPLAY_DIR"]),agent_id=f"{module_name}.archy", current_workspace=str(workspace_manager.get_workspace_path(module_name=module_name)))
     else:
         llm = None # Will be created by agent
         

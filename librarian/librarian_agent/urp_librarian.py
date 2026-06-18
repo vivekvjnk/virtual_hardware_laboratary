@@ -139,7 +139,7 @@ class LibrarianURPAgent(AbstractURPAgent):
 
         # Derive library path from workspace
         # Based on LibrarianAgent.process_scud: library_path = os.path.join(self.working_dir,"lib/imports/")
-        self.library_path = str(self.workspace_manager.project_root / "lib" / "imports")
+        self.library_path = str(self.workspace_manager.get_workspace_path(self.module_name) / "lib" / "imports")
 
         # Setup LLM
         module_path = self.workspace_manager.module_paths[self.module_name]
@@ -147,7 +147,7 @@ class LibrarianURPAgent(AbstractURPAgent):
             self.llm = get_llm_for_agent(
                 agent_id=f"{self.module_name}.librarian",
                 module_name= self.module_name,
-                workspace_path=str(self.workspace_manager.project_root),
+                workspace_path=str(self.workspace_manager.get_workspace_path(self.module_name)),
             )
 
         # Setup Agent
@@ -310,7 +310,7 @@ class LibrarianURPAgent(AbstractURPAgent):
             logger.warning(f"[LibrarianURPAgent._check_postconditions] sync_manager is not initialized.")
 
         # 2. Validate if <project_root>/lib directory has been updated. No strict validation, simply check if there are any files created 
-        lib_dir = self.workspace_manager.project_root / "lib"
+        lib_dir = self.workspace_manager.get_workspace_path(self.module_name) / "lib"
         library_updated = False
         if lib_dir.exists():
             for root, _, files in os.walk(lib_dir):
@@ -343,9 +343,9 @@ class LibrarianURPAgent(AbstractURPAgent):
             result.category = FailureCategory.INFRASTRUCTURE_FAILURE
             return False, msg
 
-        scud_file = scud_files[0]
+        scud_file_path = self.workspace_manager.get_scud_path(module_name=self.module_name)
         try:
-            changes = self.workspace_manager.get_file_changes(scud_file)
+            changes = self.workspace_manager.get_file_changes(file_path=scud_file_path,module_name=self.module_name)
         except Exception as e:
             msg = f"Postconditions check failed: Failed to read scud file changes: {e}"
             logger.warning(msg)

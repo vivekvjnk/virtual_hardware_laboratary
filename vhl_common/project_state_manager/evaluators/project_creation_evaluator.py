@@ -39,22 +39,28 @@ class ProjectCreationEvaluator(AbstractEvaluator):
             if not resources:
                 failures.append(f"Module {mod_id} has no associated resources")
 
-        # Rule 3: The last entry in semantic_operations before this evaluation must be:
-        # operation == "INITIALIZE" and author == "WORKSPACE_MANAGER" (or "WORKSPACE_MANAER" due to typo)
+        # Rule 3: Check that required operations have occurred
+        # Operation 1: INITIALIZE by WORKSPACE_MANAGER
         try:
-            last_op = self.db.conn.execute(
-                "SELECT op_name, author FROM semantic_operations ORDER BY id DESC LIMIT 1"
+            init_op = self.db.conn.execute(
+                "SELECT 1 FROM semantic_operations WHERE op_name = 'INITIALIZE' AND author = 'WORKSPACE_MANAGER'"
             ).fetchone()
         except Exception:
-            last_op = None
+            init_op = None
+        
+        if not init_op:
+            failures.append("INITIALIZE operation by WORKSPACE_MANAGER not found")
 
-        if not last_op:
-            failures.append("Last semantic operation is not INITIALIZE by WORKSPACE_MANAGER")
-        else:
-            op_name = last_op["op_name"]
-            author = last_op["author"]
-            if op_name != "INITIALIZE" or author not in ("WORKSPACE_MANAGER", "WORKSPACE_MANAER"):
-                failures.append("Last semantic operation is not INITIALIZE by WORKSPACE_MANAGER")
+        # Operation 2: RUNTIME_INITIALIZATION by AOSM
+        try:
+            runtime_init_op = self.db.conn.execute(
+                "SELECT 1 FROM semantic_operations WHERE op_name = 'RUNTIME_INITIALIZATION' AND author = 'AOSM'"
+            ).fetchone()
+        except Exception:
+            runtime_init_op = None
+
+        if not runtime_init_op:
+            failures.append("RUNTIME_INITIALIZATION operation by AOSM not found")
 
         # Rule 4: artifact_snapshots contains >= 1 snapshot associated with the INITIALIZE operation
         try:

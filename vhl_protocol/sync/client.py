@@ -18,7 +18,7 @@ class SyncClient:
     def __init__(self, web_socket_client: VHLWebSocketClient, workspace_manager: WorkspaceManager):
         self.web_socket_client = web_socket_client
         self.workspace_manager = workspace_manager
-        self.base_dir = str(workspace_manager.workspace_root)
+        self.base_dir = str(workspace_manager.project_workspace_root)
         self.storage_client = get_storage_client()
         
         # Concurrency management

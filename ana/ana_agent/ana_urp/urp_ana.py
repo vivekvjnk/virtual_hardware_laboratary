@@ -176,7 +176,9 @@ class AnaURPAgent(AbstractURPAgent):
         config = context.config
 
         # ------- Workspace configuration ----
-        self._workspace_dir = self.workspace_manager.create_workspace(module_name=self.module_name)
+        # NOTE: Outdated method 
+        # TODO: Workspace is already configured through workspacemanager. No need for this call. Refactor according to new workspacemanager implementation and ANA model
+        # self._workspace_dir = self.workspace_manager.create_workspace(module_name=self.module_name)
         logger.info(
             f"[AnaURPAgent._on_initialize] Initialized for module='{self.module_name}', "
         )
@@ -187,7 +189,7 @@ class AnaURPAgent(AbstractURPAgent):
             self.llm = get_llm_for_agent(
                 agent_id=f"{self.module_name}.ana",
                 module_name= self.module_name,
-                workspace_path=str(self.workspace_manager.project_root),
+                workspace_path=str(self.workspace_manager.get_workspace_path(self.module_name)),
             )
 
         # ---- Condenser pipeline (mirrors ANA-W1 pattern) ----
@@ -299,18 +301,12 @@ class AnaURPAgent(AbstractURPAgent):
                     logger.error(msg)
                     return False, msg
 
-                # prepare_workspace: snapshots current truth and copies stable circuit into Workspace/
+                # NOTE: Outdated method 
+                # TODO: No need for prepare workspace call. Refactor according to new workspace implementation and ANA model
                 self.workspace_manager.prepare_workspace(
                     module_name=self.module_name,
                 )
                 
-            if not self._workspace_dir:
-                return False, "[AnaURPAgent] Pre-conditions failed. Failed to setup workspace directory."
-
-            logger.info(
-                f"[AnaURPAgent._check_preconditions] Workspace ready: "
-                f"{self._workspace_dir}"
-            )
             
             return True, "Pre-conditions satisfied. Iteration directory created."
 
@@ -344,7 +340,6 @@ class AnaURPAgent(AbstractURPAgent):
         """
         logger.info(
             f"[AnaURPAgent.process] Starting ANA-W1 for module='{self.module_name}', "
-            f"iteration='{self._workspace_dir}'"
         )
 
         self._pending_error_message = None  #NOTE: orchestrator should consume last error message before calling process again
@@ -416,17 +411,13 @@ class AnaURPAgent(AbstractURPAgent):
         4. Return (False, reject_reason) — URP framework will emit TASK_POSTCONDITIONS_VIOLATED
            which triggers a new corrective invocation with ANA in error-correction mode.
         """
-        if not self._workspace_dir:
-            process_result.category = FailureCategory.INFRASTRUCTURE_FAILURE
-            return False, "Iteration directory not set — cannot run W2 validation."
-        
         # Confirm ANA-W1 produced the expected circuit file
         circuit_tsx_path = self.workspace_manager.get_maw_workspace_circuit_path(
             module_name=self.module_name
         )
         if not circuit_tsx_path.exists():
             process_result.category = FailureCategory.AGENTIC_FAILURE
-            return False,f"ANA-W1 did not produce a circuit .tsx file in {self._workspace_dir}."
+            return False,f"ANA-W1 did not produce a circuit .tsx file ."
         logger.info(
             f"[AnaURPAgent._check_postconditions] module='{self.module_name}', iteration='{self._workspace_dir}', circuit_tsx_path='{circuit_tsx_path}"
         )
@@ -508,6 +499,7 @@ class AnaURPAgent(AbstractURPAgent):
         logger.info("[AnaURPAgent._handle_vap_accept] VAP ACCEPTED — promoting to Stable/.")
 
         # 1. Promote circuit to Stable/
+        # TODO: Outdated method. Refactor according to new workspacemanager implementation and ANA model
         self.workspace_manager.populate_stable(
             module_name=self.module_name,
         )

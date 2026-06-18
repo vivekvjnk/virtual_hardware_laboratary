@@ -320,7 +320,7 @@ class ArchyURPAgent(AbstractURPAgent):
             self.llm = get_llm_for_agent(
                 agent_id=f"{context.module_name}.archy",
                 module_name= self.module_name,
-                workspace_path=str(self.workspace_manager.project_root),
+                workspace_path=str(self.workspace_manager.get_workspace_path(self.module_name)),
             )
 
         surgical_condenser = LargeFileSurgicalCondenser(
@@ -476,7 +476,7 @@ class ArchyURPAgent(AbstractURPAgent):
             return False, f"Failed to compute checksum for scud file: {e}"
 
         try:
-            scud_file_path = str(scud_file.relative_to(self.workspace_manager.project_root))
+            scud_file_path = str(scud_file.relative_to(self.workspace_manager.get_workspace_path(self.module_name)))
         except Exception:
             scud_file_path = str(scud_file)
 
