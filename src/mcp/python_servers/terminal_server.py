@@ -115,6 +115,7 @@ mcp = FastMCP("VHL-Runtime-Terminal", lifespan=lifespan)
 @mcp.tool(name="run_terminal_command")
 async def run_terminal_command(
     command: str,
+    cwd: str,
     ctx: Context,
     is_input: bool = False,
     timeout: Optional[float] = None,
@@ -143,6 +144,7 @@ async def run_terminal_command(
 
     Args:
         command: The bash command to execute. Use "C-c" to interrupt.
+        cwd: Absolute path to the working directory from which command needs to be executed. 
         is_input: Set to True if sending input to a process.
         timeout: Maximum time in seconds to wait for output.
         reset: Set to True to clear session state if the terminal hangs.
@@ -150,10 +152,11 @@ async def run_terminal_command(
     # Context injection gives us the session ID, fallback to "default" if not provided
     session_id = ctx.session_id if ctx.session_id else "default"
     
-    logger.info(f"Running command for session {session_id}: {command}")
+    logger.info(f"Running command for session {session_id}: {command} from directory: {cwd}")
     
     terminal = registry.get_terminal(session_id)
-    active_dir = Path(get_active_project_dir()) / "lib"
+    # active_dir = Path(get_active_project_dir()) / "lib"
+    active_dir = Path(cwd)
 
     # Create lib/ directory in active project directory if it doesn't exist
     os.makedirs(active_dir, exist_ok=True)

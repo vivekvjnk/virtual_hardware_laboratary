@@ -180,7 +180,7 @@ export class VHLRuntime implements RuntimeSender {
                 console.log(`[VHLRuntime] Project ${msg.type === "PROJECT_CREATED" ? 'created' : 'loaded'}:`, project_id);
                 
                 const projectRootDir = path.join(this.workspaceDir, `${project_id}_root`);
-                const projectDir = path.join(projectRootDir, project_id);
+                const projectDir = path.join(projectRootDir);
                 setProjectDir(projectDir); // NOTE: Project root refactor
 
                 this.setProjectState({
