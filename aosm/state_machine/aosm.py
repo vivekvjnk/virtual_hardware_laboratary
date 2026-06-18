@@ -614,10 +614,6 @@ class AOSM:
             elif "REJECT" == decision:
                 logger.info("[AOSM._handle_present_result] Decision was REJECT.")
             
-            # Move workspace content to archives
-            # NOTE: module_name needs to be resolved. Defaulting to 'main_module' if not found in payload
-            module_name = payload.get("module_name", "main_module")
-            self.workspace_manager.archive_workspace(module_name=module_name)
             
             # After presenting/handling, transition back to IDLE
             await self.transition_to(AOSMState.IDLE, f"Finished processing ANA result: {decision}")

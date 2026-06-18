@@ -126,9 +126,10 @@ class Workflow1Controller(AbstractController):
                 #       - If AgentStatus.WAITING ==> Waiting for HIL user to interact with agent to resolve the problem
                 #       - If AgentStatus.PROCESSING ==> HIL user has sent some message 
                 # Decision logic
-                if process_result.outcome is LastTaskOutcome.TASK_COMPLETED:
+                if process_result.outcome is LastTaskOutcome.TASK_COMPLETED: # Success case
                     if process_result.category is FailureCategory.NONE:
                         found_completion = True
+                        self._workspace_manager.move_scud_to_stable(module_name)
                         break
                     elif process_result.category is FailureCategory.AGENTIC_FAILURE:
                         logger.warning(f"[{self.controller_id}.handle_archy] Archy returned {process_result}. Waiting for HIL resolution...")

@@ -171,7 +171,7 @@ class WorkspaceManager:
             # Ensure .gitignore exists and ignores .vhl/ directory (SQLite DB)
             gitignore_path = self.stable_worktree / ".gitignore"
             if not gitignore_path.exists():
-                gitignore_path.write_text(".conversation/\n")
+                gitignore_path.write_text(".vhl/\n.conversation/\n")
             self.git.git.add_all()
             try:
                 self.record_operation(
@@ -327,6 +327,27 @@ class WorkspaceManager:
         
         return restoration_result
 
+    def move_scud_to_stable(self,module):
+        """move .scud file from workspace to module root"""
+        scud_path = self.get_scud_path(module_name=module)
+        if scud_path.exists():
+            module_path = self.module_paths.get(module)
+            # Copy scud file to module path
+            destination = module_path / scud_path.name
+            shutil.copy2(scud_path, destination)
+
+            # Remove scud file from workspace
+            scud_path.unlink()
+
+            # Create symlink in workspace pointing to the new location in module root
+            symlink_path = self.get_agent_workspace(module_name=module) / scud_path.name
+            if symlink_path.exists() or symlink_path.is_symlink():
+                symlink_path.unlink()
+            rel_destination = os.path.relpath(destination, symlink_path.parent)
+            os.symlink(rel_destination, symlink_path)
+            logger.info(f"[WorkspaceManager.move_scud_to_stable] Moved SCUD file from {scud_path} to {destination}")
+        else:
+            logger.warning(f"[WorkspaceManager.move_scud_to_stable] SCUD file not found at {scud_path} for module '{module}'")
 
     # VAP related methods
     # =====================
@@ -350,45 +371,6 @@ class WorkspaceManager:
         "circuit": workspace_path / f"{module_name}.tsx"
         }
     
-    def archive_workspace(self, module_name: str) -> Optional[Path]:
-        if not self.stable_worktree:
-            raise RuntimeError("Project root not set.")
-        
-        workspace_path = self.stable_worktree / module_name / "Workspace"
-        if not workspace_path.exists() or not any(workspace_path.iterdir()):
-            return None
-
-        self._archive_count[module_name] = self._archive_count.get(module_name, 0) + 1
-        archive_id = f"{self._archive_count[module_name]:04d}"
-        archive_path = self.stable_worktree / module_name / "Archives" / archive_id
-        archive_path.mkdir(parents=True, exist_ok=True)
-        
-        for item in workspace_path.iterdir():
-            if item.is_symlink():
-                continue
-            if item.is_file():
-                shutil.copy2(item, archive_path)
-            elif item.is_dir():
-                shutil.copytree(item, archive_path / item.name)
-        
-        logger.info(f"Archived workspace for {module_name} to {archive_path}")
-        return archive_path
-
-    def prepare_workspace(self, module_name: str) -> Path:
-        if not self.circuit_name.get(module_name):
-            raise RuntimeError(f"Circuit name not set for {module_name}")
-
-        self.archive_workspace(module_name)
-        workspace_path = self.create_workspace(module_name)
-        dest_path = workspace_path / self.circuit_name[module_name]
-        
-        # copy stable circuit only if the workspace doesn't contain circuit code
-        if not dest_path.exists():
-            stable_circuit_path = self.get_circuit_path_from_stable(module_name=module_name)
-            shutil.copy2(stable_circuit_path, dest_path)
-        
-        return workspace_path
-
     def get_circuit_path_from_stable(self, module_name) -> Path:
         """Returns the path to the circuit file in the Stable directory."""
         c_name = self.circuit_name.get(module_name)
@@ -399,12 +381,8 @@ class WorkspaceManager:
     def get_scud_path(self, module_name) -> Path | None:
         """Returns the .scud file path."""
         workspace_scud_path:Path = self.worktree.get(module_name) / module_name  / f"{module_name}.scud"
-        if workspace_scud_path.exists(): 
-            return workspace_scud_path
-        else:
-            logger.warning(f"No .scud found for {module_name}")
-            return None
-    
+        return workspace_scud_path
+        
     def get_maw_workspace_circuit_path(self,module_name) -> Path:
         return self.get_workspace_path(module_name=module_name) / self.circuit_name.get(module_name)
     
@@ -452,9 +430,9 @@ class WorkspaceManager:
         
         res_dir = self.worktree.get(module_name) / module_name / "Workspace" /"resources"
         has_sc = (res_dir / "schematic_images").is_dir()
-        scud_file = self.get_scud_path(module_name=module_name)
+        scud_file_path = self.get_scud_path(module_name=module_name)
         has_img = any(f.suffix.lower() in ['.png', '.jpg', '.jpeg'] for f in res_dir.iterdir() if f.is_file()) if res_dir.exists() else False
-        if has_sc and has_img and scud_file:
+        if has_sc and has_img and scud_file_path.exists():
             is_synthesizable = True
 
         if self.circuit_name.get(module_name):

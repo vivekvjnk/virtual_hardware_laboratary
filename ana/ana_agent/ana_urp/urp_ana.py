@@ -175,10 +175,6 @@ class AnaURPAgent(AbstractURPAgent):
         self.sync_client = context.sync_client
         config = context.config
 
-        # ------- Workspace configuration ----
-        # NOTE: Outdated method 
-        # TODO: Workspace is already configured through workspacemanager. No need for this call. Refactor according to new workspacemanager implementation and ANA model
-        # self._workspace_dir = self.workspace_manager.create_workspace(module_name=self.module_name)
         logger.info(
             f"[AnaURPAgent._on_initialize] Initialized for module='{self.module_name}', "
         )
@@ -301,11 +297,6 @@ class AnaURPAgent(AbstractURPAgent):
                     logger.error(msg)
                     return False, msg
 
-                # NOTE: Outdated method 
-                # TODO: No need for prepare workspace call. Refactor according to new workspace implementation and ANA model
-                self.workspace_manager.prepare_workspace(
-                    module_name=self.module_name,
-                )
                 
             
             return True, "Pre-conditions satisfied. Iteration directory created."
@@ -507,10 +498,6 @@ class AnaURPAgent(AbstractURPAgent):
             f"[AnaURPAgent._handle_vap_accept] Stable/ populated from Workspace/"
         )
 
-        # 2. Move current workspace to Archives/
-        self.workspace_manager.archive_workspace(
-            module_name=self.module_name
-        )
         logger.info("[AnaURPAgent._handle_vap_accept] Workspace archived.")
     
 

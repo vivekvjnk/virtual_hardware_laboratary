@@ -234,7 +234,7 @@ class ArchyURPAgent(AbstractURPAgent):
             candidate = self.agent_workspace_path / candidate_name
             if os.path.lexists(candidate):          # detects the link itself
                 if candidate.exists():              # target is reachable
-                    system_boundary_path = str(candidate.resolve())
+                    system_boundary_path = str(candidate)
                 else:
                     logger.warning(
                         f"[build_config] '{candidate_name}' exists as a symlink in "
@@ -256,11 +256,11 @@ class ArchyURPAgent(AbstractURPAgent):
                     continue
                 name_lower = f.name.lower()
                 if "boundary" in name_lower and module_boundary_path is None:
-                    module_boundary_path = str(f.resolve())
+                    module_boundary_path = str(f)
                 elif "datasheet" in name_lower and datasheet_path is None:
-                    datasheet_path = str(f.resolve())
+                    datasheet_path = str(f)
                 elif ("eval" in name_lower or "evaluation" in name_lower) and eval_design_path is None:
-                    eval_design_path = str(f.resolve())
+                    eval_design_path = str(f)
 
         logger.info(
             f"[build_context] Resolved resources for '{context.module_name}': "
@@ -271,7 +271,7 @@ class ArchyURPAgent(AbstractURPAgent):
 
         # Step 3: Construct and return the ArchyConfig dataclass.
         config = ArchyConfig(
-            image_path=str(image_path.resolve()) if image_path is not None else None,
+            image_path=str(image_path) if image_path is not None else None,
             system_boundary_path=system_boundary_path,
             module_boundary_path=module_boundary_path,
             datasheet_path=datasheet_path,
