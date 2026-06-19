@@ -93,7 +93,7 @@ ENV PATH="/app/venv/bin:/app/node_modules/.bin:${PATH}" \
     RUNFRAME_STANDALONE_FILE_PATH=/app/runframe_bundle/standalone.min.js \
     TSCI_SKIP_CLI_UPDATE=true \
     VHL_PROJECT_ROOT=/app \
-    VHL_WORKSPACE_DIR=/workspace \
+    # VHL_WORKSPACE_DIR=/workspace \
     HOME=/app
 
 # Create workspace directory and ensure /app and /opt/bun are writable for any user

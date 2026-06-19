@@ -25,13 +25,13 @@ services:
       - MINIO_ENDPOINT=minio
       - VHL_WORKSPACE_DIR=${VHL_WORKSPACE_DIR:-/workspace}
       - HOME=/app
-     
+      - VHL_WORKSPACE_DIR=${VHL_WORKSPACE_HOST_PATH:-./workspace}           
       # Defaults to 'minio' locally
       - STORAGE_BACKEND=${STORAGE_BACKEND:-minio}
       - OBJECT_STORE_BUCKET=vhl
 
     volumes:
-      - ${VHL_WORKSPACE_HOST_PATH:-./workspace}:/workspace:z
+      - ${VHL_WORKSPACE_HOST_PATH:-./workspace}:${VHL_WORKSPACE_HOST_PATH:-./workspace}:z
 
     restart: unless-stopped
 
