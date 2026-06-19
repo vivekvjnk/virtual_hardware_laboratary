@@ -25,7 +25,7 @@ def temp_project_dir(tmp_path):
 async def test_postconditions_success(temp_project_dir):
     project_root, module_dir = temp_project_dir
     
-    # Create a mock file in lib/imports
+    # Create a mock file in imports
     imports_dir = project_root / "lib" / "imports"
     imports_dir.mkdir(parents=True)
     (imports_dir / "some_component.json").write_text("{}")
@@ -144,7 +144,7 @@ async def test_postconditions_fail_empty_lib(temp_project_dir):
 async def test_postconditions_fail_missing_scud_mapping(temp_project_dir):
     project_root, module_dir = temp_project_dir
     
-    # Create a mock file in lib/imports
+    # Create a mock file in imports
     imports_dir = project_root / "lib" / "imports"
     imports_dir.mkdir(parents=True)
     (imports_dir / "some_component.json").write_text("{}")

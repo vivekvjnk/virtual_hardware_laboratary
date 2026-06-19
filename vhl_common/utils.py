@@ -60,7 +60,7 @@ def setup_dedicated_logger(
     log_dir: str = "logs",
     max_bytes: int = 5 * 1024 * 1024,  # 5 MB default
     backup_count: int = 5,             # Keep 5 old log files
-    level: int = logging.DEBUG,
+    level: int = logging.INFO,
     propagate: bool = True,
     extra_loggers: list[logging.Logger] | None = None
 ) -> logging.Logger:

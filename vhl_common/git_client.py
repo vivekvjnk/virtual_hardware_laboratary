@@ -76,7 +76,7 @@ class GitClient:
     def add_all(self, cwd: Optional[Union[str, Path]] = None):
         """Adds all changes to the staging area."""
         response = self._run_git(["add", "."], cwd=cwd)
-        logger.debug(f"Added all changes to staging area in {cwd or self.repo_path}\nGit response: {response}")
+        logger.info(f"Added all changes to staging area in {cwd or self.repo_path}\nGit response: {response}")
         return response
 
     def commit(self, message: str, cwd: Optional[Union[str, Path]] = None) -> str:
