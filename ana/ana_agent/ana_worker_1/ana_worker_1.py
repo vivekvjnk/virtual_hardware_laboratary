@@ -163,9 +163,9 @@ def run_ana_w1_agent(workspace:str,scud_path: str, schematic_images_path: str = 
         user_message += "\nPlease correct your circuit based on these observations. If corrections are highly local and targetted, directly apply them on circuit code. You don't have to explore SCUD file or schematic images."
     else:
         logger.warning("[run_ana_w1_agent] No observations found. Could be first iteration..")
-        user_message += "\n\nAll local library components are available under './lib/imports/' in the execution environment. Any other path would produce import errors during validation."
+        user_message += "\n\nAll local library components are available under './imports/' in the execution environment. Any other path would produce import errors during validation."
         # Information on execution environment and the process
-        user_message += "\n\nYou should generate and store tsx circuit file in the current workspace directory. The circuit file will be evaluated by the backend in a a remote execution environment. All the imports in the circuit will be resolved in this execution environment. Libraries are available under ./lib/imports/ directory in the execution environment."
+        user_message += "\n\nYou should generate and store tsx circuit file in the current workspace directory. The circuit file will be evaluated by the backend in a a remote execution environment. All the imports in the circuit will be resolved in this execution environment. Libraries are available under ./imports/ directory in the execution environment."
 
         
         user_message += f"**NOTE**: Make sure the circuit file is named '{circuit_name}.tsx'. Anything else would be rejected by the system."

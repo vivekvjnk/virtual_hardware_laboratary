@@ -137,7 +137,7 @@ def prepare_archy_workspace(workspace_manager: WorkspaceManager) -> bool:
     for module_name,module_path in modules.items():
         logger.info(f"Processing module: {module_name}")
         
-        images_dir = module_path / "resources" / "schematic_images"
+        images_dir = workspace_manager.get_module_workspace(module_name) / "resources" / "schematic_images"
         if not images_dir.exists() or not images_dir.is_dir():
             logger.info(f"No schematic_images directory found for module {module_name}, skipping.")
             continue

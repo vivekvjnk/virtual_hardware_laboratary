@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 def get_llm_for_agent(
     agent_id: str, 
     module_name: str,
-    workspace_path: Optional[str] = None, 
+    project_root_path: Optional[str] = None, 
 ) -> LLM:
     """
     Factory function to create an LLM instance for an agent.
@@ -28,19 +28,20 @@ def get_llm_for_agent(
         An LLM instance.
     """
     replay_base = os.getenv("VHL_E2E_REPLAY_DIR")
-    agent_replay_dir = Path(replay_base) / module_name
-    if agent_replay_dir.exists():
-        conversation_id = conversation_map(agent_id=agent_id)
-        if conversation_id:
-            logger.info(f"[llm_utils.get_llm_for_agent]Using replay LLM for agent: {agent_id}")
-            return ReplayLLM.from_persistence(
-                agent_replay_dir,
-                conversation_id=conversation_map(agent_id),
-                usage_id=agent_id,
-                current_workspace=workspace_path
-            )
+    if replay_base:
+        agent_replay_dir = Path(replay_base) / module_name
+        if agent_replay_dir.exists():
+            conversation_id = conversation_map(agent_id=agent_id)
+            if conversation_id:
+                logger.info(f"[llm_utils.get_llm_for_agent]Using replay LLM for agent: {agent_id}")
+                return ReplayLLM.from_persistence(
+                    agent_replay_dir,
+                    conversation_id=conversation_map(agent_id),
+                    usage_id=agent_id,
+                    current_workspace_root=project_root_path
+                )
     else:
-        logger.warning(f"[llm_utils.get_llm_for_agent]Replay directory does not exist for agent: {agent_id} at {agent_replay_dir}")
+        logger.warning(f"[llm_utils.get_llm_for_agent]Replay directory does not exist for agent: {agent_id}")
     # Fallback to standard LLM creation
     logger.info(f"[llm_utils.get_llm_for_agent]Using standard LLM for agent: {agent_id}")
     api_key = os.getenv("LLM_API_KEY")
@@ -66,7 +67,10 @@ def conversation_map(agent_id) -> str|None:
     |Archy      | communication-bridge |bc950f6d6ba546459b7021ac181edd9b| 
     |Librarian  | communication-bridge |8f969075c755447ca8c7f2a4b0336542|
     """
-    conversation_map = {"communication-bridge.archy"    :"bc950f6d6ba546459b7021ac181edd9b",
-                        "communication-bridge.librarian":"8f969075c755447ca8c7f2a4b0336542",
-                        "communication-bridge.ana"      :"675b377535524296b69ae9c368afc040"}
-    return conversation_map.get(agent_id)
+    bms_project_conversation_map = {"communication-bridge.archy"    :"bc950f6d6ba546459b7021ac181edd9b",
+                                    "communication-bridge.librarian":"8f969075c755447ca8c7f2a4b0336542",
+                                    "communication-bridge.ana"      :"675b377535524296b69ae9c368afc040"}
+    bms_project_refactored_conversation_map = {"communication-bridge.archy"    :"5e0f524b481a44c2af394c4739ade630",
+                                                "communication-bridge.librarian":"da603dc84a72458cac19c61e23d10b0a",
+                                                "communication-bridge.ana"      :"08a9b1f680204d0a97a34619e764e6f5"}
+    return bms_project_refactored_conversation_map.get(agent_id)

@@ -124,14 +124,14 @@ class LibrarianURPAgent(AbstractURPAgent):
         self.module_name = context.module_name
         
         config = self.build_config(context=context)
-        agent_workspace_path = self.workspace_manager.get_agent_workspace(self.module_name)
+        agent_workspace_path = self.workspace_manager.get_module_workspace(self.module_name)
 
         # Setup LLM
         if not self.llm:
             self.llm = get_llm_for_agent(
                 agent_id=f"{self.module_name}.librarian",
                 module_name= self.module_name,
-                workspace_path=str(self.workspace_manager.get_workspace_path(self.module_name)),
+                project_root_path=str(self.workspace_manager.worktree.get(self.module_name)),
             )
 
         # Setup Agent
@@ -155,7 +155,7 @@ class LibrarianURPAgent(AbstractURPAgent):
         sys_prompt_path = os.path.join(submodule_root, "librarian_prompt.j2")
 
         # Derive library path from workspace
-        library_path = str(agent_workspace_path / "lib" / "imports")
+        library_path = str(agent_workspace_path / "imports")
         sys_prompt_kwargs = {
             "scud_path": config.scud_path,
             "library_path": library_path
@@ -285,7 +285,7 @@ class LibrarianURPAgent(AbstractURPAgent):
         """
         
         # 1. Validate if <project_root>/lib directory has been updated. No strict validation, simply check if there are any files created 
-        lib_dir = self.workspace_manager.get_agent_workspace(self.module_name) / "lib"
+        lib_dir = self.workspace_manager.worktree.get(self.module_name) / "imports"
         library_updated = False
         if lib_dir.exists():
             for root, _, files in os.walk(lib_dir):
@@ -301,6 +301,7 @@ class LibrarianURPAgent(AbstractURPAgent):
         # 2. Validate if the .scud file has been updated with component mapping section
         
         scud_file_path = self.workspace_manager.get_scud_path(module_name=self.module_name)
+        logger.info(f"[LibrarianURPAgent:_check_postconditions] Checking .scud file changes at: {scud_file_path}")
         try:
             changes = self.workspace_manager.get_file_changes(file_path=scud_file_path,module_name=self.module_name)
         except Exception as e:
@@ -308,13 +309,14 @@ class LibrarianURPAgent(AbstractURPAgent):
             logger.warning(msg)
             result.category = FailureCategory.INFRASTRUCTURE_FAILURE
             return False, msg
-
+        logger.info(f"[LibrarianURPAgent:_check_postconditions] .scud file changes: {changes}")
+        
         target = "librarymapping"
         cleaned_changes = "".join(c for c in changes.lower() if c.isalnum())
         scud_updated = target in cleaned_changes
 
         if not scud_updated:
-            msg = "Postconditions check failed: 'Library Mapping' section not found in .scud file changes."
+            msg = f"Postconditions check failed: 'Library Mapping' section not found in .scud file changes. Following are the changes:{cleaned_changes}"
             logger.warning(msg)
             result.category = FailureCategory.AGENTIC_FAILURE
             return False, msg

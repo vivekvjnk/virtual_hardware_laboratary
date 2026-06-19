@@ -35,14 +35,12 @@ class WorkspaceManager:
 
         # VAP state variables
         self.circuit_name: dict[str, str] = {}
-        self.workspace_path: dict[str, Optional[Path]] = {}
         self._archive_count: dict[str, int] = {}
 
         logger.info(f"[WorkspaceManager.__init__] WorkspaceManager initialized with root: {self.project_workspace_root}")
 
     def reset_module_state(self, module: str):
         """Resets the state for a specific module."""
-        self.workspace_path[module] = None
         self._archive_count[module] = 0
         self.circuit_name.pop(module, None)
 
@@ -104,15 +102,6 @@ class WorkspaceManager:
                 self.worktree[module] = self.project_workspace_root / f"{self.project_id}_{module}"
             logger.info(f"[WorkspaceManager.load_project] Recovered state from SQLite. Modules: {self.project_modules}")
 
-        # Reconstruct workspace and archive info
-        for module in self.project_modules:
-            module_dir = self.worktree.get(module) / module
-            
-            # Workspace
-            workspace_dir = module_dir / "Workspace"
-            if workspace_dir.exists():
-                self.workspace_path[module] = workspace_dir
-            
         logger.info(f"[WorkspaceManager.load_project] Project loaded: {self.project_id} at {self.project_workspace_root}")
         return self.project_workspace_root
 
@@ -128,10 +117,9 @@ class WorkspaceManager:
         self._init_project_persistence(self.stable_worktree)
 
         # Reset state
-        self.workspace_path = {}
         self._archive_count = {}
         self.circuit_name = {}
-        (self.stable_worktree / "lib").mkdir(exist_ok=True)
+        (self.stable_worktree / "imports").mkdir(exist_ok=True)
 
         restoration_result = {"project_created": True, "manifest": None}
         if zip_present:
@@ -142,14 +130,14 @@ class WorkspaceManager:
             logger.info(f"[WorkspaceManager.create_project] Project created successfully: {project_id}")
             modules = list(restoration_result["manifest"]["modules"].keys()) if restoration_result["manifest"] else ["main_module"]
             # Filter out "root" and "lib" from modules list as they are not standard modules
-            self.project_modules = [m for m in modules if m not in ["root", "lib"]]
-            self.setup_modules(project_root_path=self.stable_worktree, modules=self.project_modules)
+            self.project_modules = [m for m in modules if m not in ["root",]]
+            self.setup_modules_in_root(project_root_path=self.stable_worktree, modules=self.project_modules)
             
             # --- Semantic Ledger Population ---
             if restoration_result["manifest"]:
                 manifest = restoration_result["manifest"]
                 for m_name, files in manifest.get("modules", {}).items():
-                    if m_name in ["root", "lib"]:
+                    if m_name in ["root",]:
                         continue
                     logger.info(f"[WorkspaceManager.create_project] Populating module '{m_name}' with {len(files)} files from manifest.")
                     mod_id = self.db.insert_project_module(m_name, "WORKER", m_name, f"Bootstrap module {m_name}")
@@ -172,6 +160,10 @@ class WorkspaceManager:
             gitignore_path = self.stable_worktree / ".gitignore"
             if not gitignore_path.exists():
                 gitignore_path.write_text(".vhl/\n.conversation/\n")
+            
+            library_git_keep_path = self.stable_worktree / "imports" / ".gitkeep"
+            library_git_keep_path.write_text("")
+
             self.git.git.add_all()
             try:
                 self.record_operation(
@@ -192,11 +184,11 @@ class WorkspaceManager:
         logger.info(f"[WorkspaceManager.create_project] Project created at: {self.stable_worktree}")
         return self.stable_worktree
     
-    def commit_workspace(self,op_name,author, status, payload, commit_msg):
-        self.git.git.add_all()
+    def commit_workspace(self,op_name,author, status, payload, commit_msg,cwd=None,module_name="root"):
+        self.git.git.add_all(cwd=cwd)
         try:
             self.record_operation(
-                module_name="root",
+                module_name=module_name,
                 op_name=op_name,
                 author=author,
                 status=status,
@@ -216,10 +208,14 @@ class WorkspaceManager:
         for module in self.project_modules:
             worktree_path = self._create_worktree(module)
             self.worktree[module] = worktree_path
+              
 
-
-    def get_agent_workspace(self,module_name):
-        return self.module_paths[module_name] / "Workspace"
+    def get_module_workspace(self,module_name):
+        if module_name in self.project_modules:
+            return self.module_paths[module_name] / "Workspace"
+        else:
+            logger.warning(f"[WorkspaceManager.get_module_workspace] Project modules are not configured yet... project_modules: {self.project_modules}")
+            return Path("")
     
     @property
     def module_names(self) -> List[str]:
@@ -229,20 +225,11 @@ class WorkspaceManager:
     @property # NOTE(New workspace): Implement self.worktree dictionary with proper worktree paths
     def module_paths(self) -> Dict[str,Path]:
         """Returns a list of Paths for all available modules in the project."""
-        if not self.project_modules:
-            return {}
         module_paths = {}
-        try:
-            for module_name in self.project_modules:
-                module_path = self.worktree[module_name] / module_name
-                if module_path.exists() and module_path.is_dir():
-                    module_paths[module_name]=module_path
-                else:
-                    logger.warning(f"Module directory not found for module '{module_name}': expected at {module_path}")
-            return module_paths
-        except Exception as e:
-            logger.error(f"Worktree dict: {self.worktree}")
-            raise e
+        for module_name in self.project_modules:
+            module_paths[module_name] = self.worktree[module_name] / module_name
+        return module_paths
+        
         
     @property
     def project_name(self) -> Optional[str]:
@@ -278,21 +265,19 @@ class WorkspaceManager:
         return tree.get(module_name, {})
 
 
-    def setup_modules(self, project_root_path: Path, modules: List[str] = ["main_module"], system_boundary_doc: str = "system-boundary.md"):
+    def setup_modules_in_root(self, project_root_path: Path, modules: List[str] , system_boundary_doc: str = "system-boundary.md"):
         """Sets up the directory structure for multiple modules in a project."""
-        for module in modules:
+        for module_name in modules:
             # Module directory creation logic
-            module_dir = project_root_path / module
+            module_dir = project_root_path / module_name
             module_dir.mkdir(exist_ok=True)
             worksapce_dir = module_dir / "Workspace"
             worksapce_dir.mkdir(exist_ok=True)
-
-            self.workspace_path[module] = worksapce_dir    
             
             # Symlinks
-            lib_link = worksapce_dir / "lib"
+            lib_link = worksapce_dir / "imports"
             if not os.path.lexists(lib_link):
-                rel_lib_source = os.path.relpath(project_root_path / "lib", lib_link.parent)
+                rel_lib_source = os.path.relpath(project_root_path / "imports", lib_link.parent)
                 os.symlink(rel_lib_source, lib_link)
                 
             sb_link = worksapce_dir / system_boundary_doc
@@ -300,7 +285,7 @@ class WorkspaceManager:
                 rel_sb_source = os.path.relpath(project_root_path / system_boundary_doc, sb_link.parent)
                 os.symlink(rel_sb_source, sb_link)
 
-            self.set_circuit_name(name=f"{module}.tsx",module=module)
+            self.update_circuit_name_in_db(name=f"{module_name}.tsx",module=module_name)
 
     def create_project_from_zip(self, project_id: str)-> Dict[str, Any]:
         """
@@ -329,7 +314,7 @@ class WorkspaceManager:
 
     def move_scud_to_stable(self,module):
         """move .scud file from workspace to module root"""
-        scud_path = self.get_scud_path(module_name=module)
+        scud_path = self.get_module_workspace(module_name=module) / f"{module}.scud"
         if scud_path.exists():
             module_path = self.module_paths.get(module)
             # Copy scud file to module path
@@ -340,7 +325,7 @@ class WorkspaceManager:
             scud_path.unlink()
 
             # Create symlink in workspace pointing to the new location in module root
-            symlink_path = self.get_agent_workspace(module_name=module) / scud_path.name
+            symlink_path = self.get_module_workspace(module_name=module) / scud_path.name
             if symlink_path.exists() or symlink_path.is_symlink():
                 symlink_path.unlink()
             rel_destination = os.path.relpath(destination, symlink_path.parent)
@@ -351,18 +336,18 @@ class WorkspaceManager:
 
     # VAP related methods
     # =====================
-    def set_circuit_name(self, name: str,module:str):
+    def update_circuit_name_in_db(self, name: str,module:str):
         """Sets the circuit name for the current project."""
         if name:
             self.circuit_name[module] = name
             if self.db:
                 self.db.upsert_project_setting(f"{module}.circuit_name", name)
-            logger.info(f"[WorkspaceManager.set_circuit_name] Circuit name set to: {self.circuit_name[module]}")
+            logger.info(f"[WorkspaceManager.update_circuit_name_in_db] Circuit name set to: {self.circuit_name[module]}")
         else:
-            logger.error(f"[WorkspaceManager.set_circuit_name] Triggered with None for circuit name")
+            logger.error(f"[WorkspaceManager.update_circuit_name_in_db] Triggered with None for circuit name")
 
     def get_maw_workspace_info(self, module_name):
-        workspace_path = self.workspace_path[module_name]
+        workspace_path = self.get_module_workspace(module_name)
         return {
         "workspace": workspace_path,
         "scud_path": workspace_path / f"{module_name}.scud",
@@ -384,12 +369,9 @@ class WorkspaceManager:
         return workspace_scud_path
         
     def get_maw_workspace_circuit_path(self,module_name) -> Path:
-        return self.get_workspace_path(module_name=module_name) / self.circuit_name.get(module_name)
+        return self.get_module_workspace(module_name=module_name) / self.circuit_name.get(module_name)
     
     
-    def get_workspace_path(self,module_name) -> Path:
-        return self.workspace_path[module_name]
-
     def resolve_resource_path(self, project_id: str, module_name: Optional[str], resource_type: str, iteration_id: Optional[str] = None) -> Path:
         if not project_id and resource_type == "ProjectZip":
             temp_dir = self.project_workspace_root / ZIP_TEMP_DIR
@@ -442,7 +424,7 @@ class WorkspaceManager:
         return {
             "project_id": self.project_id,
             "project_manifest": self.git.get_tree_view() if self.git else {},
-            "workspace_path": str(self.workspace_path.get(module_name)),
+            "workspace_path": str(self.get_module_workspace(module_name)),
             "archive_count": self._archive_count.get(module_name, 0),
             "is_synthesizable": is_synthesizable,
             "circuit_name": self.circuit_name.get(module_name),
@@ -470,7 +452,7 @@ class WorkspaceManager:
         # 1. Commit operation via Git wrapper
 
         # This creates a commit and returns metadata (hash, parent, changes)
-        git_metadata = self.git.commit_operation(commit_message)
+        git_metadata = self.git.commit_operation(commit_message, cwd=self.worktree.get(module_name))
         logger.info(f"[WorkspaceManager.record_operation] Git commit created for operation '{op_name}' in module '{module_name}' with status '{status}'. Commit hash: {git_metadata['commit_hash']}")
         # 2. Record in SQLite via DB manager
         # This handles the transaction for snapshot, changes, and semantic operation
@@ -493,14 +475,14 @@ class WorkspaceManager:
         if not self.git:
             raise RuntimeError("Project not loaded. Git persistence not initialized.")
         
-        if path.is_absolute():
+        if file_path.is_absolute():
             try:
-                path = path.relative_to(self.worktree.get(module_name))
+                file_path = file_path.relative_to(self.worktree.get(module_name))
             except ValueError:
                 pass
         
         try:
-            diff_output = self.git.git._run_git(["diff", "HEAD", str(path)])
+            diff_output = self.git.git._run_git(["diff", "HEAD","--", str(file_path)], cwd=self.worktree.get(module_name))
             return diff_output
         except Exception as e:
             logger.error(f"Error running git diff for file {file_path}: {e}")

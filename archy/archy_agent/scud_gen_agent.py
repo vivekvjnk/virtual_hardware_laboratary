@@ -78,7 +78,7 @@ def archy_build_scud(
             llm = ReplayLLM.from_persistence(
                 replay_dir, 
                 usage_id="archy-scud-architect",
-                current_workspace=str(workspace)
+                current_workspace_root=str(workspace)
             )
         else:
             llm = LLM(

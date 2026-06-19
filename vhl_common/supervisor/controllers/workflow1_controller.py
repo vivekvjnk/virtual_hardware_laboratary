@@ -129,7 +129,10 @@ class Workflow1Controller(AbstractController):
                 if process_result.outcome is LastTaskOutcome.TASK_COMPLETED: # Success case
                     if process_result.category is FailureCategory.NONE:
                         found_completion = True
+                        # Move the scud file to module root
                         self._workspace_manager.move_scud_to_stable(module_name)
+                        # Commit changes 
+                        self._workspace_manager.commit_workspace(op_name="ARCHY_SCUD_CREATE", author=f"{module_name}.archy",payload={"desc.":"Finished SCUD generation successfully"},commit_msg=f"Generate .scud for {module_name}",status="SUCCESS",cwd=self._workspace_manager.worktree.get(module_name),module_name=module_name)
                         break
                     elif process_result.category is FailureCategory.AGENTIC_FAILURE:
                         logger.warning(f"[{self.controller_id}.handle_archy] Archy returned {process_result}. Waiting for HIL resolution...")

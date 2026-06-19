@@ -83,7 +83,7 @@ class LibrarianAgent:
         if not os.path.exists(scud_path):
             raise FileNotFoundError(f"SCUD file not found at: {scud_path}")
 
-        library_path = os.path.join(self.working_dir,"lib/imports/")
+        library_path = os.path.join(self.working_dir,"imports/")
         agent = self._setup_agent(sys_prompt_kwargs={"scud_path": scud_path, "library_path": library_path})
         conversation = Conversation(
             agent=agent,

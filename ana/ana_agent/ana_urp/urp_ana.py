@@ -157,10 +157,8 @@ class AnaURPAgent(AbstractURPAgent):
     def _on_initialize(self, context: AnaContext) -> None:
         """
         Responsibilities
-        - Parse and validate AnaContext.
         - Initialise LLM, condenser, Agent, and Conversation objects.
         - Bind WorkspaceManager, SQLiteManager, and protocol clients.
-        - MAW (Mirrored-Attempt-Workspace) setup.
         - The Conversation is opened with persistence so that condensation
           across error-correction iterations is possible.
         """
@@ -179,13 +177,13 @@ class AnaURPAgent(AbstractURPAgent):
             f"[AnaURPAgent._on_initialize] Initialized for module='{self.module_name}', "
         )
 
-        module_path = self.workspace_manager.module_paths[self.module_name] /  "Workspace"
+        agent_workspace_path = self.workspace_manager.get_module_workspace(self.module_name)
         # ---- LLM setup ----
         if not self.llm:
             self.llm = get_llm_for_agent(
                 agent_id=f"{self.module_name}.ana",
                 module_name= self.module_name,
-                workspace_path=str(self.workspace_manager.get_workspace_path(self.module_name)),
+                project_root_path=str(self.workspace_manager.worktree.get(self.module_name)),
             )
 
         # ---- Condenser pipeline (mirrors ANA-W1 pattern) ----
@@ -210,6 +208,7 @@ class AnaURPAgent(AbstractURPAgent):
         submodule_root = Path(__file__).resolve().parent
         sys_prompt_path = os.path.join(submodule_root, "ana_prompt.j2")
 
+        # NOTE: Outdated method name `get_maw_workspace_info`. Update to new conventions
         sys_prompt_kwargs = self.workspace_manager.get_maw_workspace_info(self.module_name)
 
         self.agent = Agent(
@@ -224,9 +223,9 @@ class AnaURPAgent(AbstractURPAgent):
         
         self.conversation = Conversation(
             agent=self.agent,
-            workspace=str(module_path),
+            workspace=str(agent_workspace_path),
             callbacks=[self._conversation_callback],
-            persistence_dir=str(module_path / ".conversation") if config.conversation_persistence else None,
+            persistence_dir=str(agent_workspace_path / ".conversation") if config.conversation_persistence else None,
         )
 
 
@@ -246,61 +245,18 @@ class AnaURPAgent(AbstractURPAgent):
 
         Logic
         -----
-        1. Query semantic_operations for a prior ANA_EVALUATOR / CIRCUIT_SYNTHESIS
-           SUCCESS entry for this module.
-           - If found  → synthesis has happened before. This is either an
-             error-correction or user-triggered improvement iteration.
-             Copy Stable/ circuit into the workspace directory.
-           - If not found → first-time synthesis. Circuit is yet to be synthesised 
-        2. Create new iteration directory via WorkspaceManager.
-        3. Stash iteration paths on self for use by process() and post-conditions.
+        1. Check if scud file is available and library path is populated
         """
         logger.info(
             f"[AnaURPAgent._check_preconditions] module='{self.module_name}'"
         )
 
+        # TODO: Add preconditions to check if library components are available
         try:
-            # ---- 1. Check for prior successful synthesis ----
-            prior_synthesis = self.sqlite_manager.conn.execute(
-                """
-                SELECT so.status
-                FROM semantic_operations so
-                JOIN artifact_snapshots sn ON so.artifact_ref_id = sn.id
-                WHERE so.author = ? AND so.op_name = ? AND sn.module_name = ?
-                  AND so.status = 'SUCCESS'
-                ORDER BY so.id DESC LIMIT 1
-                """,
-                (ANA_AGENT_ID, ANA_OPERATION_NAME, self.module_name),
-            ).fetchone()
-
-            # First synthesis — Do nothing..
-            if not prior_synthesis:
-                logger.info(
-                    "[AnaURPAgent._check_preconditions] No prior synthesis found. "
-                    "Operating in first-synthesis mode."
-                )
-            # ---- 2. If prior synthesis exists, prepare workspace with stable circuit ----
+            if self.workspace_manager.get_scud_path(self.module_name).exists():
+                return True, "Pre-conditions satisfied. Iteration directory created."
             else:
-                logger.info(
-                    "[AnaURPAgent._check_preconditions] Prior synthesis detected. "
-                    "Operating in error-correction / improvement mode."
-                )         
-                stable_circuit_path = self.workspace_manager.get_circuit_path_from_stable(
-                    module_name=self.module_name
-                )
-                if not stable_circuit_path.is_file():
-                    msg = (
-                        f"[AnaURPAgent._check_preconditions] Prior synthesis recorded but "
-                        f"stable circuit not found at {stable_circuit_path}. "
-                        "Cannot proceed with error-correction iteration."
-                    )
-                    logger.error(msg)
-                    return False, msg
-
-                
-            
-            return True, "Pre-conditions satisfied. Iteration directory created."
-
+                return False, f"SCUD file doesn't exist at : {self.workspace_manager.get_scud_path(self.module_name)}"
         except Exception as e:
             msg = f"[AnaURPAgent._check_preconditions] Exception: {e}"
             logger.exception(msg)
@@ -313,24 +269,9 @@ class AnaURPAgent(AbstractURPAgent):
     async def process(self, message: MessageEnvelope) -> Any:
         """
         Core execution — invokes ANA-W1 (circuit synthesis / error-correction).
-
-        Mapped from: handle_trigger_w1 in ANADStateMachine.
-
-        Paths configured
-        ----------------
-        - scud_path              : .scud file from current iteration (symlinked by WorkspaceManager)
-        - circuit_file_path      : expected output .tsx path
-        - schematic_images_path  : schematic images directory (symlinked)
-        - library_path           : lib/imports directory (symlinked)
-        - observations           : pulled from message payload OR from pending
-                                   error message set by previous post-condition REJECT
-
-        ANA-W1 operating mode is determined by whether previous_iteration_dir
-        is set (error-correction) or not (synthesis).  No branch on observation
-        list alone — this aligns with the URP design discussion outcome.
         """
         logger.info(
-            f"[AnaURPAgent.process] Starting ANA-W1 for module='{self.module_name}', "
+            f"[AnaURPAgent.process] Starting ANA URP Agent for module='{self.module_name}', "
         )
 
         self._pending_error_message = None  #NOTE: orchestrator should consume last error message before calling process again
@@ -360,7 +301,7 @@ class AnaURPAgent(AbstractURPAgent):
         elif self.conversation.state.execution_status in [ConversationExecutionStatus.STUCK, ConversationExecutionStatus.ERROR]:
             process_outcome = LastTaskOutcome.TASK_FAILED
         elif self.conversation.state.execution_status == ConversationExecutionStatus.IDLE:
-            logger.error(f"[ArchyURPAgent:process]Conversation status is ConversationExecutionStatus.IDLE after running the conversation. This should never happen!!!")
+            logger.error(f"[AnaURPAgent.process]Conversation status is ConversationExecutionStatus.IDLE after running the conversation. This should never happen!!!")
             process_outcome = LastTaskOutcome.NONE
         else:
             process_outcome = LastTaskOutcome.NONE

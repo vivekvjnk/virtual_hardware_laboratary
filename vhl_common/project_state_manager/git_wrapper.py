@@ -9,17 +9,17 @@ class GitClientWrapper:
     def __init__(self, git_client:GitClient):
         self.git = git_client  # existing low-level client
 
-    def commit_operation(self, message: str) -> dict:
+    def commit_operation(self, message: str, cwd: Optional[str]=None) -> dict:
         """
         Creates a commit and returns commit metadata.
         """
         # Step 1: Add all changed files. Assumption: .gitignore file is configured properly to ignore all unwanted files.
-        self.git.add_all()
+        self.git.add_all(cwd=cwd)
         
-        commit_hash = self.git.commit(message)
-        parent_hash = self.git.get_parent(commit_hash)
+        commit_hash = self.git.commit(message, cwd=cwd)
+        parent_hash = self.git.get_parent(commit_hash, cwd=cwd)
 
-        changed_files = self._get_changed_files(parent_hash, commit_hash)
+        changed_files = self._get_changed_files(parent_hash, commit_hash, cwd=cwd)
 
         return {
             "commit_hash": commit_hash,
@@ -27,16 +27,16 @@ class GitClientWrapper:
             "changed_files": changed_files
         }
 
-    def _get_changed_files(self, parent: Optional[str], current: str) -> List[dict]:
+    def _get_changed_files(self, parent: Optional[str], current: str, cwd: Optional[str]=None) -> List[dict]:
         """
         Returns list of changed files with change type.
         """
         if not parent:
             # For the first commit, compare against the empty tree hash
             empty_tree_hash = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
-            diff = self.git.diff(empty_tree_hash, current)
+            diff = self.git.diff(empty_tree_hash, current, cwd=cwd)
         else:
-            diff = self.git.diff(parent, current)
+            diff = self.git.diff(parent, current, cwd=cwd)
 
         # Expected format:
         # [("ADDED", "lib/a.tsx"), ("MODIFIED", "file.scud")]
@@ -48,13 +48,13 @@ class GitClientWrapper:
             for change_type, path in diff
         ]
 
-    def get_tree_view(self, commit_ish: str = "HEAD") -> dict:
+    def get_tree_view(self, commit_ish: str = "HEAD", cwd: Optional[str]=None) -> dict:
         """
         Generates a nested dictionary representing the repository structure at a given commit.
         This serves as the Git-native replacement for the legacy project manifest JSON.
         """
         try:
-            output = self.git.ls_tree(commit_ish)
+            output = self.git.ls_tree(commit_ish, cwd=cwd)
         except Exception as e:
             return {}
 

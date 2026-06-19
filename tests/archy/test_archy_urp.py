@@ -74,7 +74,7 @@ async def test_archy_urp_agent(workspace_manager, replay_llm):
         # But the existing snapshot is at bms-monitor-module/.conversation
         # So I'll adjust the environment variable or the directory structure if needed.
         # For this test, we can just keep the existing manual setup or fix the factory.
-        llm = replay_llm.from_persistence(str(os.environ["VHL_E2E_REPLAY_DIR"]),agent_id=f"{module_name}.archy", current_workspace=str(workspace_manager.get_workspace_path(module_name=module_name)))
+        llm = replay_llm.from_persistence(str(os.environ["VHL_E2E_REPLAY_DIR"]),agent_id=f"{module_name}.archy", current_workspace=str(workspace_manager.get_module_workspace(module_name=module_name)))
     else:
         llm = None # Will be created by agent
         

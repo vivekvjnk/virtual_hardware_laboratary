@@ -193,7 +193,7 @@ class ArchyURPAgent(AbstractURPAgent):
         ```
         """
         
-        self.agent_workspace_path = self.workspace_manager.get_agent_workspace(module_name=context.module_name)
+        self.agent_workspace_path = self.workspace_manager.get_module_workspace(module_name=context.module_name)
 
         logger.info(f"[build_context] Building context for module: {context.module_name}; Agent workspace path: {self.agent_workspace_path}")
 
@@ -320,7 +320,7 @@ class ArchyURPAgent(AbstractURPAgent):
             self.llm = get_llm_for_agent(
                 agent_id=f"{context.module_name}.archy",
                 module_name= self.module_name,
-                workspace_path=str(self.workspace_manager.get_workspace_path(self.module_name)),
+                project_root_path=str(self.workspace_manager.worktree.get(self.module_name)),
             )
 
         surgical_condenser = LargeFileSurgicalCondenser(
@@ -363,7 +363,7 @@ class ArchyURPAgent(AbstractURPAgent):
             logger.warning(f"[ArchyURPAgent._on_initialize] Missing required configuration in context: module_name, workspace, or image_path. Agent may fail if these are not provided in the first message.")
             # raise ValueError(f"Missing required configuration in context: module_name, workspace, or image_path: config={config}")
 
-        agent_workspace_path = self.workspace_manager.get_agent_workspace(self.module_name)
+        agent_workspace_path = self.workspace_manager.get_module_workspace(self.module_name)
         sys_prompt_kwargs = {
             "module_name": self.module_name,
             "workspace": str(agent_workspace_path),
@@ -476,7 +476,7 @@ class ArchyURPAgent(AbstractURPAgent):
             return False, f"Failed to compute checksum for scud file: {e}"
 
         try:
-            scud_file_path = str(scud_file.relative_to(self.workspace_manager.get_workspace_path(self.module_name)))
+            scud_file_path = str(scud_file.relative_to(self.workspace_manager.get_module_workspace(self.module_name)))
         except Exception:
             scud_file_path = str(scud_file)
 

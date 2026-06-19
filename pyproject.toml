@@ -42,7 +42,6 @@ members = [
 ]
 
 [tool.uv.sources]
-litellm = { git = "https://github.com/vivekvjnk/litellm.git", branch = "fix/vertex-gemini-multimodal-drop" }
 openhands-sdk = { git = "https://github.com/vivekvjnk/agent-sdk.git", branch = "feat/escalate_tool", subdirectory = "openhands-sdk" }
 openhands-tools = { git = "https://github.com/vivekvjnk/agent-sdk.git", branch = "feat/escalate_tool", subdirectory = "openhands-tools" }
 
@@ -53,10 +52,6 @@ archy = { workspace = true }
 librarian = { workspace = true }
 vhl-common = { workspace = true }
 
-[tool.uv]
-override-dependencies = [
-    "litellm @ git+https://github.com/vivekvjnk/litellm.git@fix/vertex-gemini-multimodal-drop"
-]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
