@@ -166,7 +166,7 @@ export class VHLRuntime implements RuntimeSender {
                 await handleWorkspaceUpload(msg as AgentMessage, this.projectState.project_dir || this.workspaceDir, this);
                 break;
             case "VAP_EXECUTE": {
-                const { context } = await handleVapExecute(msg as AgentMessage, this.projectState.project_dir || this.workspaceDir, this);
+                const { context } = await handleVapExecute(msg as AgentMessage,  this);
                 this.activeVapContext = context;
                 break;
             }
@@ -308,6 +308,7 @@ export class VHLRuntime implements RuntimeSender {
         } as any);
     }
 
+    //TODO: Refactor this method to align with new workspace concepts
     public async onStableCircuitUpdated(circuitName: string): Promise<void> {
         console.log(`[VHLRuntime] Stable circuit updated: ${circuitName}`);
 

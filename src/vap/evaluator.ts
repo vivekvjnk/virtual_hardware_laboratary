@@ -27,14 +27,14 @@ export interface EvaluationResult {
 /**
  * Evaluate a circuit file using tsci eval
  * 
- * @param tsxPath - Path to the .tsx circuit file relative to evalDir
+ * @param circuit_name - Name of the .tsx circuit file relative to evalDir
  * @param resultsDir - Directory to store evaluation results
  * @param evalDir - Evaluation COW workspace directory (CWD for evaluation)
  * @param timeoutMs - Timeout in milliseconds (default: 30000)
  * @returns EvaluationResult
  */
 export function evaluateCircuit(
-    tsxPath: string,
+    circuit_name: string,
     resultsDir: string,
     evalDir: string,
     timeoutMs: number = 300000
@@ -45,7 +45,7 @@ export function evaluateCircuit(
         let processClosed = false;
         const startTime = Date.now();
 
-        const proc = spawn("tsci", ["build", tsxPath], {
+        const proc = spawn("tsci", ["build", circuit_name], {
             stdio: "pipe",
             cwd: evalDir,
             env: {
@@ -74,7 +74,7 @@ export function evaluateCircuit(
         const timer = setTimeout(() => {
             if (!processClosed) {
                 timedOut = true;
-                logs.push(`[VAP] Evaluation timed out after ${timeoutMs}ms`);
+                logs.push(`[VAP.evaluateCircuit] Evaluation timed out after ${timeoutMs}ms`);
 
                 try {
                     if (proc.pid) {
@@ -126,7 +126,7 @@ export function evaluateCircuit(
             processClosed = true;
             clearTimeout(timer);
 
-            logs.push(`[VAP] Failed to spawn process: ${err.message}`);
+            logs.push(`[VAP.evaluateCircuit] Failed to spawn process: ${err.message}`);
             // Note: You may want to include metadata/status here to match EvaluationResult
             resolve({
                 decision: "REJECT",

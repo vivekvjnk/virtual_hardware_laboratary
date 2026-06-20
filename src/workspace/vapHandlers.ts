@@ -15,82 +15,37 @@ import { ROLE_RUNTIME } from "../server/roles.js";
 
 export async function handleVapExecute(
     msg: AgentMessage,
-    projectDir: string,
     sender: RuntimeSender
 ): Promise<{ taskId: string, context: VapContext }> {
     let taskId = randomUUID();
-    let paths: any = null;
     try {
-        console.log("[VHLRuntime] Processing VAP_EXECUTE");
-        const { circuit_name, blob_id, iteration_id, module_name } = msg.payload;
-        if (!circuit_name || !blob_id) {
-            throw new Error("Missing circuit_name or blob_id in VAP_EXECUTE payload");
+        console.log("[VHLRuntime.handleVapExecute] Processing VAP_EXECUTE");
+        const { circuit_name, workspace } = msg.payload;
+        if (!circuit_name || !workspace) {
+            throw new Error("Missing circuit_name or workspace in VAP_EXECUTE payload");
         }
-
         const datetime = new Date().toISOString().replace(/[:.]/g, "-");
-        console.log(`[VHLRuntime] Setting up COW workspace for circuit: ${circuit_name} (Task: ${taskId})`);
-
-        // Determine the source directory for the COW clone.
-        // If "Workspace" directory exists, use it as the source for evaluation.
-        const workspaceDir = path.join(projectDir, "Workspace");
-        const hasWorkspace = existsSync(workspaceDir);
-        const cowSourceDir = hasWorkspace ? workspaceDir : projectDir;
-
-        // 1. Create COW Workspace (hardlink clone)
-        paths = await COWWorkspaceManager.createEvaluationWorkspace(taskId, cowSourceDir);
-
-        // Determine results directory in the main workspace (for persistence)
-        let resultsDir: string;
-        if (!iteration_id || iteration_id === "workspace" || iteration_id === "current") {
-            resultsDir = path.join(projectDir, "Workspace", "eval_results");
-        } else {
-             resultsDir = path.join(projectDir, "Archives", iteration_id, "eval_results");
-        }
+        console.log(`[VHLRuntime.handleVapExecute] Setting up COW workspace for circuit: ${circuit_name} (Task: ${taskId})`);
+        
+        let resultsDir: string =  path.join(workspace, "evaluation_results");
         await fs.mkdir(resultsDir, { recursive: true });
 
-        // 2. Pull circuit code from MinIO to a temporary location
-        const tempPullDir = path.join(TEMP_DIR, `pull_${taskId}`);
-        await fs.mkdir(tempPullDir, { recursive: true });
-        const localPath = await pullObject(blob_id, tempPullDir);
-
-        // 3. Inject circuit into the evaluation workspace (breaks hardlink)
-        const relativeTsxPath = circuit_name;
-        await COWWorkspaceManager.injectProvisionalFile(localPath, relativeTsxPath, taskId);
-
-        // Cleanup temp pull dir
-        await fs.rm(tempPullDir, { recursive: true, force: true }).catch(() => { });
-
-        // 4. Start Evaluation
         const initResult = await runtime.startEvaluation(
             circuit_name,
-            relativeTsxPath,
             resultsDir,
-            paths.taskRoot,
+            workspace,
             datetime,
             taskId
         );
+        console.log(`[VHLRuntime.handleVapExecute] Evaluation started for task ${taskId} with circuit: ${circuit_name}. Evaluation task initialization results: ${initResult}. Waiting for completion...`);
 
-        console.log(`[VHLRuntime] Evaluation started for task ${taskId}. Waiting for completion...`);
-
-        // 5. Wait for completion
+        // Wait for completion
         const status = await runtime.waitForTask(taskId);
-        console.log(`[VHLRuntime] Evaluation complete for task ${taskId}. Result: ${status.eval_status}`);
+        console.log(`[VHLRuntime.handleVapExecute] Evaluation complete for task ${taskId}. Result: ${status.eval_status}`);
 
-        // 6. Report results
+        // Report results
         try {
-            const zipPath = `${resultsDir}.zip`;
-            const objectName = `${circuit_name}_${datetime}_eval_results.zip`;
-
-            console.log(`[VHLRuntime] Compressing results: ${resultsDir} -> ${zipPath}`);
-            await compressDirectory(resultsDir, zipPath);
-
-            console.log(`[VHLRuntime] Uploading results to MinIO: ${objectName}`);
-            await pushObject(zipPath, objectName);
-
-            if (status.metadata) {
-                status.metadata.results_blob_id = objectName;
-            }
-
+            console.log(`[VHLRuntime.handleVapExecute] Task ${taskId} results are stored in ${resultsDir}. Sending VAP_COMPLETE to agent backend...`);
             sender.send({
                 id: randomUUID(),
                 type: "VAP_COMPLETE",
@@ -99,12 +54,8 @@ export async function handleVapExecute(
                 source: ROLE_RUNTIME,
                 payload: status
             });
-            console.log(`[VHLRuntime] Task ${taskId} results reported and uploaded.`);
-
-            await fs.unlink(zipPath).catch(() => { });
-
         } catch (err: any) {
-            console.error(`[VHLRuntime] Failed to report results for task ${taskId}:`, err);
+            console.error(`[VHLRuntime.handleVapExecute] Failed to send VAP_COMPLETE for task ${taskId}:`, err);
             sender.sendError("VAP_REPORT_FAILED", err.message);
         }
 
@@ -118,7 +69,7 @@ export async function handleVapExecute(
         };
 
     } catch (err: any) {
-        console.error("[VHLRuntime] VAP_EXECUTE failed:", err);
+        console.error("[VHLRuntime.handleVapExecute] VAP_EXECUTE failed:", err);
         if (taskId) {
             await COWWorkspaceManager.cleanup(taskId).catch(() => { });
         }
@@ -141,15 +92,7 @@ export async function handleVapDecision(
 
     try {
         if (decision === "ACCEPT") {
-            const workspaceDir = path.join(projectDir, "Workspace");
-            const hasWorkspace = existsSync(workspaceDir);
-            const cowTargetDir = hasWorkspace ? workspaceDir : projectDir;
-
-            console.log(`[VHLRuntime] Committing changes for task ${taskId} to ${cowTargetDir}`);
-            await COWWorkspaceManager.commit(taskId, cowTargetDir, circuitName || undefined);
-            // Stable circuit and circuitjson are updated 
             sender.onStableCircuitUpdated(circuitName);
-
         } else {
             console.log(`[VHLRuntime] Rejecting changes for task ${taskId}`);
         }

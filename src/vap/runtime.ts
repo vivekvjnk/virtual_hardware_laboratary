@@ -55,16 +55,15 @@ export class VAPRuntime {
      */
     public async startEvaluation(
         circuitName: string,
-        relativeTsxPath: string,
         resultsDir: string,
         evalDir: string,
         datetime: string,
         taskId?: string
     ): Promise<{ task_id: string; state: ProcessState }> {
         // 1. Check state and transition
-        console.log(`[VAP] Starting evaluation for circuit: ${circuitName}`);
+        console.log(`[VAPRuntime.startEvaluation] Starting evaluation for circuit: ${circuitName}`);
         this.processState = transitionToEvalInProgress(this.processState);
-        console.log(`[VAP] State transitioned to: ${this.processState}`);
+        console.log(`[VAPRuntime.startEvaluation] State transitioned to: ${this.processState}`);
 
         // 2. Initialize new task
         this.activeTaskId = taskId || randomUUID();
@@ -73,13 +72,13 @@ export class VAPRuntime {
         this.controlState = createControlState();
         this.metadata = null;
         this.activeDatetime = datetime;
-        console.log(`[VAP] New task initialized with ID: ${this.activeTaskId}`);
+        console.log(`[VAPRuntime.startEvaluation] New task initialized with ID: ${this.activeTaskId}`);
 
         // 3. Start background evaluation
-        console.log(`[VAP] Spawning background evaluation task`);
-        this.runEvaluation(relativeTsxPath, circuitName, resultsDir, evalDir, this.activeDatetime);
+        console.log(`[VAPRuntime.startEvaluation] Spawning background evaluation task`);
+        this.runEvaluation(circuitName, resultsDir, evalDir, this.activeDatetime);
 
-        console.log(`[VAP] Evaluation task started, returning task ID: ${this.activeTaskId}`);
+        console.log(`[VAPRuntime.startEvaluation] Evaluation task started, returning task ID: ${this.activeTaskId}`);
         return {
             task_id: this.activeTaskId,
             state: this.processState,
@@ -89,38 +88,35 @@ export class VAPRuntime {
     /**
      * Run evaluation in background
      */
-    private async runEvaluation(relativeTsxPath: string, circuitName: string, resultsDir: string, evalDir: string, datetime: string) {
+    private async runEvaluation(circuitName: string, resultsDir: string, evalDir: string, datetime: string) {
         try {
             // Execute evaluation
-            console.log(`[VAP - runEvaluation] Evaluating: ${circuitName}, relativeTsxPath: ${relativeTsxPath}, resultsDir: ${resultsDir}, evalDir: ${evalDir}, datetime: ${datetime}`);
-            const result = await evaluateCircuit(relativeTsxPath, resultsDir, evalDir);
-            console.log(`[VAP] Evaluation completed with decision: ${result.decision}`);
+            console.log(`[VAPRuntime.runEvaluation] Evaluating: ${circuitName}, resultsDir: ${resultsDir}, evalDir: ${evalDir}, datetime: ${datetime}`);
+            const result = await evaluateCircuit(circuitName, resultsDir, evalDir);
+            console.log(`[VAPRuntime.runEvaluation] Evaluation completed with decision: ${result.decision}`);
 
             // Update logs
             this.logState = appendLogs(this.logState, result.logs);
-            console.log(`[VAP] Logs updated, total entries: ${this.logState.logs.length}`);
+            console.log(`[VAPRuntime.runEvaluation] Logs updated, total entries: ${this.logState.logs.length}`);
 
             // Set decision
             this.controlState = setDecision(this.controlState, result.decision);
-            console.log(`[VAP] Control state updated with decision: ${result.decision}`);
+            console.log(`[VAPRuntime.runEvaluation] Control state updated with decision: ${result.decision}`);
 
             // Store metadata
             this.metadata = result.metadata || null;
-            console.log(`[VAP] Metadata stored`);
-
-            // NOTE: File operations (ACCEPT/REJECT cleanup) are now handled by VHLRuntime
-            // after observing the state transition to 'Default' and checking the decision.
+            console.log(`[VAPRuntime.runEvaluation] Metadata stored`);
 
         } catch (err: any) {
             // Handle unexpected runtime errors
-            console.error(`[VAP] Runtime error caught: ${err.message}`);
-            this.logState = appendLogs(this.logState, [`[VAP] Runtime Error: ${err.message}`]);
+            console.error(`[VAPRuntime.runEvaluation] Runtime error caught: ${err.message}`);
+            this.logState = appendLogs(this.logState, [`[VAPRuntime.runEvaluation] Runtime Error: ${err.message}`]);
             this.controlState = setDecision(this.controlState, "REJECT");
-            console.log(`[VAP] Runtime error occurred, setting decision to REJECT`);
+            console.log(`[VAPRuntime.runEvaluation] Runtime error occurred, setting decision to REJECT`);
         } finally {
             // Transition back to Default (wait-for-poll)
             this.processState = transitionToDefault(this.processState);
-            console.log(`[VAP] Evaluation task completed, state transitioned to: ${this.processState}`);
+            console.log(`[VAPRuntime.runEvaluation] Evaluation task completed, state transitioned to: ${this.processState}`);
         }
     }
 
@@ -143,9 +139,6 @@ export class VAPRuntime {
                 status.metadata = prepareMetadata(this.logState.logs);
             }
 
-            if (this.resultsBlobId) {
-                status.metadata.results_blob_id = this.resultsBlobId;
-            }
 
             status.decision = this.controlState.decision;
             // If decision is set, include eval_status
@@ -157,8 +150,6 @@ export class VAPRuntime {
                 if (this.processState === "Default") {
                     this.activeTaskId = null;
                     this.activeCircuitName = null;
-                    this.resultsBlobId = null;
-                    this.activeBlobId = null;
                     this.activeDatetime = null;
                     this.metadata = null;
                     this.controlState = clearControlState(this.controlState);
@@ -203,9 +194,7 @@ export class VAPRuntime {
         this.controlState = createControlState();
         this.activeTaskId = null;
         this.activeCircuitName = null;
-        this.activeBlobId = null;
         this.activeDatetime = null;
-        this.resultsBlobId = null;
         this.metadata = null;
     }
 }

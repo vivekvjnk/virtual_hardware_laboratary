@@ -10,7 +10,7 @@ import { ROLE_RUNTIME } from "../server/roles.js";
 
 export async function handleWorkspaceUpload(
     msg: AgentMessage,
-    workspaceDir: string,
+    
     sender: RuntimeSender
 ) {
     try {
