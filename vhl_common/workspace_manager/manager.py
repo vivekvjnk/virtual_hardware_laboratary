@@ -1,3 +1,4 @@
+import subprocess
 import hashlib
 import json
 import os, shutil
@@ -184,6 +185,11 @@ class WorkspaceManager:
         logger.info(f"[WorkspaceManager.create_project] Project created at: {self.stable_worktree}")
         return self.stable_worktree
     
+    def populate_stable(self, module_name):
+        """TODO: Implement git merge logic to promote circuit from module worktree branch to stable worktree. """
+        logger.info(f"[WorkspaceManager.populate_stable] Promoting circuit for module '{module_name}' to Stable directory.")
+        
+
     def commit_workspace(self,op_name,author, status, payload, commit_msg,cwd=None,module_name="root"):
         self.git.git.add_all(cwd=cwd)
         try:
@@ -208,7 +214,10 @@ class WorkspaceManager:
         for module in self.project_modules:
             worktree_path = self._create_worktree(module)
             self.worktree[module] = worktree_path
-              
+            # Go in each worktree path and run `npm install` if package.json exists
+            package_json_path = worktree_path / "package.json"
+            if package_json_path.exists():
+                subprocess.run(["npm", "install"], cwd=worktree_path)
 
     def get_module_workspace(self,module_name):
         if module_name in self.project_modules:

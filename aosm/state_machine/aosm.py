@@ -711,7 +711,7 @@ class AOSM:
         """
         logger.info(f"[AOSM.run_workflow_1] Starting sequential Workflow 1 for module: {module_name}")
         try:
-            timeout = 1200
+            timeout = 2700
 
             # 1. Step 1: Archy
             await self.workflow_controller.handle_archy(module_name=module_name,timeout=timeout)

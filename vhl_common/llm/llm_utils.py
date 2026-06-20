@@ -72,5 +72,11 @@ def conversation_map(agent_id) -> str|None:
                                     "communication-bridge.ana"      :"675b377535524296b69ae9c368afc040"}
     bms_project_refactored_conversation_map = {"communication-bridge.archy"    :"5e0f524b481a44c2af394c4739ade630",
                                                 "communication-bridge.librarian":"da603dc84a72458cac19c61e23d10b0a",
-                                                "communication-bridge.ana"      :"08a9b1f680204d0a97a34619e764e6f5"}
+                                                # "communication-bridge.ana"      :"08a9b1f680204d0a97a34619e764e6f5",
+                                                "bms-monitor-module.archy"    :"4cae554b18b54922b0d4c1aa293f379b",
+                                                "bms-monitor-module.librarian":"27fa3e36e1b74226a0dc39d7edc07b5e",
+                                                # "bms-monitor-module.ana"      :"08a9b1f680204d0a97a34619e764e6f5",
+                                                
+                                                }
+    
     return bms_project_refactored_conversation_map.get(agent_id)

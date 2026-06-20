@@ -141,7 +141,7 @@ class AnaURPAgent(AbstractURPAgent):
         self.sync_client: Optional[SyncClient] = None
 
         # Iteration state — set fresh in pre-conditions each invocation
-        self._workspace_dir: Optional[Path] = None
+        self.agent_workspace_path: Optional[Path] = None
         
 
         # Error payload forwarded from a REJECT post-condition into the next
@@ -177,7 +177,7 @@ class AnaURPAgent(AbstractURPAgent):
             f"[AnaURPAgent._on_initialize] Initialized for module='{self.module_name}', "
         )
 
-        agent_workspace_path = self.workspace_manager.get_module_workspace(self.module_name)
+        self.agent_workspace_path = self.workspace_manager.get_module_workspace(self.module_name)
         # ---- LLM setup ----
         if not self.llm:
             self.llm = get_llm_for_agent(
@@ -189,14 +189,14 @@ class AnaURPAgent(AbstractURPAgent):
         # ---- Condenser pipeline (mirrors ANA-W1 pattern) ----
         # LargeFileSurgicalCondenser keeps file-editor events compact.
         surgical_condenser = LargeFileSurgicalCondenser(
-            threshold_bytes=10240,
+            threshold_bytes=102400,
             target_tool="file_editor",
         )
         pipeline = PipelineCondenser(condensers=[
-            surgical_condenser,
+            # surgical_condenser,
             LLMSummarizingCondenser(
                 llm=self.llm.model_copy(update={"usage_id": "ana_urp_condenser"}),
-                max_size=80,
+                max_size=100,
             ),
         ])
 
@@ -223,9 +223,9 @@ class AnaURPAgent(AbstractURPAgent):
         
         self.conversation = Conversation(
             agent=self.agent,
-            workspace=str(agent_workspace_path),
+            workspace=str(self.agent_workspace_path),
             callbacks=[self._conversation_callback],
-            persistence_dir=str(agent_workspace_path / ".conversation") if config.conversation_persistence else None,
+            persistence_dir=str(self.agent_workspace_path / ".conversation") if config.conversation_persistence else None,
         )
 
 
@@ -351,13 +351,9 @@ class AnaURPAgent(AbstractURPAgent):
             process_result.category = FailureCategory.AGENTIC_FAILURE
             return False,f"ANA-W1 did not produce a circuit .tsx file ."
         logger.info(
-            f"[AnaURPAgent._check_postconditions] module='{self.module_name}', iteration='{self._workspace_dir}', circuit_tsx_path='{circuit_tsx_path}"
+            f"[AnaURPAgent._check_postconditions] module='{self.module_name}', iteration='{self.agent_workspace_path}', circuit_tsx_path='{circuit_tsx_path}"
         )
 
-
-        iteration_dir = self._workspace_dir
-        circuit_name = self.workspace_manager.circuit_name.get(self.module_name)
-        iteration_id = "workspace"
 
         # ---- Step 1: Run ANA-W2 (VAP) ----
         logger.info("[AnaURPAgent._check_postconditions] Launching ANA-W2 validation agent.")
@@ -367,10 +363,10 @@ class AnaURPAgent(AbstractURPAgent):
                 sync_client=self.sync_client,
                 project_id=self.workspace_manager.project_name,
             )
+            circuit_name = self.workspace_manager.circuit_name.get(self.module_name)
             vap_result = await w2_agent.validate_circuit(
                 circuit_name=circuit_name,
-                workspace=str(iteration_dir),
-                iteration_id=iteration_id,
+                workspace=str(self.agent_workspace_path),
                 module_name=self.module_name
             )
         except Exception as e:
@@ -406,7 +402,7 @@ class AnaURPAgent(AbstractURPAgent):
                 logger.error(msg)
                 process_result.category = FailureCategory.VALIDATION_FAILURE
                 return False, msg
-        except e:
+        except Exception as e:
             msg = (f"[AnaURPAgent._handle_vap_accept] Failed: {e}")
             logger.error(msg)
             process_result.category = FailureCategory.INFRASTRUCTURE_FAILURE
@@ -430,19 +426,19 @@ class AnaURPAgent(AbstractURPAgent):
         """
         logger.info("[AnaURPAgent._handle_vap_accept] VAP ACCEPTED — promoting to Stable/.")
 
-        # 1. Promote circuit to Stable/
+        # Promote circuit to Stable/
         # TODO: Outdated method. Refactor according to new workspacemanager implementation and ANA model
         self.workspace_manager.populate_stable(
             module_name=self.module_name,
         )
         logger.info(
-            f"[AnaURPAgent._handle_vap_accept] Stable/ populated from Workspace/"
+            f"[AnaURPAgent._handle_vap_accept] Promoted circuit from {self.workspace_manager.worktree.get(self.module_name)} to {self.workspace_manager.stable_worktree}"
         )
 
         logger.info("[AnaURPAgent._handle_vap_accept] Workspace archived.")
     
 
-        # 3. Record CIRCUIT_SYNTHESIS operation
+        # Record CIRCUIT_SYNTHESIS operation
         snapshot_id = self.workspace_manager.record_operation(
             module_name=self.module_name,
             op_name=ANA_OPERATION_NAME,
@@ -460,15 +456,12 @@ class AnaURPAgent(AbstractURPAgent):
             f"Snapshot ID: {snapshot_id}"
         )
 
-        # 4. Sync project with runtime
-        await self.sync_client.sync_compiled_circuit(project_id=self.workspace_manager.project_name, iteration_id="workspace",module_name=self.module_name)
-        logger.info(f"[AnaURPAgent._handle_vap_accept] StableCircuit and CompiledCircuit sync completed successfully")
 
-        # 5. Send evaluation update to the runtime 
+        # Send evaluation update to the runtime 
         await self.web_socket_client.emit_evaluation_update(task_id=vap_result.get("task_id"), decision=vap_result.get("decision"))
         logger.info(f"[AnaURPAgent._handle_vap_accept] Sent evaluation update to vhl-runtime")
         
-        # 6. Condense conversation history to prevent context bloat on next iteration
+        # Condense conversation history to prevent context bloat on next iteration
         self.conversation.condense()
         logger.info("[AnaURPAgent._handle_vap_accept] Condensed conversation")
 
@@ -492,7 +485,7 @@ class AnaURPAgent(AbstractURPAgent):
             "context for next iteration."
         )
 
-        eval_results_dir = self.workspace_manager.workspace_path.get(self.module_name) / "eval_results"
+        eval_results_dir = Path(vap_result.get("output_dir"))
         error_summary_parts = [
             "The circuit failed VAP evaluation. Please analyse the following evaluation "
             "output file and correct the circuit accordingly.(first 4000 characters of the output log files are attached here for your reference)\n"
@@ -505,7 +498,7 @@ class AnaURPAgent(AbstractURPAgent):
                     try:
                         content = log_file.read_text(encoding="utf-8", errors="replace")
                         error_summary_parts.append(
-                            f"\n--- {log_file.resolve()} ---\n{content[:4000]}"  # cap per file
+                            f"\n--- {log_file.resolve()} ---\n...\n{content[-4000:]}"  # last 4000 chars
                         )
                     except Exception as e:
                         logger.warning(

@@ -328,10 +328,10 @@ class ArchyURPAgent(AbstractURPAgent):
             target_tool="file_editor"
         )
         pipeline = PipelineCondenser(condensers=[
-            surgical_condenser,
+            # surgical_condenser,
             LLMSummarizingCondenser(
                 llm=self.llm.model_copy(update={"usage_id": "condenser"}),
-                max_size=80
+                max_size=100
             )
         ])
 
