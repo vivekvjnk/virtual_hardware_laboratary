@@ -436,34 +436,17 @@ class AnaURPAgent(AbstractURPAgent):
         )
 
         logger.info("[AnaURPAgent._handle_vap_accept] Workspace archived.")
-    
-
-        # Record CIRCUIT_SYNTHESIS operation
-        snapshot_id = self.workspace_manager.record_operation(
-            module_name=self.module_name,
-            op_name=ANA_OPERATION_NAME,
-            author=self.descriptor.agent_id,
-            status="SUCCESS",
-            payload={
-                "vap_decision": vap_result.get("decision"),
-                "task_id": vap_result.get("task_id"),
-                "circuit_name": self.workspace_manager.circuit_name.get(self.module_name),
-            },
-            commit_message=f"CIRCUIT_SYNTHESIS: Module '{self.module_name}' validated successfully",
-        )
-        logger.info(
-            f"[AnaURPAgent._handle_vap_accept] CIRCUIT_SYNTHESIS recorded. "
-            f"Snapshot ID: {snapshot_id}"
-        )
-
 
         # Send evaluation update to the runtime 
+        # NOTE: Emit evaluation update event here to ensure runtime is aware of evaluation decision before next iteration starts. Runtime may cleanup evaluation configs before next iteration starts. 
         await self.web_socket_client.emit_evaluation_update(task_id=vap_result.get("task_id"), decision=vap_result.get("decision"))
         logger.info(f"[AnaURPAgent._handle_vap_accept] Sent evaluation update to vhl-runtime")
         
         # Condense conversation history to prevent context bloat on next iteration
-        self.conversation.condense()
-        logger.info("[AnaURPAgent._handle_vap_accept] Condensed conversation")
+        # TODO: Temporary workaround for scripted responses
+        if not os.getenv("VHL_E2E_REPLAY_DIR"): # Skip condensation during e2e replay to preserve scripted responses
+            self.conversation.condense()
+            logger.info("[AnaURPAgent._handle_vap_accept] Condensed conversation")
 
         return (
             True,

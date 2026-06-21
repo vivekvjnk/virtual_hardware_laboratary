@@ -132,7 +132,7 @@ class Workflow1Controller(AbstractController):
                         # Move the scud file to module root
                         self._workspace_manager.move_scud_to_stable(module_name)
                         # Commit changes 
-                        self._workspace_manager.commit_workspace(op_name="ARCHY_SCUD_CREATE", author=f"{module_name}.archy",payload={"desc.":"Finished SCUD generation successfully"},commit_msg=f"Generate .scud for {module_name}",status="SUCCESS",cwd=self._workspace_manager.worktree.get(module_name),module_name=module_name)
+                        self._workspace_manager.commit_workspace(op_name="SCUD_GENERATION", author=f"{module_name}.archy",payload={"desc.":"Finished SCUD generation successfully"},commit_msg=f"Generate .scud for {module_name}",status="SUCCESS",cwd=self._workspace_manager.worktree.get(module_name),module_name=module_name)
                         break
                     elif process_result.category is FailureCategory.AGENTIC_FAILURE:
                         logger.warning(f"[{self.controller_id}.handle_archy] Archy returned {process_result}. Waiting for HIL resolution...")
@@ -214,6 +214,9 @@ class Workflow1Controller(AbstractController):
                 # Decision logic
                 if process_result.outcome is LastTaskOutcome.TASK_COMPLETED:
                     if process_result.category is FailureCategory.NONE:
+                        # Commit changes 
+                        self._workspace_manager.commit_workspace(op_name="LIBRARY_RESOLUTION", author=f"{module_name}.librarian",payload={"desc.":"Finished library resolution"},commit_msg=f"Imported libraries for {module_name} and updated scud file",status="SUCCESS",cwd=self._workspace_manager.worktree.get(module_name),module_name=module_name)
+                        
                         found_completion = True
                         break
                     elif process_result.category is FailureCategory.AGENTIC_FAILURE:
@@ -278,7 +281,7 @@ class Workflow1Controller(AbstractController):
 
             # 3. Wait for outcomes and handle them
             start_time = asyncio.get_event_loop().time()
-            
+            found_completion = False
             while (asyncio.get_event_loop().time() - start_time) < timeout:
                 process_result = await self.wait_for_outcome(
                     ana_agent_id, 
@@ -293,7 +296,20 @@ class Workflow1Controller(AbstractController):
                 # Case 1 — Success
                 if outcome == LastTaskOutcome.TASK_COMPLETED and category == FailureCategory.NONE:
                     logger.info(f"[{self.controller_id}.handle_ana] ANA-D successfully completed synthesis.")
-                    return
+                    # Move circuit code to stable location and commit changes
+                    self._workspace_manager.move_circuit_to_stable(module_name)
+                    # Commit changes
+                    self._workspace_manager.commit_workspace(
+                        op_name="ANA_CIRCUIT_SYNTHESIS",
+                        author=f"{module_name}.ana",
+                        payload={"desc.":"Finished circuit synthesis successfully", "outcome": str(outcome), "category": str(category)},
+                        commit_msg=f"Completed circuit synthesis for {module_name}",
+                        status="SUCCESS",
+                        cwd=self._workspace_manager.worktree.get(module_name),
+                        module_name=module_name
+                    )
+                    found_completion = True
+                    break
 
                 # Case 5 — Infrastructure Failure
                 elif category == FailureCategory.INFRASTRUCTURE_FAILURE:
@@ -356,8 +372,8 @@ class Workflow1Controller(AbstractController):
                 else:
                     logger.warning(f"[{self.controller_id}.handle_ana] Received unhandled outcome/category: {outcome}/{category}. Waiting for HIL.")
                     continue
-
-            raise TimeoutError("ANA-D did not reach terminal SUCCESS state within timeout")
+            if not found_completion:
+                raise TimeoutError("ANA-D did not reach terminal SUCCESS state within timeout")
 
         finally:
             # Update final status

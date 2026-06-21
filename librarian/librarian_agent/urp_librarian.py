@@ -321,21 +321,6 @@ class LibrarianURPAgent(AbstractURPAgent):
             result.category = FailureCategory.AGENTIC_FAILURE
             return False, msg
 
-        # 5. If validations are successful call self.workspace_manager.record_operation()
-        try:
-            self.workspace_manager.record_operation(
-                module_name=self.module_name,
-                op_name="LIBRARY_UPDATE",
-                author=self.descriptor.agent_id,
-                status="SUCCESS",
-                payload={"library_updated": library_updated, "scud_updated": scud_updated},
-                commit_message="Library update by Librarian agent"
-            )
-        except Exception as e:
-            logger.error(f"Failed to record LIBRARY_UPDATE operation: {e}")
-            result.category = FailureCategory.INFRASTRUCTURE_FAILURE
-            return False, f"Failed to record LIBRARY_UPDATE operation: {e}"
-
         # 6. Return True with appropriate message if all validations are successful.
         return True, "Postconditions check passed: Library updated and SCUD file updated with Library Mapping."        
 

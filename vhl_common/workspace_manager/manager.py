@@ -160,7 +160,7 @@ class WorkspaceManager:
             # Ensure .gitignore exists and ignores .vhl/ directory (SQLite DB)
             gitignore_path = self.stable_worktree / ".gitignore"
             if not gitignore_path.exists():
-                gitignore_path.write_text(".vhl/\n.conversation/\n")
+                gitignore_path.write_text(".vhl/\n.claude/\nnode-modules/\n.tscircuit/\n.conversation/\n")
             
             library_git_keep_path = self.stable_worktree / "imports" / ".gitkeep"
             library_git_keep_path.write_text("")
@@ -330,19 +330,22 @@ class WorkspaceManager:
             destination = module_path / scud_path.name
             shutil.copy2(scud_path, destination)
 
-            # Remove scud file from workspace
-            scud_path.unlink()
-
-            # Create symlink in workspace pointing to the new location in module root
-            symlink_path = self.get_module_workspace(module_name=module) / scud_path.name
-            if symlink_path.exists() or symlink_path.is_symlink():
-                symlink_path.unlink()
-            rel_destination = os.path.relpath(destination, symlink_path.parent)
-            os.symlink(rel_destination, symlink_path)
             logger.info(f"[WorkspaceManager.move_scud_to_stable] Moved SCUD file from {scud_path} to {destination}")
         else:
             logger.warning(f"[WorkspaceManager.move_scud_to_stable] SCUD file not found at {scud_path} for module '{module}'")
 
+    def move_circuit_to_stable(self,module):
+        """move .tsx file from workspace to stable directory in module path"""
+        circuit_path = self.get_module_workspace(module_name=module) / self.circuit_name.get(module)
+        if circuit_path.exists():
+            module_path = self.module_paths.get(module)
+            # Copy circuit file to module path
+            destination = module_path / circuit_path.name
+            shutil.copy2(circuit_path, destination)
+
+            logger.info(f"[WorkspaceManager.move_circuit_to_stable] Moved circuit file from {circuit_path} to {destination}")
+        else:
+            logger.warning(f"[WorkspaceManager.move_circuit_to_stable] Circuit file not found at {circuit_path} for module '{module}'")
     # VAP related methods
     # =====================
     def update_circuit_name_in_db(self, name: str,module:str):

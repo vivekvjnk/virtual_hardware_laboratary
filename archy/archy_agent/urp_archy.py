@@ -450,63 +450,49 @@ class ArchyURPAgent(AbstractURPAgent):
         # Semantic operation section
         # ------
         # Capture 2 semantic operations under success case(scud file is present and 'IN_PROGRESS' string is not there in scud file)
-        try:
-            cursor = self.sqlite_manager.conn.execute(
-                "SELECT id FROM project_modules WHERE module_name = ?",
-                (self.module_name,)
-            )
-            row = cursor.fetchone()
-            if not row:
-                result.category = FailureCategory.INFRASTRUCTURE_FAILURE
-                return False, f"Module '{self.module_name}' not found in project_modules database."
-            mod_id = row["id"]
-        except Exception as e:
-            result.category = FailureCategory.INFRASTRUCTURE_FAILURE
-            return False, f"Database error fetching module ID: {e}"
+        # try:
+        #     cursor = self.sqlite_manager.conn.execute(
+        #         "SELECT id FROM project_modules WHERE module_name = ?",
+        #         (self.module_name,)
+        #     )
+        #     row = cursor.fetchone()
+        #     if not row:
+        #         result.category = FailureCategory.INFRASTRUCTURE_FAILURE
+        #         return False, f"Module '{self.module_name}' not found in project_modules database."
+        #     mod_id = row["id"]
+        # except Exception as e:
+        #     result.category = FailureCategory.INFRASTRUCTURE_FAILURE
+        #     return False, f"Database error fetching module ID: {e}"
 
-        try:
-            import hashlib
-            sha256_hash = hashlib.sha256()
-            with open(scud_file, "rb") as f:
-                for byte_block in iter(lambda: f.read(4096), b""):
-                    sha256_hash.update(byte_block)
-            checksum = sha256_hash.hexdigest()
-        except Exception as e:
-            result.category = FailureCategory.INFRASTRUCTURE_FAILURE
-            return False, f"Failed to compute checksum for scud file: {e}"
+        # try:
+        #     import hashlib
+        #     sha256_hash = hashlib.sha256()
+        #     with open(scud_file, "rb") as f:
+        #         for byte_block in iter(lambda: f.read(4096), b""):
+        #             sha256_hash.update(byte_block)
+        #     checksum = sha256_hash.hexdigest()
+        # except Exception as e:
+        #     result.category = FailureCategory.INFRASTRUCTURE_FAILURE
+        #     return False, f"Failed to compute checksum for scud file: {e}"
 
-        try:
-            scud_file_path = str(scud_file.relative_to(self.workspace_manager.get_module_workspace(self.module_name)))
-        except Exception:
-            scud_file_path = str(scud_file)
+        # try:
+        #     scud_file_path = str(scud_file.relative_to(self.workspace_manager.get_module_workspace(self.module_name)))
+        # except Exception:
+        #     scud_file_path = str(scud_file)
 
-        try:
-            self.sqlite_manager.insert_module_resource(
-                module_id=mod_id,
-                resource_name=scud_file_name,
-                file_path=scud_file_path,
-                resource_type="file",
-                description="Shared Circuit Understanding Document",
-                checksum=checksum
-            )
-        except Exception as e:
-            logger.error(f"Error inserting module resource: {e}")
-            result.category = FailureCategory.INFRASTRUCTURE_FAILURE
-            return False, f"Failed to insert scud resource to database: {e}"
-
-        try:
-            self.workspace_manager.record_operation(
-                module_name=self.module_name,
-                op_name="SCUD_GENERATION",
-                author=self.descriptor.agent_id,
-                status="SUCCESS",
-                payload={"source": scud_file_path},
-                commit_message=f"ARCHY: SCUD File created for {self.module_name}"
-            )
-        except Exception as e:
-            logger.error(f"Error recording operation: {e}")
-            result.category = FailureCategory.INFRASTRUCTURE_FAILURE
-            return False, f"Failed to record SCUD_GENERATION operation: {e}"
+        # try:
+        #     self.sqlite_manager.insert_module_resource(
+        #         module_id=mod_id,
+        #         resource_name=scud_file_name,
+        #         file_path=scud_file_path,
+        #         resource_type="file",
+        #         description="Shared Circuit Understanding Document",
+        #         checksum=checksum
+        #     )
+        # except Exception as e:
+        #     logger.error(f"Error inserting module resource: {e}")
+        #     result.category = FailureCategory.INFRASTRUCTURE_FAILURE
+        #     return False, f"Failed to insert scud resource to database: {e}"
 
         return True, "SCUD construction complete"
 
