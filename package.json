@@ -17,6 +17,12 @@
     "test:jest": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand",
     "clean": "rm -rf dist"
   },
+ "pnpm": {
+    "allowedBuildScripts": [
+      "sharp",
+      "esbuild"
+    ]
+  },
   "dependencies": {
     "@google-cloud/storage": "^7.19.0",
     "@modelcontextprotocol/sdk": "^1.25.1",
@@ -29,7 +35,7 @@
     "minio": "^8.0.6",
     "react": "^19.2.3",
     "sharp": "^0.34.5",
-    "tscircuit": "^0.0.1296-libonly",
+    "tscircuit": "latest",
     "ws": "^8.19.0",
     "zod": "^3.23.8"
   },
@@ -48,11 +54,5 @@
   },
   "engines": {
     "node": ">=20.0.0"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "sharp",
-      "esbuild"
-    ]
   }
 }
