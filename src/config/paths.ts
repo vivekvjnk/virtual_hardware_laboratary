@@ -2,6 +2,7 @@
 
 import path from "path";
 import { fileURLToPath } from "url";
+import * as os from 'os';
 
 /**
  * Node.js ES modules do not provide __dirname / __filename.
