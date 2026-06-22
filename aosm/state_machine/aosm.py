@@ -299,15 +299,7 @@ class AOSM:
 
             zip_present = False
             if project_zip_blob_id:
-                logger.info(f"[AOSM._handle_startup] Downloading project zip: {project_zip_blob_id}")
-                sync_payload = SyncPayload(
-                    sync_id=str(uuid.uuid4()),
-                    project_id="",
-                    resource_type="ProjectZip",
-                    blob_id=f"uploads/{project_zip_blob_id}",
-                    source=EventSource.VHL_AGENT_BACKEND,
-                )
-                await self.sync_client.handle_download_request(sync_payload)
+                logger.info(f"[AOSM._handle_startup] Project zip is present: {project_zip_blob_id}")
                 zip_present = True
             
 
