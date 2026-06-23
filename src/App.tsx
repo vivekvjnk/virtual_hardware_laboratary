@@ -38,12 +38,22 @@ function App() {
         if (msg.type === 'IDENTIFIED') {
             console.log('Identified with backend');
             setIsIdentified(true);
+        } else if (msg.type === 'HEARTBEAT_ACK') {
+            console.debug('Heartbeat acknowledged');
         }
       };
+
+      // Heartbeat interval
+      const heartbeatInterval = setInterval(() => {
+        if (socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ type: 'HEARTBEAT' }));
+        }
+      }, 5000);
 
       socket.onclose = () => {
         console.log('Disconnected, retrying in 3s...');
         setIsIdentified(false);
+        clearInterval(heartbeatInterval);
         setTimeout(() => setReconnectAttempt(prev => prev + 1), 3000);
       };
 
