@@ -10,6 +10,7 @@ import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
 import { WebSocket } from 'ws';
+import { LocalFileSystemProvider } from '../editor/localFilesystem.js';
 
 export class VHLWebUI {
     private devServerProcess: ChildProcess | null = null;
@@ -19,6 +20,7 @@ export class VHLWebUI {
     private gatewayServer: http.Server | null = null;
     private isGatewayStarted: boolean = false;
     private apiServer: http.Server | null = null;
+    private fileSystemProvider: LocalFileSystemProvider;
 
     private relaySocket: WebSocket | null = null;
 
@@ -30,6 +32,7 @@ export class VHLWebUI {
         private workspaceDir: string,
         // private sender: RuntimeSender
     ) {
+        this.fileSystemProvider = new LocalFileSystemProvider(this.workspaceDir);
         this.setupAPIServer();
     }
 
@@ -79,6 +82,31 @@ export class VHLWebUI {
                 } 
             }));
             res.status(200).send({ status: 'Project creation initiated', zip_path: filePath });
+        });
+
+        app.post('/api/vhl-editor/rpc', async (req, res) => {
+            const { action, params } = req.body;
+            try {
+                let result;
+                switch (action) {
+                    case 'fs.readDirectory':
+                        result = await this.fileSystemProvider.readDirectory(params.targetPath);
+                        break;
+                    case 'fs.readFile':
+                        const content = await this.fileSystemProvider.readFile(params.targetPath);
+                        result = { content };
+                        break;
+                    case 'fs.writeFile':
+                        await this.fileSystemProvider.writeFile(params.targetPath, params.content);
+                        result = null;
+                        break;
+                    default:
+                        throw new Error('Unknown action');
+                }
+                res.status(200).send({ success: true, data: result });
+            } catch (err: any) {
+                res.status(500).send({ success: false, error: err.message });
+            }
         });
 
         this.apiServer = app.listen(this.API_PORT, () => {
