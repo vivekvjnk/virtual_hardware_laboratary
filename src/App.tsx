@@ -23,62 +23,33 @@ function App() {
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
 
   useEffect(() => {
-    // Automatically connect on mount and try to reconnect if closed
-    const connect = () => {
-      const socket = new WebSocket('ws://localhost:1080/ws-agent');
-      
-      socket.onopen = () => {
-        console.log('Connected to relay, identifying...');
-        // Identify ourselves
-        socket.send(JSON.stringify({ type: 'IDENTIFY', payload: { role: 'vhl_webui' } }));
-      };
+    // Identify ourselves to the backend server
+    fetch('http://localhost:3022/api/identify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: 'vhl_webui' })
+    }).then(res => {
+        if (res.ok) setIsIdentified(true);
+    });
 
-      socket.onmessage = (event) => {
-        const msg = JSON.parse(event.data);
-        if (msg.type === 'IDENTIFIED') {
-            console.log('Identified with backend');
-            setIsIdentified(true);
-        } else if (msg.type === 'HEARTBEAT_ACK') {
-            console.debug('Heartbeat acknowledged');
-        }
-      };
-
-      // Heartbeat interval
-      const heartbeatInterval = setInterval(() => {
-        if (socket.readyState === WebSocket.OPEN) {
-          socket.send(JSON.stringify({ type: 'HEARTBEAT' }));
-        }
-      }, 5000);
-
-      socket.onclose = () => {
-        console.log('Disconnected, retrying in 3s...');
-        setIsIdentified(false);
-        clearInterval(heartbeatInterval);
-        setTimeout(() => setReconnectAttempt(prev => prev + 1), 3000);
-      };
-
-      setWs(socket);
-    };
-
-    connect();
+    // Heartbeat interval
+    const heartbeatInterval = setInterval(() => {
+        fetch('http://localhost:3022/api/heartbeat', { method: 'POST' });
+    }, 5000);
     
     return () => {
-        if (ws) ws.close();
+        clearInterval(heartbeatInterval);
     };
-  }, [reconnectAttempt]);
+  }, []);
 
   const uploadZip = async (projectName: string, file: File) => {
-    if (!ws) {
-      alert('Not connected to relay');
-      return;
-    }
-    
-    // Upload file to the new backend endpoint
+    // Upload file and create project through the new backend endpoint
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('project_name', projectName);
     
     try {
-      const response = await fetch('http://localhost:1080/api/upload-project-zip', {
+      const response = await fetch('http://localhost:3022/api/create-project', {
         method: 'POST',
         body: formData,
       });
@@ -89,14 +60,6 @@ function App() {
       
       const data = await response.json();
       console.log('Upload successful', data);
-      
-      // Notify backend to create project
-      const payload = {
-        project_name: projectName,
-        zip_blob_id: 'local_zip', // Matches test fixture expectation
-      };
-      
-      ws.send(JSON.stringify({ type: 'CREATE_PROJECT', source: 'vhl_webui', payload }));
       
     } catch (error) {
       console.error('Error uploading zip:', error);
