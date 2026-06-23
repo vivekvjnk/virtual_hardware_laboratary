@@ -19,7 +19,7 @@ export default function Sidebar({ items, onNavigate }: SidebarProps) {
         {items.map((item) => (
           <button
             key={item.id}
-            onClick={() => item.label === 'Dashboard' ? onNavigate('dashboard') : onNavigate('editor')}
+            onClick={() => item.label === 'Workspace' ? onNavigate('editor') : onNavigate('dashboard')}
             className={`flex w-full items-center justify-between rounded-3xl px-4 py-3 text-left transition ${
               item.active
                 ? 'bg-violet-500/10 text-white shadow-sm shadow-violet-500/10'

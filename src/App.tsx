@@ -7,11 +7,15 @@ import RecentProjects from './components/RecentProjects'
 import ProjectTemplates from './components/ProjectTemplates'
 import MissionFeed from './components/MissionFeed'
 
+import EditorView from './components/EditorView'
+
 function App() {
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
 
   const [view, setView] = useState<'dashboard' | 'editor'>('dashboard');
+  const [showSidebar, setShowSidebar] = useState(true);
+  const [showMissionFeed, setShowMissionFeed] = useState(true);
 
   useEffect(() => {
     fetchDashboardData()
@@ -68,10 +72,17 @@ function App() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-white px-6 py-6">
-      <div className="mx-auto grid max-w-[1600px] gap-6 lg:grid-cols-[280px_minmax(720px,1fr)_320px]">
-        <div>
-          {dashboardData ? <Sidebar items={dashboardData.navItems} onNavigate={setView} /> : <Sidebar items={[]} onNavigate={setView} />}
-        </div>
+      <div className={`mx-auto grid max-w-[1600px] gap-6 ${
+        showSidebar && showMissionFeed ? 'grid-cols-[280px_minmax(720px,1fr)_320px]' :
+        showSidebar ? 'grid-cols-[280px_minmax(720px,1fr)]' :
+        showMissionFeed ? 'grid-cols-[minmax(720px,1fr)_320px]' :
+        'grid-cols-[1fr]'
+      }`}>
+        {showSidebar && (
+          <div>
+            {dashboardData ? <Sidebar items={dashboardData.navItems} onNavigate={setView} /> : <Sidebar items={[]} onNavigate={setView} />}
+          </div>
+        )}
 
         <main className="space-y-6">
           {view === 'dashboard' ? (
@@ -144,21 +155,30 @@ function App() {
           </div>
             </>
           ) : (
-            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-10 text-center text-slate-400">
-              Editor view not yet implemented.
-            </div>
+            <EditorView 
+              projectPath="." 
+              setView={setView} 
+              showSidebar={showSidebar}
+              setShowSidebar={setShowSidebar}
+              showMissionFeed={showMissionFeed}
+              setShowMissionFeed={setShowMissionFeed}
+              navItems={dashboardData?.navItems || []}
+              missionFeed={dashboardData?.missionFeed || []}
+            />
           )}
         </main>
 
-        <aside className="space-y-6">
-          {dashboardData ? (
-            <MissionFeed feed={dashboardData.missionFeed} />
-          ) : (
-            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-10 text-center text-slate-400">
-              Loading mission feed...
-            </div>
-          )}
-        </aside>
+        {showMissionFeed && (
+          <aside className="space-y-6">
+            {dashboardData ? (
+              <MissionFeed feed={dashboardData.missionFeed} />
+            ) : (
+              <div className="rounded-3xl border border-slate-800 bg-slate-900 p-10 text-center text-slate-400">
+                Loading mission feed...
+              </div>
+            )}
+          </aside>
+        )}
       </div>
     </div>
   )
