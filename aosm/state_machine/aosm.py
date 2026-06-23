@@ -295,11 +295,11 @@ class AOSM:
         if event.type == EventType.CREATE_PROJECT:
             payload = event.payload or {}
             project_name = payload.get("project_name", "untitled")
-            project_zip_blob_id = payload.get("zip_blob_id")
+            project_zip_path = payload.get("zip_path")
 
             zip_present = False
-            if project_zip_blob_id:
-                logger.info(f"[AOSM._handle_startup] Project zip is present: {project_zip_blob_id}")
+            if project_zip_path:
+                logger.info(f"[AOSM._handle_startup] Project zip is present: {project_zip_path}")
                 zip_present = True
             
 
@@ -308,7 +308,7 @@ class AOSM:
             self.project_id = project_id
             
             logger.info(f"[AOSM._handle_startup] Creating new project: {project_id}")
-            project_root = self.workspace_manager.create_project(project_id, zip_present=zip_present)
+            project_root = self.workspace_manager.create_project(project_id, zip_path=project_zip_path)
             # Store project root information in class variable
             self.project_root_info = self.workspace_manager.get_workspace_info()
             

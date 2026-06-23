@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 from datetime import datetime
 from typing import List, Optional, Dict, Any, Union
+import zipfile
 from .zip_restore import restore_project_from_manifest
 from .models import FileChange, Artifact, Operation
 from vhl_common.git_client import GitClient
@@ -106,7 +107,7 @@ class WorkspaceManager:
         logger.info(f"[WorkspaceManager.load_project] Project loaded: {self.project_id} at {self.project_workspace_root}")
         return self.project_workspace_root
 
-    def create_project(self, project_id: str, zip_present:bool=False) -> Path:
+    def create_project(self, project_id: str, zip_path: str = None) -> Path:
         """Creates a new project directory structure."""
         self.project_id = project_id
         self.stable_worktree = self.project_workspace_root / f"{self.project_id}_root" 
@@ -123,9 +124,9 @@ class WorkspaceManager:
         (self.stable_worktree / "imports").mkdir(exist_ok=True)
 
         restoration_result = {"project_created": True, "manifest": None}
-        if zip_present:
+        if zip_path:
             logger.info(f"[WorkspaceManager.create_project] Zip file is present. Expecting project structure to be created from zip extraction.")
-            restoration_result = self.create_project_from_zip(project_id)
+            restoration_result = self.create_project_from_zip(project_id, zip_path)
 
         if restoration_result["project_created"]:
             logger.info(f"[WorkspaceManager.create_project] Project created successfully: {project_id}")
@@ -172,7 +173,7 @@ class WorkspaceManager:
                     op_name="INITIALIZE",
                     author="WORKSPACE_MANAGER",
                     status="SUCCESS",
-                    payload={"source": "zip_bootstrap" if zip_present else "empty_init"},
+                    payload={"source": "zip_bootstrap" if zip_path else "empty_bootstrap"},
                     commit_message="INITIALIZE: Project Bootstrap"
                 )
             except Exception as e:
@@ -296,26 +297,34 @@ class WorkspaceManager:
 
             self.update_circuit_name_in_db(name=f"{module_name}.tsx",module=module_name)
 
-    def create_project_from_zip(self, project_id: str)-> Dict[str, Any]:
+    def create_project_from_zip(self, project_id: str, zip_path: str = None)-> Dict[str, Any]:
         """
         Restores project structure from the temporary zip directory.
         Expects the zip file to be already extracted in a temporary directory under workspace root with name defined by ZIP_TEMP_DIR.
         Returns a dictionary with project creation status and manifest information.
         """
-        temp_dir = self.project_workspace_root / ZIP_TEMP_DIR
+        zip_dir = self.project_workspace_root / ZIP_TEMP_DIR
         
         project_dir = self.project_workspace_root / f"{project_id}_root" 
-        
-        if not temp_dir.exists():
-            logger.error(f"[WorkspaceManager.create_project_from_zip] Zip temp directory not found at {temp_dir}")
+        tmp_dir = project_dir / f"{project_id}_tmp"
+
+        if not zip_dir.exists():
+            logger.error(f"[WorkspaceManager.create_project_from_zip] Zip temp directory not found at {zip_dir}")
             return {"project_created": False, "manifest": None}
-            
-        restoration_result = restore_project_from_manifest(temp_dir, project_dir)
+        # Extract zip file from temp directory to project directory
+        # Create temporary directory for extraction
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        logger.info(f"[WorkspaceManager.create_project_from_zip] Extracting zip contents from {zip_dir} to temporary directory {tmp_dir}")
+        # extract zip contents using zip library to temporary directory
+        with zipfile.ZipFile(str(zip_dir/zip_path), 'r') as zip_ref:
+            zip_ref.extractall(tmp_dir)
+
+        restoration_result = restore_project_from_manifest(tmp_dir, project_dir)
         
         # Clean up temp directory
         try:
-            shutil.rmtree(temp_dir)
-            logger.info(f"[WorkspaceManager.create_project_from_zip] Cleaned up temp directory: {temp_dir}")
+            shutil.rmtree(tmp_dir)
+            logger.info(f"[WorkspaceManager.create_project_from_zip] Cleaned up temp directory: {tmp_dir}")
         except Exception as e:
             logger.error(f"[WorkspaceManager.create_project_from_zip] Failed to clean up temp directory: {e}")
         
