@@ -23,12 +23,9 @@ services:
       - VAP_PORT=8081
       - VHL_LIBRARY_DIR=/app/lib
       - SNAPSHOT_PORT=8083
-      - MINIO_ENDPOINT=minio
       - VHL_WORKSPACE_DIR=${VHL_WORKSPACE_DIR:-/workspace}
       - HOME=/app
       - VHL_WORKSPACE_DIR=${VHL_WORKSPACE_HOST_PATH:-./workspace}           
-      # Defaults to 'minio' locally
-      - STORAGE_BACKEND=${STORAGE_BACKEND:-minio}
       - OBJECT_STORE_BUCKET=vhl
 
     volumes:
@@ -38,49 +35,6 @@ services:
 
 
 
-  minio:
-    image: quay.io/minio/minio:latest
-    container_name: minio
-    user: "${UID:-1000}:${GID:-1000}"
-    privileged: true
-    environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: supersecretpassword
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    networks:
-      - vhl-network
-    volumes:
-      - .object_store:/data
-    command: server --console-address ":9001" /data
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
-
-  minio-init:
-    image: minio/mc:latest
-    container_name: minio-init
-    depends_on:
-      minio:
-        condition: service_healthy
-    networks:
-      - vhl-network
-    environment:
-      - MINIO_ENDPOINT=http://minio:9000
-      - MINIO_ROOT_USER=minioadmin
-      - MINIO_ROOT_PASSWORD=supersecretpassword
-      - OBJECT_STORE_BUCKET=vhl
-    entrypoint: >
-      sh -c "
-      mc alias set myminio http://minio:9000 minioadmin supersecretpassword &&
-      mc mb --ignore-existing myminio/$${OBJECT_STORE_BUCKET} &&
-      mc anonymous set upload myminio/$${OBJECT_STORE_BUCKET}/uploads &&
-      echo 'MinIO bucket initialization complete'
-      "
 
 networks:
   vhl-network:
