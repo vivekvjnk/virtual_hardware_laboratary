@@ -72,7 +72,7 @@ export interface AgentMessage {
  * For simplicity in this implementation, we'll allow them to have a partial schema.
  */
 export interface TransportMessage {
-    type: "IDENTIFY" | "AGENT_CONNECTED" | "AGENT_DISCONNECTED" | "WORKSPACE_CONNECTED" | "WORKSPACE_DISCONNECTED"
+    type: "IDENTIFY" | "IDENTIFIED" | "AGENT_CONNECTED" | "AGENT_DISCONNECTED" | "WORKSPACE_CONNECTED" | "WORKSPACE_DISCONNECTED" | "HEARTBEAT" | "HEARTBEAT_ACK"
     payload?: any
 }
 

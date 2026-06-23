@@ -73,6 +73,12 @@ export class RelayAgentHandler implements AgentHandler {
             return
         }    
         if (this.role === ROLE_WEBUI || this.role == ROLE_TEST_OBSERVER) {
+            // Heartbeat check
+            if (msg.type === "HEARTBEAT") {
+                send({ type: "HEARTBEAT_ACK" })
+                return
+            }
+
             // UI (WebUI) -> Agent (Backend)
             if (RelayAgentHandler.agentClient) {
                 console.debug("[Websocket Relay] WebUI -> Agent backend", msg.type)
@@ -154,6 +160,9 @@ export class RelayAgentHandler implements AgentHandler {
             } else {
                 send({ type: "WORKSPACE_DISCONNECTED" })
             }
+
+            // Send feedback that identification was successful
+            send({ type: "IDENTIFIED" })
 
         } else if (role === "agent" || role === ROLE_AGENT_BACKEND) {
             this.role = ROLE_AGENT_BACKEND
