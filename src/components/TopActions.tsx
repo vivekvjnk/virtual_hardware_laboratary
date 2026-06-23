@@ -1,17 +1,41 @@
-import type { HeroAction } from '../types/dashboard'
+import { useState, useRef } from 'react';
+import type { HeroAction } from '../types/dashboard';
 
 interface TopActionsProps {
-  actions: HeroAction[]
+  actions: HeroAction[];
+  isIdentified: boolean;
+  onUpload: (projectName: string, file: File) => void;
 }
 
 const variantStyles = {
   primary: 'bg-violet-500 text-white',
   secondary: 'border border-slate-800 bg-slate-900 text-slate-100',
-}
+};
 
-export default function TopActions({ actions }: TopActionsProps) {
+export default function TopActions({ actions, isIdentified, onUpload }: TopActionsProps) {
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [projectName, setProjectName] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleUploadClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file && projectName) {
+      onUpload(projectName, file);
+      setShowCreateForm(false);
+      setProjectName('');
+    }
+  };
+
   return (
     <div className="grid gap-4 md:grid-cols-2">
+      <div className="col-span-2 mb-4 flex items-center gap-2 text-sm text-slate-400">
+        <span className={`h-3 w-3 rounded-full ${isIdentified ? 'bg-green-500' : 'bg-red-500'}`}></span>
+        {isIdentified ? 'Connected' : 'Disconnected'}
+      </div>
       {actions.map((action) => (
         <div
           key={action.id}
@@ -25,14 +49,31 @@ export default function TopActions({ actions }: TopActionsProps) {
           </div>
           <h2 className="mt-4 text-2xl font-semibold text-white">{action.title}</h2>
           <p className="mt-2 text-slate-400">{action.description}</p>
-          <button
-            type="button"
-            className={`mt-8 inline-flex items-center justify-center rounded-2xl px-5 py-3 text-sm font-semibold transition ${variantStyles[action.variant]}`}
-          >
-            {action.cta}
-          </button>
+          
+          {action.id === 'create-project' && showCreateForm ? (
+            <div className="mt-4">
+              <input 
+                type="text" 
+                placeholder="Project Name" 
+                value={projectName}
+                onChange={(e) => setProjectName(e.target.value)}
+                className="w-full p-2 mb-2 bg-slate-900 border border-slate-700 rounded"
+              />
+              <button onClick={handleUploadClick} className="bg-green-600 text-white p-2 rounded w-full">Upload Zip</button>
+              <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept=".zip" />
+            </div>
+          ) : (
+            <button
+              type="button"
+              disabled={action.id === 'create-project' && !isIdentified}
+              onClick={() => action.id === 'create-project' && setShowCreateForm(true)}
+              className={`mt-8 inline-flex items-center justify-center rounded-2xl px-5 py-3 text-sm font-semibold transition ${variantStyles[action.variant]} ${action.id === 'create-project' && !isIdentified ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              {action.cta}
+            </button>
+          )}
         </div>
       ))}
     </div>
-  )
+  );
 }

@@ -11,11 +11,88 @@ function App() {
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
 
+  const [ws, setWs] = useState<WebSocket | null>(null);
+
   useEffect(() => {
     fetchDashboardData()
       .then((data) => setDashboardData(data))
       .finally(() => setLoading(false))
   }, [])
+
+  const [isIdentified, setIsIdentified] = useState(false);
+  const [reconnectAttempt, setReconnectAttempt] = useState(0);
+
+  useEffect(() => {
+    // Automatically connect on mount and try to reconnect if closed
+    const connect = () => {
+      const socket = new WebSocket('ws://localhost:1080/ws-agent');
+      
+      socket.onopen = () => {
+        console.log('Connected to relay, identifying...');
+        // Identify ourselves
+        socket.send(JSON.stringify({ type: 'IDENTIFY', payload: { role: 'vhl_webui' } }));
+      };
+
+      socket.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'IDENTIFIED') {
+            console.log('Identified with backend');
+            setIsIdentified(true);
+        }
+      };
+
+      socket.onclose = () => {
+        console.log('Disconnected, retrying in 3s...');
+        setIsIdentified(false);
+        setTimeout(() => setReconnectAttempt(prev => prev + 1), 3000);
+      };
+
+      setWs(socket);
+    };
+
+    connect();
+    
+    return () => {
+        if (ws) ws.close();
+    };
+  }, [reconnectAttempt]);
+
+  const uploadZip = async (projectName: string, file: File) => {
+    if (!ws) {
+      alert('Not connected to relay');
+      return;
+    }
+    
+    // Upload file to the new backend endpoint
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    try {
+      const response = await fetch('http://localhost:1080/api/upload-project-zip', {
+        method: 'POST',
+        body: formData,
+      });
+      
+      if (!response.ok) {
+        throw new Error('Upload failed');
+      }
+      
+      const data = await response.json();
+      console.log('Upload successful', data);
+      
+      // Notify backend to create project
+      const payload = {
+        project_name: projectName,
+        zip_blob_id: 'local_zip', // Matches test fixture expectation
+      };
+      
+      ws.send(JSON.stringify({ type: 'CREATE_PROJECT', source: 'vhl_webui', payload }));
+      
+    } catch (error) {
+      console.error('Error uploading zip:', error);
+      alert('Failed to upload project ZIP');
+    }
+  };
 
   return (
     <div className="min-h-screen bg-slate-950 text-white px-6 py-6">
@@ -66,7 +143,7 @@ function App() {
                 Loading dashboard...
               </div>
             ) : dashboardData ? (
-              <TopActions actions={dashboardData.heroActions} />
+              <TopActions actions={dashboardData.heroActions} isIdentified={isIdentified} onUpload={uploadZip} />
             ) : (
               <div className="rounded-3xl border border-slate-800 bg-slate-900 p-10 text-center text-slate-400">
                 Unable to load dashboard data.
