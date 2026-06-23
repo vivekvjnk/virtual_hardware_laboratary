@@ -1,16 +1,11 @@
 import { randomUUID } from "crypto";
 import * as fs from "fs/promises";
-import { existsSync } from "fs";
 import * as path from "path";
-import {
-    compressDirectory
-} from "./fileOperations.js";
-import { pushObject, pullObject } from "../utils/minio.js";
 import { AgentMessage } from "../server/types.js";
-import { runtime, VAPStatus } from "../vap/runtime.js";
+import { runtime} from "../vap/runtime.js";
 import { RuntimeSender, VapContext } from "./types.js";
-import { COWWorkspaceManager } from "../utils/cowWorkspace.js";
-import { TEMP_DIR } from "../config/paths.js";
+import { WorkspaceManager } from "../utils/workspaceManager.js";
+
 import { ROLE_RUNTIME } from "../server/roles.js";
 
 export async function handleVapExecute(
@@ -71,7 +66,7 @@ export async function handleVapExecute(
     } catch (err: any) {
         console.error("[VHLRuntime.handleVapExecute] VAP_EXECUTE failed:", err);
         if (taskId) {
-            await COWWorkspaceManager.cleanup(taskId).catch(() => { });
+            await WorkspaceManager.cleanup(taskId).catch(() => { });
         }
         sender.sendError("VAP_EXECUTE_FAILED", err.message);
         throw err;
@@ -101,7 +96,7 @@ export async function handleVapDecision(
         sender.sendError("VAP_DECISION_APPLY_FAILED", err.message);
     } finally {
         console.log(`[VHLRuntime] Cleaning up COW workspace for task ${taskId}`);
-        await COWWorkspaceManager.cleanup(taskId).catch((e) => {
+        await WorkspaceManager.cleanup(taskId).catch((e) => {
             console.warn(`[VHLRuntime] Cleanup failed for task ${taskId}:`, e);
         });
     }

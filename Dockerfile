@@ -21,6 +21,15 @@ RUN apt-get update && apt-get install -y \
     && corepack enable \
     && rm -rf /var/lib/apt/lists/*
 
+# Setup Python environment
+COPY packages ./packages
+COPY requirements.txt ./
+RUN python3 -m venv /app/venv && \
+    /app/venv/bin/pip install --upgrade pip && \
+    /app/venv/bin/pip install -r requirements.txt && \ 
+    /app/venv/bin/pip install -e /app/packages/oh-sdk && \
+    /app/venv/bin/pip install --no-deps -e /app/packages/oh-tools
+
 # Install Bun
 RUN curl -fsSL https://bun.sh/install | BUN_INSTALL=/opt/bun bash
 ENV BUN_INSTALL="/opt/bun"
@@ -36,18 +45,9 @@ RUN pnpm install --no-frozen-lockfile --unsafe-perm
 
 # Copy source and build
 COPY src ./src
-COPY packages ./packages
 COPY workspace ./workspace
 COPY start.sh ./
-COPY requirements.txt ./
 RUN pnpm build
-
-# Setup Python environment
-RUN python3 -m venv /app/venv && \
-    /app/venv/bin/pip install --upgrade pip && \
-    /app/venv/bin/pip install -r requirements.txt && \ 
-    /app/venv/bin/pip install -e /app/packages/oh-sdk && \
-    /app/venv/bin/pip install --no-deps -e /app/packages/oh-tools
 
 # Environment Setup
 ENV PATH="/app/venv/bin:/app/node_modules/.bin:${PATH}" \

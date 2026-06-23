@@ -13,12 +13,6 @@ echo "Starting Workspace WebSocket Client..."
 node dist/workspace/index.js &
 WS_CLIENT_PID=$!
 
-# Start ANA MCP Server in background (HTTP mode)
-echo "Starting ANA Commit MCP Server..."
-export ANA_TRANSPORT=http
-export ANA_PORT=${VAP_PORT:-8081}
-node dist/mcp/ana/index.js &
-ANA_PID=$!
 
 # Start Terminal MCP Server in background (SSE mode)
 echo "Starting Terminal MCP Server..."

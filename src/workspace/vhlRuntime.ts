@@ -1,17 +1,15 @@
 import { WebSocket } from "ws";
 import { randomUUID } from "crypto";
 import * as path from "path";
-import * as fs from "fs/promises";
 import { existsSync } from "fs";
 import { WORKSPACE_DIR } from "../config/paths.js";
 import type { WebSocketMessage, AgentMessage } from "../server/types.js";
 import { RuntimeSender, VapContext } from "./types.js";
-import { handleWorkspaceUpload, handleWorkspaceDownload } from "./syncHandlers.js";
+
 import { handleVapExecute, handleVapDecision } from "./vapHandlers.js";
-import { setProjectDir, getProjectDir, setProjectState as setGlobalProjectState } from "./projectContext.js";
-import { SyncManager } from "./syncManager.js";
-import { VHLWebUI } from "./vhlWebUI.js";
-import { COWWorkspaceManager } from "../utils/cowWorkspace.js";
+import { setProjectDir, setProjectState as setGlobalProjectState } from "./projectContext.js";
+
+import { WorkspaceManager } from "../utils/workspaceManager.js";
 import { ROLE_RUNTIME } from "../server/roles.js";
 
 export interface ProjectState {
@@ -31,7 +29,6 @@ export class VHLRuntime implements RuntimeSender {
     private workspaceDir: string;
     private reconnectTimer: NodeJS.Timeout | null = null;
     private activeVapContext: VapContext | null = null;
-    private syncManager: SyncManager;
 
     private projectState: ProjectState = {
         project_id: null,
@@ -47,7 +44,6 @@ export class VHLRuntime implements RuntimeSender {
     constructor(serverUrl: string, workspaceDir: string = WORKSPACE_DIR) {
         this.serverUrl = serverUrl;
         this.workspaceDir = workspaceDir;
-        this.syncManager = new SyncManager(this.workspaceDir, this);
     }
 
     public async connect(): Promise<void> {
@@ -157,12 +153,6 @@ export class VHLRuntime implements RuntimeSender {
         console.log(`[VHLRuntime] Received event: ${msg.type}`);
 
         switch (msg.type) {
-            case "WORKSPACE_DOWNLOAD":
-                await handleWorkspaceDownload(msg as AgentMessage, this.projectState.project_dir || this.workspaceDir, this);
-                break;
-            case "WORKSPACE_UPLOAD":
-                await handleWorkspaceUpload(msg as AgentMessage, this.projectState.project_dir || this.workspaceDir, this);
-                break;
             case "VAP_EXECUTE": {
                 const { context } = await handleVapExecute(msg as AgentMessage,  this);
                 this.activeVapContext = context;
@@ -192,9 +182,9 @@ export class VHLRuntime implements RuntimeSender {
                     runtime_status: "initializing"
                 });
 
-                // Move project initialization to COWWorkspaceManager
+                // Move project initialization to WorkspaceManager
                 try {
-                    await COWWorkspaceManager.initializeProject(projectDir);
+                    await WorkspaceManager.initializeProject(projectDir);
                 } catch (error: any) {
                     this.sendError("TSCI_INIT_FAILED", error.message);
                     break;
@@ -268,15 +258,6 @@ export class VHLRuntime implements RuntimeSender {
                 this.activeVapContext = null;
                 break;
             }
-            case "DOWNLOAD_REQUEST":
-            case "UPLOAD_REQUEST":
-            case "SYNC_COMPLETE":
-            case "SYNC_ERROR":
-                if ((msg as AgentMessage).payload.source === ROLE_RUNTIME) {
-                    break;
-                }
-                await this.syncManager.handleMessage(msg as AgentMessage);
-                break;
             case "CLOSE_PROJECT":
                 await this.closeProject();
                 break;

@@ -1,6 +1,6 @@
 import { VHLRuntime } from "./vhlRuntime.js";
 import { WORKSPACE_DIR } from "../config/paths.js";
-import { COWWorkspaceManager } from "../utils/cowWorkspace.js";
+import { WorkspaceManager } from "../utils/workspaceManager.js";
 import { setProjectDir } from "./projectContext.js";
 import { VHLWebUI } from "./vhlWebUI.js";
 
@@ -12,7 +12,7 @@ console.log(`[VHLRuntime] Server URL: ${SERVER_URL}`);
 console.log(`[VHLRuntime] Workspace Path: ${WORKSPACE_PATH}`);
 
 // Cleanup any stale evaluation workspaces on startup
-await COWWorkspaceManager.cleanupAll();
+await WorkspaceManager.cleanupAll();
 setProjectDir(null);
 
 const client = new VHLRuntime(SERVER_URL, WORKSPACE_PATH);
