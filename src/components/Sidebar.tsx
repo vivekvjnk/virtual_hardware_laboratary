@@ -2,9 +2,10 @@ import type { NavItem } from '../types/dashboard'
 
 interface SidebarProps {
   items: NavItem[]
+  onNavigate: (view: 'dashboard' | 'editor') => void
 }
 
-export default function Sidebar({ items }: SidebarProps) {
+export default function Sidebar({ items, onNavigate }: SidebarProps) {
   return (
     <aside className="rounded-3xl border border-slate-800 bg-slate-950/90 p-5 shadow-xl shadow-slate-950/30">
       <div className="mb-8 flex items-center justify-between gap-2">
@@ -18,6 +19,7 @@ export default function Sidebar({ items }: SidebarProps) {
         {items.map((item) => (
           <button
             key={item.id}
+            onClick={() => item.label === 'Dashboard' ? onNavigate('dashboard') : onNavigate('editor')}
             className={`flex w-full items-center justify-between rounded-3xl px-4 py-3 text-left transition ${
               item.active
                 ? 'bg-violet-500/10 text-white shadow-sm shadow-violet-500/10'

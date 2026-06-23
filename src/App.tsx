@@ -11,7 +11,7 @@ function App() {
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
 
-  const [ws, setWs] = useState<WebSocket | null>(null);
+  const [view, setView] = useState<'dashboard' | 'editor'>('dashboard');
 
   useEffect(() => {
     fetchDashboardData()
@@ -20,7 +20,6 @@ function App() {
   }, [])
 
   const [isIdentified, setIsIdentified] = useState(false);
-  const [reconnectAttempt, setReconnectAttempt] = useState(0);
 
   useEffect(() => {
     // Identify ourselves to the backend server
@@ -71,11 +70,13 @@ function App() {
     <div className="min-h-screen bg-slate-950 text-white px-6 py-6">
       <div className="mx-auto grid max-w-[1600px] gap-6 lg:grid-cols-[280px_minmax(720px,1fr)_320px]">
         <div>
-          {dashboardData ? <Sidebar items={dashboardData.navItems} /> : <Sidebar items={[]} />}
+          {dashboardData ? <Sidebar items={dashboardData.navItems} onNavigate={setView} /> : <Sidebar items={[]} onNavigate={setView} />}
         </div>
 
         <main className="space-y-6">
-          <section className="rounded-3xl border border-slate-800 bg-slate-950/95 p-6 shadow-xl shadow-slate-950/30">
+          {view === 'dashboard' ? (
+            <>
+              <section className="rounded-3xl border border-slate-800 bg-slate-950/95 p-6 shadow-xl shadow-slate-950/30">
             <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
               <div className="max-w-2xl">
                 <p className="text-sm uppercase tracking-[0.32em] text-slate-500">Welcome to VHL</p>
@@ -141,6 +142,12 @@ function App() {
               </div>
             )}
           </div>
+            </>
+          ) : (
+            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-10 text-center text-slate-400">
+              Editor view not yet implemented.
+            </div>
+          )}
         </main>
 
         <aside className="space-y-6">
