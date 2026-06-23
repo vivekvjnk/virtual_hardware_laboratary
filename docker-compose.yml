@@ -11,6 +11,7 @@ services:
       - "8083:8083" # Port for UI Snapshot MCP Server
       - "1080:1080" # Port for Agent WebSocket Server
       - "3020:3020" # Port for tscircuit
+      - "3022:3022"
     networks:
       - vhl-network
     

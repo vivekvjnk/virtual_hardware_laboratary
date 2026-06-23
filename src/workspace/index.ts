@@ -2,6 +2,7 @@ import { VHLRuntime } from "./vhlRuntime.js";
 import { WORKSPACE_DIR } from "../config/paths.js";
 import { COWWorkspaceManager } from "../utils/cowWorkspace.js";
 import { setProjectDir } from "./projectContext.js";
+import { VHLWebUI } from "./vhlWebUI.js";
 
 const SERVER_URL = process.env.VHL_WS_SERVER || "ws://0.0.0.0:1080";
 const WORKSPACE_PATH = process.env.VHL_WORKSPACE_DIR || WORKSPACE_DIR;
@@ -15,6 +16,8 @@ await COWWorkspaceManager.cleanupAll();
 setProjectDir(null);
 
 const client = new VHLRuntime(SERVER_URL, WORKSPACE_PATH);
+
+const webui = new VHLWebUI(WORKSPACE_PATH)
 
 client.connect().catch((err) => {
     console.error("[VHLRuntime] Failed to start:", err);

@@ -6,6 +6,10 @@ import * as fs from "fs/promises";
 import * as crypto from "crypto";
 import { randomUUID } from "crypto";
 import { RuntimeSender } from "./types.js";
+import express from 'express';
+import cors from 'cors';
+import multer from 'multer';
+import { WebSocket } from 'ws';
 
 export class VHLWebUI {
     private devServerProcess: ChildProcess | null = null;
@@ -14,14 +18,80 @@ export class VHLWebUI {
     private devServerLock: Promise<void> = Promise.resolve();
     private gatewayServer: http.Server | null = null;
     private isGatewayStarted: boolean = false;
+    private apiServer: http.Server | null = null;
+
+    private relaySocket: WebSocket | null = null;
 
     private readonly GATEWAY_PORT = parseInt(process.env.VHL_WEBUI_PORT || "3020");
     private readonly TSC_DEV_PORT = 3021;
+    private readonly API_PORT = 3022; // New API port for vhl-webui
 
     constructor(
         private workspaceDir: string,
-        private sender: RuntimeSender
-    ) {}
+        // private sender: RuntimeSender
+    ) {
+        this.setupAPIServer();
+    }
+
+    private setupAPIServer() {
+        const app = express();
+        app.use(cors());
+        app.use(express.json());
+
+        const uploadDir = path.join(this.workspaceDir, '.zip_temp');
+        
+        const storage = multer.diskStorage({
+            destination: async (req, file, cb) => {
+                await fs.mkdir(uploadDir, { recursive: true });
+                cb(null, uploadDir);
+            },
+            filename: (req, file, cb) => {
+                cb(null, `${Date.now()}-${file.originalname}`);
+            }
+        });
+        const upload = multer({ storage });
+
+        app.post('/api/identify', (req, res) => {
+            const { role } = req.body;
+            this.connectToRelay();
+            this.relaySocket?.send(JSON.stringify({ type: 'IDENTIFY', payload: { role } }));
+            res.status(200).send({ status: 'Identifying' });
+        });
+
+        app.post('/api/heartbeat', (req, res) => {
+            this.relaySocket?.send(JSON.stringify({ type: 'HEARTBEAT' }));
+            res.status(200).send({ status: 'Heartbeat sent' });
+        });
+
+        app.post('/api/create-project', upload.single('file'), (req, res) => {
+            const { project_name } = req.body;
+            const filePath = req.file ? req.file.path : null;
+
+            console.log(`[VHLWebUI] Creating project ${project_name}, zip at ${filePath}`);
+            
+            this.relaySocket?.send(JSON.stringify({ 
+                type: 'CREATE_PROJECT', 
+                source: 'vhl_webui', 
+                payload: { 
+                    project_name, 
+                    zip_path: filePath, // Pass the actual path
+                    zip_blob_id: filePath
+                } 
+            }));
+            res.status(200).send({ status: 'Project creation initiated', zip_path: filePath });
+        });
+
+        this.apiServer = app.listen(this.API_PORT, () => {
+            console.log(`[VHLWebUI] API server listening on ${this.API_PORT}`);
+        });
+    }
+
+    private connectToRelay() {
+        if (this.relaySocket) return;
+        this.relaySocket = new WebSocket('ws://localhost:1080/ws-agent');
+        this.relaySocket.on('open', () => console.log('Connected to relay'));
+        this.relaySocket.on('message', (data) => console.log('Received from relay:', data.toString()));
+    }
 
     private setupGatewayServer() {
         if (this.isGatewayStarted) return;
@@ -157,19 +227,6 @@ export class VHLWebUI {
                         const targetFile = relativePath === "" ? "" : path.join(relativePath, finalEntryFile);
                         const reloadUrl = `/${targetFile ? `#file=${encodeURIComponent(targetFile)}` : ""}`;
 
-                        this.sender.send({
-                            id: randomUUID(),
-                            type: "DEV_SERVER_READY",
-                            artifact_id: null,
-                            timestamp: new Date().toISOString(),
-                            source: "vhl_runtime",
-                            payload: {
-                                url: reloadUrl,
-                                project_path: projectPath,
-                                circuit_name: circuitName,
-                                manifest: await this.generateManifest(fullPath)
-                            }
-                        });
                         resolve();
                     }
                 };
@@ -207,7 +264,6 @@ export class VHLWebUI {
 
         } catch (error: any) {
             console.error(`[VHLWebUI] Error starting tsci dev: ${error.message}`);
-            this.sender.sendError("DEV_SERVER_FAILED", error.message);
             throw error;
         } finally {
             resolveLock!();

@@ -32,7 +32,6 @@ export class VHLRuntime implements RuntimeSender {
     private reconnectTimer: NodeJS.Timeout | null = null;
     private activeVapContext: VapContext | null = null;
     private syncManager: SyncManager;
-    private webui: VHLWebUI;
 
     private projectState: ProjectState = {
         project_id: null,
@@ -49,7 +48,6 @@ export class VHLRuntime implements RuntimeSender {
         this.serverUrl = serverUrl;
         this.workspaceDir = workspaceDir;
         this.syncManager = new SyncManager(this.workspaceDir, this);
-        this.webui = new VHLWebUI(this.workspaceDir, this);
     }
 
     public async connect(): Promise<void> {
@@ -205,7 +203,16 @@ export class VHLRuntime implements RuntimeSender {
                 
                 // Start dev server for the project if newly created or if synthesis is not completed
                 if (msg.type === "PROJECT_CREATED" || !this.projectState.is_synthesis_completed) {
-                    await this.webui.startDevServer(projectDir, entryFile, this.projectState.circuit_name);
+                    this.send({
+                            id: randomUUID(),
+                            type: "DEV_SERVER_READY",
+                            artifact_id: null,
+                            timestamp: new Date().toISOString(),
+                            source: "vhl_runtime",
+                            payload: {
+                                "status":"SUCCESS"
+                            }
+                        });
                 }
 
                 this.setProjectState({ runtime_status: "initialized" });
@@ -296,7 +303,6 @@ export class VHLRuntime implements RuntimeSender {
         this.activeVapContext = null;
 
         console.log(`[VHLRuntime] Restarting dev server at workspace root: ${this.workspaceDir}`);
-        await this.webui.startDevServer(this.workspaceDir);
 
         this.send({
             id: randomUUID(),
@@ -322,8 +328,6 @@ export class VHLRuntime implements RuntimeSender {
             const hasWorkspace = existsSync(workspaceDir);
             const activeProjectDir = hasWorkspace ? workspaceDir : this.projectState.project_dir;
 
-            await this.webui.startDevServer(activeProjectDir, entryFile, circuitName);
-            await this.webui.captureSnapshots(activeProjectDir, entryFile);
         }
     }
 }
