@@ -5,6 +5,8 @@ from unittest.mock import MagicMock, AsyncMock
 from vhl_common.urp.data_types import AgentDescriptor, MessageEnvelope
 from librarian_agent.urp_librarian import LibrarianURPAgent, LibrarianContext
 
+
+# NOTE: Outdated code. There is longer a sync manager. vhl-agent-backend and vhl-runtime uses same project workspace.
 @pytest.fixture
 def temp_project_dir(tmp_path):
     # Setup a mock project structure in a temp directory

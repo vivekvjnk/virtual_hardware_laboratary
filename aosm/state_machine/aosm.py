@@ -3,36 +3,32 @@ import logging
 import os
 import sys
 import json
-from typing import Optional, Dict, Any, Union, Tuple
+from typing import Optional, Dict, Any
 from pathlib import Path
 from state_machine.states import AOSMState
-from vhl_protocol.client.client import VHLWebSocketClient
+from vhl_protocol.websocket_client.client import VHLWebSocketClient
 from vhl_protocol.models import BaseEvent, EventType, EventSource, SyncPayload, AgentStatus
-from vhl_protocol.sync.client import SyncClient
+
 
 import uuid
-from ana_agent.state_machine.mcp_manager import MCPManager
-from ana_agent.state_machine import ANADStateMachine
 from vhl_common.workspace_manager.manager import WorkspaceManager
 
-from vhl_common.urp.data_types import AgentContext, MessageEnvelope, AgentDescriptor
+from vhl_common.urp.data_types import MessageEnvelope, AgentDescriptor
 from vhl_common.urp.agent_registry import register_agent_if_absent, get_agent_factory
 
-from archy_agent.main import orchestrate_archy, prepare_archy_workspace
+
 from archy_agent.urp_archy import ArchyURPAgent, ArchyConfig
 
 from librarian_agent.urp_librarian import LibrarianURPAgent, LibrarianConfig
-from ana_agent.ana_urp.urp_ana import AnaURPAgent, AnaConfig, AnaContext
-from librarian_agent.stub import process_scud_stub
-from vhl_common.utils import handle_errors
+from ana_agent.urp_ana import AnaURPAgent, AnaConfig, AnaContext
 from vhl_common.project_state_manager.evaluators.project_creation_evaluator import ProjectCreationEvaluator
 from archy.archy_agent.archy_evaluator import ArchyEvaluator
 from librarian.librarian_agent.librarian_evaluator import LibrarianEvaluator
 from ana.ana_agent.ana_evaluator import AnaEvaluator
 
 
-from vhl_common.urp.data_types import LastTaskOutcome
-from vhl_common.supervisor import Supervisor, AgentNotFoundError
+
+from vhl_common.supervisor import Supervisor
 from vhl_common.supervisor.controllers import Workflow1Controller
 
 logger = logging.getLogger(__name__)
@@ -57,7 +53,6 @@ class AOSM:
         self.event_queue = asyncio.Queue()
         self.workspace_manager = WorkspaceManager(workspace_path)
         self.project_root_info: Optional[Dict[str, Any]] = None
-        self.active_ana_sm: Optional[ANADStateMachine] = None
         self.ana_inbox: Optional[asyncio.Queue] = None
         self._main_loop_task: Optional[asyncio.Task] = None
         self.project_id = None
@@ -74,7 +69,6 @@ class AOSM:
         
         # Enable following configuration for VAP over MCP server
         # mcp_default = "http://localhost:8081/mcp/vap"
-        self.sync_client = SyncClient(self.web_socket_client, self.workspace_manager)
         # mcp_endpoint = os.getenv("MCP_ENDPOINT", mcp_default)
         # self.mcp_manager = MCPManager(endpoint=mcp_endpoint)
         # HIL is now managed by Supervisor
@@ -348,75 +342,10 @@ class AOSM:
 
         # TODO : Outdated. Needs to be refactored to align with new project structure
         elif event.type == EventType.LOAD_PROJECT:
-            payload = event.payload or {}
-            project_id = payload.get("project_id")
+            # TODO : Implement project load logic. For now, we will just transition to IDLE state.    
+            # Transition to IDLE state
+            await self.transition_to(AOSMState.IDLE, f"Project {project_id} loaded successfully")
             
-            if not project_id:
-                logger.error("[AOSM._handle_startup] Missing project_id in LOAD_PROJECT event")
-                return
-
-            logger.info(f"[AOSM._handle_startup] Loading project: {project_id}")
-            try:
-                project_root = self.workspace_manager.load_project(project_id)
-                self.project_id = project_id
-                self.project_semantic_db = self.workspace_manager.db
-                
-                # Initialize all the agents
-                await self.register_agents(workspace_manager=self.workspace_manager)
-                
-                # Setup HIL GATE routes for the agents
-
-                # Store project root information in class variable
-                self.project_root_info = self.workspace_manager.get_workspace_info()
-                
-                # Send back PROJECT_LOADED event to the runtime
-                await self.web_socket_client.emit_event(BaseEvent(
-                    type=EventType.PROJECT_LOADED,
-                    source=EventSource.VHL_AGENT_BACKEND,
-                    payload={
-                        "project_id": project_id,
-                        "project_root": str(project_root),
-                        "workspace_info": self.project_root_info
-                    }
-                ))
-                
-                # Trigger sync for StableCircuit and Library (Agent to Runtime)
-                try:
-                    for module_name in self.workspace_manager.module_names:
-                        # Push StableCircuit from Agent to Runtime if it exists
-                        stable_path = self.sync_client.get_resource_path(project_id=project_id,resource_type="StableCircuit", module_name=module_name)
-                        if os.path.exists(stable_path):
-                            await self.sync_client.handle_upload_request(SyncPayload(
-                                sync_id=str(uuid.uuid4()),
-                                module_name=module_name,
-                                project_id=project_id,
-                                resource_type="StableCircuit",
-                                data={"circuit_name": self.workspace_manager.circuit_name}
-                            ))
-
-                        # Push Library from Agent to Runtime if it exists
-                        lib_path = self.sync_client.get_resource_path(project_id=project_id,resource_type="Library")
-                        if os.path.exists(lib_path):
-                            await self.sync_client.handle_upload_request(SyncPayload(
-                                sync_id=str(uuid.uuid4()),
-                                project_id=project_id,
-                                resource_type="Library"
-                            ))
-                except Exception as e:
-                    logger.warning(f"[AOSM._handle_startup] Auto-sync failed on project load (this is expected if project is empty): {e}")
-
-                # Transition to IDLE state
-                await self.transition_to(AOSMState.IDLE, f"Project {project_id} loaded successfully")
-            except Exception as e:
-                logger.error(f"[AOSM._handle_startup] Failed to load project {project_id}: {e}")
-                await self.web_socket_client.emit_event(BaseEvent(
-                    type=EventType.ERROR,
-                    source=EventSource.VHL_AGENT_BACKEND,
-                    payload={
-                        "message": f"Failed to load project: {str(e)}"
-                    }
-                ))
-        
         elif event.type == EventType.LIST_PROJECTS:
             logger.info("[AOSM._handle_startup] Listing projects...")
             projects = self.workspace_manager.list_projects()
@@ -478,7 +407,6 @@ class AOSM:
                 "workspace": self.workspace_manager,
                 "sqlite_manager": self.project_semantic_db,
                 "module_name": module_name,
-                "sync_manager": self.sync_client
             }
             librarian = factory.factory_func(descriptor=factory.descriptor)             
             librarian.initialize(context=context, emit_callback=lambda msg: None)
@@ -509,7 +437,6 @@ class AOSM:
                 workspace=self.workspace_manager,
                 sqlite_manager=self.project_semantic_db,
                 web_socket_client=self.web_socket_client,
-                sync_client=self.sync_client,
                 config=AnaConfig(conversation_persistence=True)
             )
             ana_agent.initialize(context=ana_context, emit_callback=lambda msg: None)
@@ -575,42 +502,6 @@ class AOSM:
                     payload={"message": "Invalid MESSAGE_TO_AGENT payload: missing target_agent or message"}
                 ))
     
-    async def _handle_present_result(self, event: BaseEvent):
-        logger.info(f"[AOSM._handle_present_result] Presenting results to user...")
-        
-        # Handle state transition which carries the ANA results from WAIT_FOR_ANA
-        if event.type == EventType.STATE_TRANSITION:
-            payload = event.payload or {}
-            decision = payload.get("decision")
-            iteration_dir = payload.get("iteration_dir")
-            
-            if not decision:
-                logger.error("[AOSM._handle_present_result] No decision found in payload. Returning to IDLE.")
-                await self.transition_to(AOSMState.IDLE, "No decision in result")
-                return
-
-            # if decision is ACCEPT copy current iteration directory to Stable directory
-            if "ACCEPT" == decision:
-                # Sync StableCircuit and CompiledCircuit
-                if self.project_id:
-                    try:
-                        # 2. Trigger sync for evaluation output (Agent to Runtime)
-                        # With MAW simplification, we always sync from "workspace"
-                        await self.sync_client.sync_compiled_circuit(project_id=self.project_id, iteration_id="workspace", module_name=None)  
-                        
-                        logger.info(f"[AOSM._handle_present_result] StableCircuit and CompiledCircuit sync completed successfully")
-                        
-                    except Exception as e:
-                        logger.warning(f"[AOSM._handle_present_result] StableCircuit sync failed or timed out: {e}")
-
-            elif "REJECT" == decision:
-                logger.info("[AOSM._handle_present_result] Decision was REJECT.")
-            
-            
-            # After presenting/handling, transition back to IDLE
-            await self.transition_to(AOSMState.IDLE, f"Finished processing ANA result: {decision}")
-
-
     async def _handle_cancel_pipeline(self, event: BaseEvent):
         logger.info("[AOSM._handle_cancel_pipeline] Cleaning up cancelled pipeline...")
         await self.transition_to(AOSMState.IDLE, "Cleanup complete")
@@ -661,13 +552,6 @@ class AOSM:
     async def _handle_close_project(self, event: BaseEvent):
         """Global handler for closing the current project."""
         logger.info(f"[AOSM._handle_close_project] Closing project {self.project_id}")
-        
-        # 1. Stop any active agent state machines
-        if self.active_ana_sm:
-            # We don't have a formal stop(), but we can clear the reference
-            self.active_ana_sm = None
-            self.ana_inbox = None
-            self.update_agent_status("ana", AgentStatus.IDLE)
         
         self.update_agent_status("archy", AgentStatus.IDLE)
         self.update_agent_status("librarian", AgentStatus.IDLE)

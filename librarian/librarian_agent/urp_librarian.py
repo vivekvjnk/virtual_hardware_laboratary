@@ -32,7 +32,6 @@ from vhl_common.urp.data_types import AgentDescriptor, MessageEnvelope
 from vhl_common.utils import setup_dedicated_logger
 from vhl_common.workspace_manager.manager import WorkspaceManager
 from vhl_common.project_state_manager import SQLiteManager
-from vhl_protocol.sync.client import SyncClient
 from vhl_common.urp.data_types import ProcessResult, ProcessResultPayload, LastTaskOutcome, FailureCategory
 from vhl_common.llm import get_llm_for_agent
 
@@ -63,7 +62,6 @@ class LibrarianContext:
     module_name: str
     workspace: WorkspaceManager
     sqlite_manager: SQLiteManager
-    sync_manager: SyncClient = field(default=None)
     config: LibrarianConfig = field(default_factory=LibrarianConfig)
 
 class LibrarianURPAgent(AbstractURPAgent):
@@ -89,7 +87,6 @@ class LibrarianURPAgent(AbstractURPAgent):
         self.library_path = None
         self.sqlite_manager: SQLiteManager = None
         self.workspace_manager: WorkspaceManager = None
-        self.sync_manager: SyncClient = None
         self.module_name = None
 
     def build_config(self, context: LibrarianContext) -> LibrarianConfig:
@@ -120,7 +117,6 @@ class LibrarianURPAgent(AbstractURPAgent):
 
         self.workspace_manager = context.workspace
         self.sqlite_manager = context.sqlite_manager
-        self.sync_manager = context.sync_manager
         self.module_name = context.module_name
         
         config = self.build_config(context=context)

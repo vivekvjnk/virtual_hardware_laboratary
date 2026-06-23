@@ -1,33 +1,26 @@
 import os
-import json
-import uuid
-import zipfile
-import logging
 import asyncio
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, Optional
 
 from openhands.sdk import get_logger
-from vhl_protocol.sync.client import SyncClient
-from vhl_protocol.client.client import VHLWebSocketClient
+from vhl_protocol.websocket_client.client import VHLWebSocketClient
 
-from vhl_protocol.models import EventType, SyncPayload, EventSource
+from vhl_protocol.models import EventType
 
 # Configure logger
 logger = get_logger(__name__)
 
-class ANA_validation_agent:
+class ANA_CodeEvaluator:
     """
-    ANA-W2 Agent: Deterministic workflow for circuit evaluation using VHL-VAP.
+    ANA_CodeEvaluator: Deterministic workflow for circuit evaluation using VHL-VAP.
     
     Responsibilities:
-    1. Sync circuit file to object store.
-    2. Invoke VAP process via MCP.
-    3. Poll for evaluation status.
-    4. Collect and extract evaluation results.
+    1. Invoke VAP process 
+    2. Collect and extract evaluation results.
     """
-    def __init__(self, web_socket_client: VHLWebSocketClient, sync_client: Optional[SyncClient] = None, project_id: Optional[str] = None, storage_url: Optional[str] = None, mcp_manager: Any = None):
+    def __init__(self, web_socket_client: VHLWebSocketClient, project_id: Optional[str] = None, storage_url: Optional[str] = None, mcp_manager: Any = None):
         self.web_socket_client = web_socket_client
-        self.sync_client = sync_client
+        
         self.project_id = project_id
         self.storage_url = storage_url
         self.mcp_manager = mcp_manager
@@ -92,30 +85,3 @@ class ANA_validation_agent:
     def close(self):
         """Cleanup resources."""
         pass
-
-if __name__ == "__main__":
-    # Simple CLI for testing
-    import sys
-    
-    # Set logging to INFO for CLI usage
-    logging.basicConfig(level=logging.INFO)
-    
-    if len(sys.argv) > 1:
-        circuit_name = sys.argv[1]
-    else:
-        # Default test file
-        circuit_name = "bq79616_only_warnings.tsx"
-        workspace = os.path.join(os.getcwd(), "ana_workspace")
-    
-        
-    agent = ANA_validation_agent()
-    try:
-        result = agent.validate_circuit(circuit_name, workspace=workspace)
-        print("\n--- Evaluation Results ---")
-        print(json.dumps(result, indent=2))
-    except Exception as e:
-        print(f"Error during validation: {e}")
-        logger.exception("[main] Full stack trace:")
-        sys.exit(1)
-    finally:
-        agent.close()

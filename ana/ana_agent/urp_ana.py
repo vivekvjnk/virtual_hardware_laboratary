@@ -1,11 +1,9 @@
 import os
 import asyncio
-import shutil
 from pathlib import Path
 from typing import Any, Optional
 from dataclasses import dataclass, field
 
-from pydantic import SecretStr
 
 from openhands.sdk import (
     LLM,
@@ -19,14 +17,11 @@ from openhands.sdk import (
     Tool,
     Message,
     TextContent,
-    AgentContext as OpenHandsAgentContext,
-    get_logger,
 )
 from openhands.tools.file_editor import FileEditorTool
 
 from openhands.sdk.conversation.state import (
     ConversationExecutionStatus,
-    ConversationState,
 )
 
 from vhl_common.urp.abstract_urp import AbstractURPAgent
@@ -34,13 +29,10 @@ from vhl_common.urp.data_types import AgentDescriptor, MessageEnvelope
 from vhl_common.utils import setup_dedicated_logger
 from vhl_common.workspace_manager.manager import WorkspaceManager
 from vhl_common.project_state_manager import SQLiteManager
-from vhl_protocol.sync.client import SyncClient
-from vhl_protocol.client.client import VHLWebSocketClient
+from vhl_protocol.websocket_client.client import VHLWebSocketClient
 from vhl_common.urp.data_types import ProcessResult, ProcessResultPayload, LastTaskOutcome, FailureCategory
 
-from ana_agent.ana_worker_1 import run_ana_w1_agent
-from ana_agent.ana_worker_2.agent import ANA_validation_agent
-from ana_agent.ana_evaluator import AGENT_ID as ANA_AGENT_ID, OPERATION_NAME as ANA_OPERATION_NAME, AnaEvaluator
+from ana_agent.utils import ANA_CodeEvaluator
 
 from vhl_common.llm import get_llm_for_agent
 
@@ -70,7 +62,6 @@ class AnaContext:
     workspace         : Shared WorkspaceManager instance for the project.
     sqlite_manager    : SQLite DB handle for semantic_operations queries.
     web_socket_client : WebSocket client for VAP execution (W2).
-    sync_client       : Sync client for circuit / evaluation syncing (W2).
     project_id        : Project identifier used by sync / W2.
     config            : Optional agent-level config overrides.
     """
@@ -78,7 +69,6 @@ class AnaContext:
     workspace: WorkspaceManager
     sqlite_manager: SQLiteManager
     web_socket_client: VHLWebSocketClient
-    sync_client: SyncClient
     config: AnaConfig = field(default_factory=AnaConfig)
 
 
@@ -138,7 +128,6 @@ class AnaURPAgent(AbstractURPAgent):
         self.sqlite_manager: Optional[SQLiteManager] = None
         self.module_name: Optional[str] = None
         self.web_socket_client: Optional[VHLWebSocketClient] = None
-        self.sync_client: Optional[SyncClient] = None
 
         # Iteration state — set fresh in pre-conditions each invocation
         self.agent_workspace_path: Optional[Path] = None
@@ -170,7 +159,6 @@ class AnaURPAgent(AbstractURPAgent):
         self.sqlite_manager = context.sqlite_manager
         self.module_name = context.module_name
         self.web_socket_client = context.web_socket_client
-        self.sync_client = context.sync_client
         config = context.config
 
         logger.info(
@@ -358,9 +346,8 @@ class AnaURPAgent(AbstractURPAgent):
         # ---- Step 1: Run ANA-W2 (VAP) ----
         logger.info("[AnaURPAgent._check_postconditions] Launching ANA-W2 validation agent.")
         try:
-            w2_agent = ANA_validation_agent(
+            w2_agent = ANA_CodeEvaluator(
                 web_socket_client=self.web_socket_client,
-                sync_client=self.sync_client,
                 project_id=self.workspace_manager.project_name,
             )
             circuit_name = self.workspace_manager.circuit_name.get(self.module_name)

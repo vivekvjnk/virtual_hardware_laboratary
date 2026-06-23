@@ -3,7 +3,7 @@ import logging
 from typing import Any, Dict, Callable, Optional
 from vhl_common.urp.data_types import LastTaskOutcome, MessageEnvelope, ProcessResult, FailureCategory
 from vhl_protocol.models import AgentStatus
-from archy_agent.main import prepare_archy_workspace
+from archy_agent.utils import prepare_archy_workspace
 from ..exceptions import AgentNotFoundError, InfrastructureError
 from .abstract_controller import AbstractController
 

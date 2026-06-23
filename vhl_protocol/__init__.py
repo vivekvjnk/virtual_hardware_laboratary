@@ -12,7 +12,7 @@ from .models import (
     ErrorPayload,
     IdentifyPayload
 )
-from .client.client import VHLWebSocketClient
+from .websocket_client.client import VHLWebSocketClient
 
 __all__ = [
     "BaseEvent",
