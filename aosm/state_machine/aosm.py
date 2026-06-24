@@ -330,6 +330,9 @@ class AOSM:
             self.project_semantic_db = self.workspace_manager.db
             project_creation_evaluator = ProjectCreationEvaluator(db=self.project_semantic_db) # Module name is not relevant for project creation evaluator as of now since it only checks for the presence of a baseline snapshot in the db which is created during project creation workflow. We can consider refactoring this later to remove the module_name dependency from the evaluator if it continues to be irrelevant for its logic.
             result,description = project_creation_evaluator.evaluate() # With this step, evaluator will commit a semantic operation to the semantic db. Based on the status of this operation, agent registry should compute the readiness of the Archy agent.
+            
+            # Commit project root directory to semantic db
+            self.project_semantic_db.upsert_project_setting(project_id, str(project_root))
             # TODO: 
             # Current implementation of ProjectCreationEvaluator uses hardcoded Agent ID and Operation Name(defined in the evaluator implementation code), so we can directly use those values in the Archy agent readiness function to check the status of the project creation workflow. Later, depending on the evolution of the evaluators, we can consider a standardized way to define and query these values.
             logger.info(f"[AOSM._handle_startup] Project creation evaluation result: {result}; Description: {description}")
@@ -598,6 +601,7 @@ class AOSM:
             await self.workflow_controller.handle_librarian(module_name=module_name,timeout=timeout)
             librarian_evaluator = LibrarianEvaluator(self.project_semantic_db, module_name=module_name)
             librarian_evaluator.evaluate()
+
             # 3. Step 3: ANA-D
             await self.workflow_controller.handle_ana(module_name=module_name, timeout=timeout)
             ana_evaluator = AnaEvaluator(self.project_semantic_db, module_name=module_name)

@@ -12,7 +12,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from archy.archy_agent.urp_archy import ArchyConfig, ArchyContext, ArchyURPAgent
-from archy.archy_agent.main import prepare_archy_workspace
+from archy_agent.utils import prepare_archy_workspace
 from vhl_common.urp.data_types import AgentContext, MessageEnvelope, AgentDescriptor, AgentStatus
 
 from openhands.sdk import (
