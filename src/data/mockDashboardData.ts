@@ -3,7 +3,7 @@ import type { DashboardData } from '../types/dashboard'
 const dashboardData: DashboardData = {
   navItems: [
     { id: 'home', label: 'Home', icon: '🏠', active: true },
-    { id: 'mission-dashboard', label: 'Mission Dashboard', icon: '📊' },
+    { id: 'mission-dashboard', label: 'Missions', icon: '📊' },
     { id: 'agents', label: 'Agents', icon: '🤖' },
     { id: 'workflows', label: 'Workflows', icon: '🧭' },
     { id: 'artifacts', label: 'Artifacts', icon: '📦' },

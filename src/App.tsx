@@ -6,6 +6,7 @@ import TopActions from './components/TopActions'
 import RecentProjects from './components/RecentProjects'
 import ProjectTemplates from './components/ProjectTemplates'
 import MissionFeed from './components/MissionFeed'
+import MissionDashboard from './components/MissionDashboard'
 
 import EditorView from './components/EditorView'
 
@@ -13,7 +14,7 @@ function App() {
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
 
-  const [view, setView] = useState<'dashboard' | 'editor'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'editor' | 'mission'>('dashboard');
   const [showSidebar, setShowSidebar] = useState(true);
   const [showMissionFeed, setShowMissionFeed] = useState(true);
 
@@ -85,7 +86,9 @@ function App() {
         )}
 
         <main className="space-y-6">
-          {view === 'dashboard' ? (
+          {view === 'mission' ? (
+            <MissionDashboard projectId="bms-project_38bd23b2" />
+          ) : view === 'dashboard' ? (
             <>
               <section className="rounded-3xl border border-slate-800 bg-slate-950/95 p-6 shadow-xl shadow-slate-950/30">
             <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
@@ -156,14 +159,11 @@ function App() {
             </>
           ) : (
             <EditorView 
-              projectPath="." 
               setView={setView} 
               showSidebar={showSidebar}
               setShowSidebar={setShowSidebar}
               showMissionFeed={showMissionFeed}
               setShowMissionFeed={setShowMissionFeed}
-              navItems={dashboardData?.navItems || []}
-              missionFeed={dashboardData?.missionFeed || []}
             />
           )}
         </main>

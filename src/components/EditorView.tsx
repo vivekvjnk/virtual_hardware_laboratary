@@ -1,26 +1,20 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 // Trigger rebuild for Vite cache fix.
 
 interface EditorViewProps {
-  projectPath: string;
   setView: (view: 'dashboard' | 'editor') => void;
   showSidebar: boolean;
   setShowSidebar: (show: boolean) => void;
   showMissionFeed: boolean;
   setShowMissionFeed: (show: boolean) => void;
-  navItems: any[]; // Adjust type as needed
-  missionFeed: any[]; // Adjust type as needed
 }
 
 export default function EditorView({ 
-  projectPath, 
   setView, 
   showSidebar, 
   setShowSidebar, 
   showMissionFeed, 
-  setShowMissionFeed,
-  navItems, 
-  missionFeed 
+  setShowMissionFeed
 }: EditorViewProps) {
   const [tree, setTree] = useState<[string, number][]>([]);
   const [activeFile, setActiveFile] = useState<string | null>(null);
