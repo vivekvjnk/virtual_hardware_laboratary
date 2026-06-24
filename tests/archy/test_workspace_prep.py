@@ -17,12 +17,12 @@ if str(archy_path) not in sys.path:
     sys.path.insert(0, str(archy_path))
 
 try:
-    from archy_agent.main import prepare_archy_workspace
+    from archy_agent.utils import prepare_archy_workspace
 except ImportError:
     # Fallback for different package structures
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
-    from archy.archy_agent.main import prepare_archy_workspace
+    from archy_agent.utils import prepare_archy_workspace
 
 
 # Load project configuration using workspace manager to get the expected structure for tests
