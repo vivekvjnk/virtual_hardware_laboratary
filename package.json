@@ -17,10 +17,11 @@
     "test:jest": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand",
     "clean": "rm -rf dist"
   },
- "pnpm": {
+  "pnpm": {
     "allowedBuildScripts": [
       "sharp",
-      "esbuild"
+      "esbuild",
+      "sqlite3"
     ]
   },
   "dependencies": {
@@ -28,22 +29,24 @@
     "@types/archiver": "^7.0.0",
     "@types/http-proxy": "^1.17.17",
     "archiver": "^7.0.1",
+    "cors": "^2.8.5",
     "express": "^5.2.1",
     "http-proxy": "^1.18.1",
     "ky": "^1.7.4",
     "multer": "^1.4.5-lts.1",
-    "cors": "^2.8.5",
     "react": "^19.2.3",
     "sharp": "^0.34.5",
+    "sqlite": "^5.1.1",
+    "sqlite3": "^6.0.1",
     "tscircuit": "latest",
     "ws": "^8.19.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.17",
     "@types/express": "^5.0.6",
     "@types/jest": "^29.5.11",
     "@types/multer": "^1.4.12",
-    "@types/cors": "^2.8.17",
     "@types/node": "^20.11.0",
     "@types/react": "^19.2.8",
     "@types/ws": "^8.18.1",

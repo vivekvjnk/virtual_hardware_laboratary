@@ -11,6 +11,8 @@ import cors from 'cors';
 import multer from 'multer';
 import { WebSocket } from 'ws';
 import { LocalFileSystemProvider } from '../editor/localFilesystem.js';
+import sqlite3 from 'sqlite3';
+import { open } from 'sqlite';
 
 export class VHLWebUI {
     private devServerProcess: ChildProcess | null = null;
@@ -36,6 +38,19 @@ export class VHLWebUI {
         this.setupAPIServer();
     }
 
+    private async getProjectModules(project_id: string): Promise<string[]> {
+        const dbPath = path.join(this.workspaceDir, project_id , `${project_id}_root`, '.vhl', 'state.db');
+        console.log(`[VHLWebUI] workspaceDir: ${this.workspaceDir}`);
+        console.log(`[VHLWebUI] Searching for database at: ${dbPath}`);
+        const db = await open({
+            filename: dbPath,
+            driver: sqlite3.Database
+        });
+        const modules: { module_name: string }[] = await db.all('SELECT module_name FROM project_modules');
+        await db.close();
+        return modules.map((m: { module_name: string }) => m.module_name);
+    }
+    
     private setupAPIServer() {
         const app = express();
         app.use(cors());
@@ -66,10 +81,34 @@ export class VHLWebUI {
             res.status(200).send({ status: 'Heartbeat sent' });
         });
 
+        app.post('/api/get-modules', async (req, res) => {
+            const { project_id } = req.body;
+            try {
+                const modules = await this.getProjectModules(project_id);
+                res.status(200).send({ modules });
+            } catch (err: any) {
+                console.error(`[VHLWebUI] Error in get-modules for ${project_id}:`, err);
+                res.status(500).send({ error: err.message, project_id, workspaceDir: this.workspaceDir });
+            }
+        });
+
+        app.post('/api/trigger-workflow', (req, res) => {
+            const { module_name } = req.body;
+            this.relaySocket?.send(JSON.stringify({ 
+                type: 'REFERENCE_UPLOADED', 
+                payload: { 
+                    reference_id: module_name,
+                    reference_type: "image",
+                    filename: "stub"
+                } 
+            }));
+            res.status(200).send({ status: 'Workflow 1 triggered' });
+        });
+
         app.post('/api/create-project', upload.single('file'), (req, res) => {
             const { project_name } = req.body;
             const filePath = req.file ? req.file.path : null;
-
+            
             console.log(`[VHLWebUI] Creating project ${project_name}, zip at ${filePath}`);
             
             this.relaySocket?.send(JSON.stringify({ 

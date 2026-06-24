@@ -42,6 +42,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json .npmrc .pnpmf
 
 # Install all dependencies
 RUN pnpm install --no-frozen-lockfile --unsafe-perm
+RUN npm rebuild sqlite3 --build-from-source --unsafe-perm
 
 # Copy source and build
 COPY src ./src
