@@ -11,6 +11,7 @@ import cors from 'cors';
 import multer from 'multer';
 import { WebSocket } from 'ws';
 import { LocalFileSystemProvider } from '../editor/localFilesystem.js';
+import { getProjectDir } from './projectContext.js';
 import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
 
@@ -39,8 +40,14 @@ export class VHLWebUI {
     }
 
     private async getProjectModules(project_id: string): Promise<string[]> {
-        const dbPath = path.join(this.workspaceDir, project_id , `${project_id}_root`, '.vhl', 'state.db');
-        console.log(`[VHLWebUI] workspaceDir: ${this.workspaceDir}`);
+        const projectDir = getProjectDir();
+        if (!projectDir) {
+            throw new Error("Project directory not set");
+        }
+        // "project_id is the last part of the project_dir path"
+        // "New path would be path.join( project_dir , `${project_id}_root`, '.vhl', 'state.db')"
+        const dbPath = path.join(projectDir, '.vhl', 'state.db');
+        console.log(`[VHLWebUI] projectDir: ${projectDir}`);
         console.log(`[VHLWebUI] Searching for database at: ${dbPath}`);
         const db = await open({
             filename: dbPath,
@@ -95,7 +102,11 @@ export class VHLWebUI {
         app.post('/api/trigger-workflow', (req, res) => {
             const { module_name } = req.body;
             this.relaySocket?.send(JSON.stringify({ 
-                type: 'REFERENCE_UPLOADED', 
+                id: randomUUID(),
+                type: 'REFERENCE_UPLOADED',
+                artifact_id: null,
+                timestamp: new Date().toISOString(),
+                source: 'vhl_webui', 
                 payload: { 
                     reference_id: module_name,
                     reference_type: "image",
