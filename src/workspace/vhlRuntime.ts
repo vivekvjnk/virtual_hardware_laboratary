@@ -16,7 +16,8 @@ export interface ProjectState {
     project_id: string | null;
     project_name: string | null;
     circuit_name: string | null;
-    project_dir: string | null;
+    project_root_dir: string | null;
+    workspace_dir: string | null;
     backend_status: "initialized" | "uninitialized" | "initializing";
     runtime_status: "initialized" | "uninitialized" | "initializing";
     is_synthesizable: boolean;
@@ -34,7 +35,8 @@ export class VHLRuntime implements RuntimeSender {
         project_id: null,
         project_name: null,
         circuit_name: null,
-        project_dir: null,
+        project_root_dir: null,
+        workspace_dir: null,
         backend_status: "uninitialized",
         runtime_status: "uninitialized",
         is_synthesizable: false,
@@ -141,9 +143,9 @@ export class VHLRuntime implements RuntimeSender {
         this.broadcastProjectState();
 
         // Keep global project context in sync for legacy code
-        if (patch.project_dir !== undefined || patch.circuit_name !== undefined) {
+        if (patch.project_root_dir !== undefined || patch.circuit_name !== undefined) {
             setGlobalProjectState({
-                projectDir: this.projectState.project_dir,
+                projectDir: this.projectState.project_root_dir,
                 currentCircuitName: this.projectState.circuit_name
             });
         }
@@ -173,7 +175,8 @@ export class VHLRuntime implements RuntimeSender {
                 this.setProjectState({
                     project_id: project_id,
                     project_name: project_id,
-                    project_dir: projectDir,
+                    project_root_dir: projectDir,
+                    workspace_dir: this.workspaceDir,
                     is_synthesizable: !!workspace_info?.is_synthesizable,
                     is_synthesis_completed: !!workspace_info?.is_synthesis_completed,
                     circuit_name: workspace_info?.circuit_name || null,
@@ -224,7 +227,7 @@ export class VHLRuntime implements RuntimeSender {
                         project_id: this.projectState.project_id,
                         project_name: this.projectState.project_name,
                         circuit_name: this.projectState.circuit_name,
-                        project_dir: this.projectState.project_dir,
+                        project_root_dir: this.projectState.project_root_dir,
                         workspace_info: {
                             is_synthesizable: this.projectState.is_synthesizable,
                             is_synthesis_completed: this.projectState.is_synthesis_completed,
@@ -245,7 +248,7 @@ export class VHLRuntime implements RuntimeSender {
                 await handleVapDecision(
                     task_id,
                     decision,
-                    this.projectState.project_dir || this.workspaceDir,
+                    this.projectState.project_root_dir || this.workspaceDir,
                     this,
                     this.activeVapContext.circuit_name
                 );
@@ -272,7 +275,7 @@ export class VHLRuntime implements RuntimeSender {
             project_id: null,
             project_name: null,
             circuit_name: null,
-            project_dir: null,
+            project_root_dir: null,
             backend_status: "uninitialized",
             runtime_status: "uninitialized",
             is_synthesizable: false,
@@ -300,13 +303,13 @@ export class VHLRuntime implements RuntimeSender {
 
         this.setProjectState({ circuit_name: circuitName });
 
-        if (this.projectState.project_dir) {
+        if (this.projectState.project_root_dir) {
             const entryFile = `${circuitName}.tsx`;
 
             // Check for Workspace directory
-            const workspaceDir = path.join(this.projectState.project_dir, "Workspace");
+            const workspaceDir = path.join(this.projectState.project_root_dir, "Workspace");
             const hasWorkspace = existsSync(workspaceDir);
-            const activeProjectDir = hasWorkspace ? workspaceDir : this.projectState.project_dir;
+            const activeProjectDir = hasWorkspace ? workspaceDir : this.projectState.project_root_dir;
 
         }
     }

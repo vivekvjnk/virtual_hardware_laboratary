@@ -44,8 +44,6 @@ export class VHLWebUI {
         if (!projectDir) {
             throw new Error("Project directory not set");
         }
-        // "project_id is the last part of the project_dir path"
-        // "New path would be path.join( project_dir , `${project_id}_root`, '.vhl', 'state.db')"
         const dbPath = path.join(projectDir, '.vhl', 'state.db');
         console.log(`[VHLWebUI] projectDir: ${projectDir}`);
         console.log(`[VHLWebUI] Searching for database at: ${dbPath}`);
