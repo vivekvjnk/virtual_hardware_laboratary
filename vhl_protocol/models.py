@@ -191,8 +191,18 @@ class AgentStatus(str, Enum):
     WAITING = "WAITING"
 
 class ProjectStatePayload(BaseModel):
+    model_config = ConfigDict(extra='allow')
+    project_id: Optional[str] = None
+    project_name: Optional[str] = None
+    workspace_root: Optional[str] = None
+    project_root: Optional[str] = None
+    worktrees: Dict[str, str] = Field(default_factory=dict)
+    artifacts: List[Dict[str, Any]] = Field(default_factory=list)
     backend_status: ProjectStatus
     runtime_status: ProjectStatus
+    is_synthesizable: bool = False
+    is_synthesis_completed: bool = False
+    circuit_name: Optional[str] = None
 
 class AgentStatePayload(BaseModel):
     archy: AgentStatus

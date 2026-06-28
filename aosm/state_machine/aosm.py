@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 class AOSM:
     """
-    Agentic Orchestration State Machine (AOSM)
+    Agent Orchestration State Machine (AOSM)
     Always-on, time-aware control layer for VHL.
     """
     def __init__(self, ws_url: str = "ws://localhost:1080", workspace_path:Path = Path("vhl_workspace").resolve()):
@@ -258,24 +258,6 @@ class AOSM:
             payload=payload
         ))
     
-    async def _aosm_error_transition(self, event: BaseEvent, **kwargs):
-        """Common error handler for aosm."""
-        error = kwargs.get("error")
-        logger.error(f"[AOSM._aosm_error_transition] Agent failure: {error}")
-        await self.transition_to(AOSMState.ERROR_PRESENTED, f"Agent execution failed: {error}")
-    
-
-    async def _parent_notify(self, payload: Dict[str, Any]):
-        """
-        Callback passed to child state machines (like ANA) to notify AOSM of events.
-        """
-        logger.info(f"[AOSM._parent_notify] Received parent notification with payload: {payload}")
-        await self.event_queue.put(BaseEvent(
-            type=EventType.ANA_NOTIFY,
-            source=EventSource.ANA,
-            payload=payload
-        ))
-
     # --- State Handlers --- BEGIN
 
     async def _handle_startup(self, event: BaseEvent):
@@ -303,8 +285,6 @@ class AOSM:
             
             logger.info(f"[AOSM._handle_startup] Creating new project: {project_id}")
             project_root = self.workspace_manager.create_project(project_id, zip_path=project_zip_path)
-            # Store project root information in class variable
-            self.project_root_info = self.workspace_manager.get_workspace_info()
             
             # Send back PROJECT_CREATED event to the runtime
             await self.web_socket_client.emit_event(BaseEvent(
@@ -313,7 +293,7 @@ class AOSM:
                 payload={
                     "project_id": project_id,
                     "project_root": str(project_root),
-                    "workspace_info": self.project_root_info
+                    "workspace_info": self.workspace_manager.get_workspace_info()
                 }
             ))
             logger.info("[AOSM._handle_startup] Waiting for DEV_SERVER_READY event ")
@@ -325,16 +305,29 @@ class AOSM:
 
             # Create worktrees for all modules 
             self.workspace_manager.setup_worktrees()
+            
+            # Update project root information after worktrees are setup
+            self.project_root_info = self.workspace_manager.get_workspace_info()
+            # Update runtime with complete workspace information after worktrees are setup
+            await self.web_socket_client.emit_event(BaseEvent(
+                type=EventType.PROJECT_LOADED, # We can use LOADED here to signal update
+                source=EventSource.VHL_AGENT_BACKEND,
+                payload={
+                    "project_id": self.project_id,
+                    "project_root": str(project_root),
+                    "workspace_info": self.project_root_info
+                }
+            ))
+
+            self.project_semantic_db = self.workspace_manager.db
 
             # Evaluate project creation success and update semantic db with the result. 
-            self.project_semantic_db = self.workspace_manager.db
-            project_creation_evaluator = ProjectCreationEvaluator(db=self.project_semantic_db) # Module name is not relevant for project creation evaluator as of now since it only checks for the presence of a baseline snapshot in the db which is created during project creation workflow. We can consider refactoring this later to remove the module_name dependency from the evaluator if it continues to be irrelevant for its logic.
-            result,description = project_creation_evaluator.evaluate() # With this step, evaluator will commit a semantic operation to the semantic db. Based on the status of this operation, agent registry should compute the readiness of the Archy agent.
+            project_creation_evaluator = ProjectCreationEvaluator(db=self.project_semantic_db) 
+            result,description = project_creation_evaluator.evaluate() 
             
             # Commit project root directory to semantic db
             self.project_semantic_db.upsert_project_setting(project_id, str(project_root))
-            # TODO: 
-            # Current implementation of ProjectCreationEvaluator uses hardcoded Agent ID and Operation Name(defined in the evaluator implementation code), so we can directly use those values in the Archy agent readiness function to check the status of the project creation workflow. Later, depending on the evolution of the evaluators, we can consider a standardized way to define and query these values.
+
             logger.info(f"[AOSM._handle_startup] Project creation evaluation result: {result}; Description: {description}")
 
             # Now initialize all the agents
@@ -343,9 +336,37 @@ class AOSM:
             # Transition to IDLE state
             await self.transition_to(AOSMState.IDLE, f"Project {project_id} created successfully")
 
-        # TODO : Outdated. Needs to be refactored to align with new project structure
         elif event.type == EventType.LOAD_PROJECT:
-            # TODO : Implement project load logic. For now, we will just transition to IDLE state.    
+            payload = event.payload or {}
+            project_id = payload.get("project_id")
+            if not project_id:
+                logger.error("[AOSM._handle_startup] LOAD_PROJECT received but no project_id provided")
+                return
+
+            self.project_id = project_id
+            logger.info(f"[AOSM._handle_startup] Loading existing project: {project_id}")
+            project_root = self.workspace_manager.load_project(project_id)
+            
+            # Setup worktrees if they don't exist
+            self.workspace_manager.setup_worktrees()
+            
+            self.project_root_info = self.workspace_manager.get_workspace_info()
+            self.project_semantic_db = self.workspace_manager.db
+
+            # Send back PROJECT_LOADED event to the runtime
+            await self.web_socket_client.emit_event(BaseEvent(
+                type=EventType.PROJECT_LOADED,
+                source=EventSource.VHL_AGENT_BACKEND,
+                payload={
+                    "project_id": project_id,
+                    "project_root": str(project_root),
+                    "workspace_info": self.project_root_info
+                }
+            ))
+            
+            # Re-register agents
+            await self.register_agents(workspace_manager=self.workspace_manager)
+            
             # Transition to IDLE state
             await self.transition_to(AOSMState.IDLE, f"Project {project_id} loaded successfully")
             
@@ -505,53 +526,7 @@ class AOSM:
                     payload={"message": "Invalid MESSAGE_TO_AGENT payload: missing target_agent or message"}
                 ))
     
-    async def _handle_cancel_pipeline(self, event: BaseEvent):
-        logger.info("[AOSM._handle_cancel_pipeline] Cleaning up cancelled pipeline...")
-        await self.transition_to(AOSMState.IDLE, "Cleanup complete")
-    
-    async def _handle_error_presented(self, event: BaseEvent):
-        logger.info(f"[AOSM._handle_error_presented] In ERROR_PRESENTED state...")
-        if event.type == EventType.HUMAN_INPUT:
-            content = event.payload.get("content", "").lower()
-            if "retry" in content:
-                # Retry strategy would depend on previous state
-                await self.transition_to(AOSMState.IDLE, "Retrying from IDLE")
-            elif "abort" in content:
-                await self.transition_to(AOSMState.IDLE, "User aborted after error")
-
-    async def _handle_wait_for_user(self, event: BaseEvent):
-        logger.info(f"[AOSM._handle_wait_for_user] In WAIT_FOR_USER state... ")
-        if event.type == EventType.HUMAN_INPUT:
-             await self.transition_to(AOSMState.TRIGGER_ANA, "Clarification received")
-
     # --- State Handlers --- END
-
-    async def _ana_deicsion_wait_and_transition(self, event, task_id, decision):
-        # This runs independently of the main loop
-        if self.mcp_manager:
-            logger.info(f"[AOSM._wait_and_transition] Applying VAP decision via MCP: {decision} for task {task_id}")
-            try:
-                await asyncio.to_thread(
-                    self.mcp_manager.call_tool,
-                    "apply_vap_decision",
-                    {"task_id": task_id, "decision": decision}
-                )
-            except Exception as e:
-                logger.error(f"[AOSM._wait_and_transition] Failed to apply VAP decision via MCP: {e}")
-                # Fallback to websocket if MCP fails
-                await self.web_socket_client.emit_evaluation_update(task_id=task_id, decision=decision)
-        else:
-            logger.info(f"[AOSM._wait_and_transition] No MCP manager available. Emitting evaluation update via WebSocket for task {task_id} with decision: {decision}")
-            await self.web_socket_client.emit_evaluation_update(task_id=task_id, decision=decision)
-        try:
-            await self.web_socket_client.wait_for_event(
-                EventType.DEV_SERVER_READY,
-                timeout=60.0
-            )
-            await self.transition_to(AOSMState.PRESENT_RESULT, payload=event.payload)
-        except Exception as e:
-            logger.error(f"Background wait failed: {e}")
-    
     async def _handle_close_project(self, event: BaseEvent):
         """Global handler for closing the current project."""
         logger.info(f"[AOSM._handle_close_project] Closing project {self.project_id}")

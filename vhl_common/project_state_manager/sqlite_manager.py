@@ -264,3 +264,26 @@ class SQLiteManager:
         """Retrieves all resources for a given module."""
         rows = self.conn.execute("SELECT * FROM module_resources WHERE module_id = ?", (module_id,)).fetchall()
         return [dict(row) for row in rows]
+
+    def get_recent_artifacts(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """Retrieves the most recent artifact snapshots along with their semantic operations."""
+        query = """
+            SELECT 
+                sn.id as snapshot_id,
+                sn.git_commit_hash,
+                sn.parent_commit_hash,
+                sn.module_name,
+                sn.timestamp as snapshot_timestamp,
+                so.op_name,
+                so.author,
+                so.status,
+                so.payload,
+                so.timestamp as operation_timestamp
+            FROM artifact_snapshots sn
+            LEFT JOIN semantic_operations so ON sn.id = so.artifact_ref_id
+            ORDER BY sn.timestamp DESC
+            LIMIT ?
+        """
+        rows = self.conn.execute(query, (limit,)).fetchall()
+        return [dict(row) for row in rows]
+

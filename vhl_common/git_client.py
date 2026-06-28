@@ -60,15 +60,24 @@ class GitClient:
         target = Path(path).resolve() if path else self.repo_path
         if not target.exists():
             return False
+        
+        # A more robust check for a git repository root:
+        # 1. It must have a .git directory (or be a bare repo)
+        # 2. rev-parse --show-toplevel should match the target
+        
+        dot_git = target / ".git"
+        if dot_git.exists() and dot_git.is_dir():
+            return True
+            
         try:
             # rev-parse --show-toplevel returns the root of the worktree.
             # If the target is the root, this will match the target path.
-            toplevel = self._run_git(["rev-parse", "--show-toplevel"], cwd=target)
+            toplevel = self._run_git(["rev-parse", "--show-toplevel"], cwd=target, quiet=True)
             return Path(toplevel).resolve() == target
         except Exception:
             try:
                 # Fallback for bare repositories
-                is_bare = self._run_git(["rev-parse", "--is-bare-repository"], cwd=target)
+                is_bare = self._run_git(["rev-parse", "--is-bare-repository"], cwd=target, quiet=True)
                 return is_bare == "true"
             except Exception:
                 return False

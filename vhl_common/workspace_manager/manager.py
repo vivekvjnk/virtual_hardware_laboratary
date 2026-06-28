@@ -32,6 +32,8 @@ class WorkspaceManager:
         
         self.debug = debug
         self.project_id: Optional[str] = None
+        self.project_root: Optional[Path] = None
+
         self.project_modules: List[str] = []
         self.worktree:dict[str,Path] = {} 
 
@@ -58,16 +60,16 @@ class WorkspaceManager:
 
 
 
-    def _init_project_persistence(self, project_path: Path):
+    def _init_project_persistence(self):
         """Initializes Git and SQLite managers for a specific project."""
         # Initialize Git at project root
         if not self.git:
-            self.git = GitClientWrapper(GitClient(project_path))
-            logger.info(f"[WorkspaceManager._init_project_persistence] Git initialized at: {project_path}")
+            self.git = GitClientWrapper(GitClient(self.stable_worktree))
+            logger.info(f"[WorkspaceManager._init_project_persistence] Git initialized at: {self.stable_worktree}")
         
         # Initialize SQLite at project_root/.vhl/state.db
         if not self.db:
-            db_path = project_path / ".vhl" / "state.db"
+            db_path = self.project_root / ".vhl" / "state.db"
             db_path.parent.mkdir(parents=True, exist_ok=True)
             self.db = SQLiteManager(str(db_path))
             logger.info(f"[WorkspaceManager._init_project_persistence] SQLite initialized at: {db_path}")
@@ -88,10 +90,12 @@ class WorkspaceManager:
         """
         
         self.project_id = project_id
-        self.worktree["root"] = f"{self.project_id}_root"
-
+        self.project_root = self.workspace_root / self.project_id
+        self.worktree["root"] = self.project_root / f"{self.project_id}_root"
+        self.stable_worktree = self.worktree["root"]
+        
         # Initialize persistence for the loaded project
-        self._init_project_persistence(self.worktree.get("root"))
+        self._init_project_persistence()
 
         # Recover modules from DB
         modules_records = self.db.get_project_modules()
@@ -118,7 +122,7 @@ class WorkspaceManager:
         self.worktree["root"] = self.stable_worktree
         
         # Initialize persistence for the new project
-        self._init_project_persistence(self.stable_worktree)
+        self._init_project_persistence()
 
         # Reset state
         self._archive_count = {}
@@ -207,20 +211,55 @@ class WorkspaceManager:
         except Exception as e:
             logger.warning(f"[WorkspaceManager.create_project] Failed to record INITIALIZE operation: {e}")
     
-    def _create_worktree(self,module_name):
+    def _create_worktree(self, module_name: str) -> Path:
         worktree_path = self.project_root / f"{self.project_id}_{module_name}"
         branch_name = f"{module_name}_branch"
-        self.git.git.worktree_add(path=worktree_path,branch=branch_name)
+        
+        # Check if branch already exists
+        branch_exists = self.git.git.branch_exists(branch_name)
+        
+        logger.info(f"[WorkspaceManager._create_worktree] Creating worktree for module '{module_name}' at {worktree_path}. Branch exists: {branch_exists}")
+        
+        self.git.git.worktree_add(
+            path=worktree_path,
+            branch=branch_name,
+            new_branch=not branch_exists
+        )
         return worktree_path
     
     def setup_worktrees(self):
+        """
+        Sets up worktrees for all project modules. 
+        If a worktree already exists at the expected path, it is reused.
+        """
+        if not self.git:
+            logger.warning("[WorkspaceManager.setup_worktrees] Git not initialized. Cannot setup worktrees.")
+            return
+
+        existing_worktrees = self.git.git.list_worktrees()
+        # Create a map of resolved paths to worktree info for quick lookup
+        existing_paths = {Path(wt['path']).resolve(): wt for wt in existing_worktrees}
+        
         for module in self.project_modules:
-            worktree_path = self._create_worktree(module)
-            self.worktree[module] = worktree_path
+            expected_path = (self.project_root / f"{self.project_id}_{module}").resolve()
+            
+            if expected_path in existing_paths:
+                logger.info(f"[WorkspaceManager.setup_worktrees] Worktree for module '{module}' already exists at {expected_path}. Reusing.")
+                self.worktree[module] = expected_path
+            else:
+                worktree_path = self._create_worktree(module)
+                self.worktree[module] = worktree_path
+            
             # Go in each worktree path and run `npm install` if package.json exists
+            # Use the resolved path from self.worktree[module]
+            worktree_path = self.worktree[module]
             package_json_path = worktree_path / "package.json"
             if package_json_path.exists():
-                subprocess.run(["npm", "install"], cwd=worktree_path)
+                logger.info(f"[WorkspaceManager.setup_worktrees] Running npm install in {worktree_path}")
+                try:
+                    subprocess.run(["npm", "install"], cwd=str(worktree_path), check=True)
+                except subprocess.CalledProcessError as e:
+                    logger.error(f"[WorkspaceManager.setup_worktrees] npm install failed in {worktree_path}: {e}")
 
     def get_module_workspace(self,module_name):
         if module_name in self.project_modules:
@@ -433,21 +472,27 @@ class WorkspaceManager:
         is_synthesizable = False
         is_synthesis_completed = False
         
-        res_dir = self.worktree.get(module_name) / module_name / "Workspace" /"resources"
-        has_sc = (res_dir / "schematic_images").is_dir()
-        scud_file_path = self.get_scud_path(module_name=module_name)
-        has_img = any(f.suffix.lower() in ['.png', '.jpg', '.jpeg'] for f in res_dir.iterdir() if f.is_file()) if res_dir.exists() else False
-        if has_sc and has_img and scud_file_path.exists():
-            is_synthesizable = True
+        module_path = self.worktree.get(module_name)
+        if module_path:
+            res_dir = Path(module_path) / module_name / "Workspace" / "resources"
+            has_sc = (res_dir / "schematic_images").is_dir()
+            scud_file_path = self.get_scud_path(module_name=module_name)
+            has_img = any(f.suffix.lower() in ['.png', '.jpg', '.jpeg'] for f in res_dir.iterdir() if f.is_file()) if res_dir.exists() else False
+            if has_sc and has_img and scud_file_path.exists():
+                is_synthesizable = True
 
-        if self.circuit_name.get(module_name):
-            if self.get_circuit_path_from_stable(module_name=module_name).exists():
-                is_synthesis_completed = True
+            if self.circuit_name.get(module_name):
+                if self.get_circuit_path_from_stable(module_name=module_name).exists():
+                    is_synthesis_completed = True
 
         return {
             "project_id": self.project_id,
             "project_manifest": self.git.get_tree_view() if self.git else {},
+            "workspace_root": str(self.workspace_root),
+            "project_root": str(self.project_root) if self.project_root else None,
             "workspace_path": str(self.get_module_workspace(module_name)),
+            "worktrees": {k: str(v) for k, v in self.worktree.items()},
+            "artifacts": self.db.get_recent_artifacts() if self.db else [],
             "archive_count": self._archive_count.get(module_name, 0),
             "is_synthesizable": is_synthesizable,
             "circuit_name": self.circuit_name.get(module_name),

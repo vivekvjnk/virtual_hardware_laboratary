@@ -48,7 +48,10 @@ class AbstractEvaluator(ABC):
         if snapshot_id is None:
             row = self.db.conn.execute("SELECT id FROM artifact_snapshots ORDER BY id DESC LIMIT 1").fetchone()
             if not row:
-                raise ValueError("No artifact snapshots found in the database to link the evaluation to.")
+                # If no snapshot exists, we can't link the semantic operation.
+                # In this case, we return the result but don't persist it.
+                # This prevents a total crash while still reporting the failure.
+                return "FAILURE", f"No artifact snapshots found in database. Evaluation could not be recorded. Original result: {result}, {description}"
             snapshot_id = row["id"]
 
         # Atomically write semantic operation
