@@ -2,6 +2,7 @@ import type { RecentProject } from '../types/dashboard'
 
 interface RecentProjectsProps {
   projects: RecentProject[]
+  onSelect: (id: string) => void
 }
 
 function badgeColor(progress: number) {
@@ -11,7 +12,7 @@ function badgeColor(progress: number) {
   return 'bg-rose-500/10 text-rose-300'
 }
 
-export default function RecentProjects({ projects }: RecentProjectsProps) {
+export default function RecentProjects({ projects, onSelect }: RecentProjectsProps) {
   return (
     <div className="space-y-4 rounded-3xl border border-slate-800 bg-slate-950/95 p-6 shadow-xl shadow-slate-950/30">
       <div className="flex items-center justify-between gap-4">
@@ -24,7 +25,11 @@ export default function RecentProjects({ projects }: RecentProjectsProps) {
 
       <div className="space-y-3">
         {projects.map((project) => (
-          <div key={project.id} className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
+          <div 
+            key={project.id} 
+            className="rounded-3xl border border-slate-800 bg-slate-900 p-4 hover:border-violet-500/50 hover:bg-slate-800/80 cursor-pointer transition-all"
+            onClick={() => onSelect(project.id)}
+          >
             <div className="flex items-center justify-between gap-4">
               <div>
                 <p className="font-semibold text-white">{project.name}</p>

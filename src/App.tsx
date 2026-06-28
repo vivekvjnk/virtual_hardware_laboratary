@@ -15,6 +15,7 @@ function App() {
   const [loading, setLoading] = useState(true)
 
   const [view, setView] = useState<'dashboard' | 'editor' | 'mission'>('dashboard');
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [showSidebar, setShowSidebar] = useState(true);
   const [showMissionFeed, setShowMissionFeed] = useState(true);
 
@@ -22,6 +23,16 @@ function App() {
     fetchDashboardData()
       .then((data) => setDashboardData(data))
       .finally(() => setLoading(false))
+
+    // Initialize activeProjectId from current runtime state
+    fetch('http://localhost:3022/api/project-state')
+      .then(res => res.json())
+      .then(state => {
+        if (state && state.project_id) {
+          setActiveProjectId(state.project_id);
+        }
+      })
+      .catch(err => console.error('Failed to fetch project state:', err));
   }, [])
 
   const [isIdentified, setIsIdentified] = useState(false);
@@ -65,6 +76,10 @@ function App() {
       const data = await response.json();
       console.log('Upload successful', data);
       
+      if (data.project_id) {
+        setActiveProjectId(data.project_id);
+        setView('mission');
+      }
     } catch (error) {
       console.error('Error uploading zip:', error);
       alert('Failed to upload project ZIP');
@@ -87,7 +102,13 @@ function App() {
 
         <main className="space-y-6">
           {view === 'mission' ? (
-            <MissionDashboard projectId="bms-project_38bd23b2" />
+            activeProjectId ? (
+              <MissionDashboard projectId={activeProjectId} />
+            ) : (
+              <div className="rounded-3xl border border-slate-800 bg-slate-900 p-10 text-center text-slate-400">
+                Please select or create a project to view the mission dashboard.
+              </div>
+            )
           ) : view === 'dashboard' ? (
             <>
               <section className="rounded-3xl border border-slate-800 bg-slate-950/95 p-6 shadow-xl shadow-slate-950/30">
@@ -141,7 +162,19 @@ function App() {
 
           <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr] xl:items-start">
             {dashboardData ? (
-              <RecentProjects projects={dashboardData.recentProjects} />
+              <RecentProjects 
+                projects={dashboardData.recentProjects} 
+                onSelect={(id) => {
+                  setActiveProjectId(id);
+                  setView('mission');
+                  // Notify runtime to load the project
+                  fetch('http://localhost:3022/api/load-project', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ project_id: id })
+                  }).catch(err => console.error('Failed to load project:', err));
+                }} 
+              />
             ) : (
               <div className="rounded-3xl border border-slate-800 bg-slate-900 p-10 text-center text-slate-400">
                 Loading recent projects...
