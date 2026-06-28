@@ -11,7 +11,7 @@ import cors from 'cors';
 import multer from 'multer';
 import { WebSocket } from 'ws';
 import { LocalFileSystemProvider } from '../editor/localFilesystem.js';
-import { getProjectDir } from './projectContext.js';
+import { getProjectRootDir, getProjectDir, projectContext } from './projectContext.js';
 import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
 
@@ -40,12 +40,38 @@ export class VHLWebUI {
     }
 
     private async getProjectModules(project_id: string): Promise<string[]> {
-        const projectDir = getProjectDir();
-        if (!projectDir) {
-            throw new Error("Project directory not set");
+        let projectRootDir = (project_id === projectContext.project_id) ? getProjectRootDir() : null;
+        
+        if (!projectRootDir && project_id) {
+            // Attempt to infer project root if not set in state or if requested project_id is different
+            const inferredRoot = path.join(this.workspaceDir, project_id, `${project_id}_root`);
+            try {
+                const stats = await fs.stat(inferredRoot);
+                if (stats.isDirectory()) {
+                    projectRootDir = inferredRoot;
+                    console.log(`[VHLWebUI] Inferred project root for ${project_id}: ${projectRootDir}`);
+                }
+            } catch (e) {
+                // Try one more: maybe it is the project_id itself (legacy or alternative structure)
+                const altRoot = path.join(this.workspaceDir, project_id);
+                try {
+                    const stats = await fs.stat(altRoot);
+                    if (stats.isDirectory()) {
+                        // Check if it has .vhl/state.db
+                        if (await fs.stat(path.join(altRoot, '.vhl', 'state.db')).catch(() => null)) {
+                            projectRootDir = altRoot;
+                        }
+                    }
+                } catch (e2) {}
+            }
         }
-        const dbPath = path.join(projectDir, '.vhl', 'state.db');
-        console.log(`[VHLWebUI] projectDir: ${projectDir}`);
+        
+        if (!projectRootDir) {
+            console.warn(`[VHLWebUI] Project directory not found for ${project_id} in ${this.workspaceDir}`);
+            return []; // Return empty instead of throwing to avoid crashing the UI
+        }
+        const dbPath = path.join(projectRootDir, '.vhl', 'state.db');
+        console.log(`[VHLWebUI] projectDir: ${projectRootDir}`);
         console.log(`[VHLWebUI] Searching for database at: ${dbPath}`);
         const db = await open({
             filename: dbPath,
@@ -54,6 +80,21 @@ export class VHLWebUI {
         const modules: { module_name: string }[] = await db.all('SELECT module_name FROM project_modules');
         await db.close();
         return modules.map((m: { module_name: string }) => m.module_name);
+    }
+    
+    private async getCircuitJson(project_id: string, module_name: string): Promise<any> {
+        const projectDir = getProjectDir(module_name);
+        if (!projectDir) {
+            throw new Error("Project directory not set");
+        }
+        // Main circuit code: projectState.workspace_dir/{project_id}_{module_name}/{module_name}/Workspace/{module_name}.tsx
+        // Imports path: projectState.workspace_dir/{project_id}_{module_name}/{module_name}/Workspace/imports/
+        const circuitJsonPath = path.join(projectDir, 'dist', module_name, 'Workspace', module_name, 'circuit.json');
+        
+        console.log(`[VHLWebUI] Loading circuit.json from: ${circuitJsonPath}`);
+        
+        const content = await fs.readFile(circuitJsonPath, 'utf-8');
+        return JSON.parse(content);
     }
     
     private setupAPIServer() {
@@ -97,6 +138,161 @@ export class VHLWebUI {
             }
         });
 
+        app.get('/api/projects/:projectId/modules/:moduleName/circuit', async (req, res) => {
+            const { projectId, moduleName } = req.params;
+            console.log(`[VHLWebUI] Fetching circuit fsMap for project: ${projectId}, module: ${moduleName}`);
+            try {
+                const mainFilePath = path.join(this.workspaceDir , projectId , `${projectId}_${moduleName}`, moduleName, 'Workspace', `${moduleName}.tsx`);
+                const fsMap: Record<string, string> = {};
+
+                // Read main circuit file
+                try {
+                    let mainContent = await fs.readFile(mainFilePath, 'utf-8');
+
+                    // Extract the exported component name (e.g., export const BmsMonitorModule)
+                    const exportMatch = mainContent.match(/export\s+const\s+(\w+)\s*=/);
+                    if (exportMatch && !mainContent.includes('circuit.add')) {
+                        const componentName = exportMatch[1];
+                        console.log(`[VHLWebUI] Appending circuit.add(<${componentName} />) to ${moduleName}.tsx`);
+                        mainContent += `\n\ncircuit.add(<${componentName} />)\n`;
+                    }
+
+                    fsMap[`${moduleName}.tsx`] = mainContent;
+                } catch (err: any) {
+                    console.error(`[VHLWebUI] Failed to read main circuit file at ${mainFilePath}:`, err);
+                    return res.status(404).send({ error: `Main circuit file not found: ${err.message}` });
+                }
+
+                // Read imports directory if it exists
+                const importsDir = path.join(this.workspaceDir, projectId ,`${projectId}_${moduleName}`, moduleName, 'Workspace', 'imports');
+                try {
+                    const files = await fs.readdir(importsDir);
+                    for (const file of files) {
+                        const filePath = path.join(importsDir, file);
+                        const stat = await fs.stat(filePath);
+                        if (stat.isFile()) {
+                            // Only include tsx/ts files
+                            if (file.endsWith('.tsx') || file.endsWith('.ts')) {
+                                const content = await fs.readFile(filePath, 'utf-8');
+                                fsMap[`./imports/${file}`] = content;
+                            }
+                        }
+                    }
+                } catch (err: any) {
+                    console.warn(`[VHLWebUI] Imports directory not read or doesn't exist: ${err.message}`);
+                }
+                console.log(`[VHLWebUI] fsMap:`,fsMap)
+                res.status(200).send(fsMap);
+            } catch (err: any) {
+                console.error(`[VHLWebUI] Error preparing fsMap:`, err);
+                res.status(500).send({ error: err.message });
+            }
+        });
+
+        app.get('/api/dashboard', async (req, res) => {
+            try {
+                const support_dirs = [".sync_scratch", ".zip_temp", "lib", "node_modules", ".tmp", "circuits", "eval_results", "logs"];
+                const entries = await fs.readdir(this.workspaceDir, { withFileTypes: true });
+                const projects = entries
+                    .filter(d => d.isDirectory() && !support_dirs.includes(d.name) && !d.name.startsWith('.'))
+                    .map(d => ({
+                        id: d.name,
+                        name: d.name,
+                        modules: 0, // Could be updated by reading their state.db
+                        lastOpened: 'Recently',
+                        progress: 0,
+                        status: 'Available'
+                    }));
+
+                // For each project, try to get more info from its state.db
+                for (const project of projects) {
+                    const dbPath = path.join(this.workspaceDir, project.id, '.vhl', 'state.db');
+                    try {
+                        const db = await open({
+                            filename: dbPath,
+                            driver: sqlite3.Database
+                        });
+                        const modules = await db.all('SELECT module_name FROM project_modules');
+                        project.modules = modules.length;
+                        
+                        const lastOp = await db.get('SELECT timestamp FROM semantic_operations ORDER BY timestamp DESC LIMIT 1');
+                        if (lastOp) {
+                            project.lastOpened = new Date(lastOp.timestamp).toLocaleDateString();
+                        }
+                        
+                        const synthesisStatus = await db.get("SELECT setting_value FROM project_settings WHERE setting_key LIKE '%.is_synthesis_completed'");
+                        if (synthesisStatus && synthesisStatus.setting_value === 'true') {
+                            project.progress = 100;
+                            project.status = 'Complete';
+                        } else {
+                            project.status = 'In Progress';
+                        }
+                        await db.close();
+                    } catch (e) {
+                        // Ignore if db doesn't exist yet
+                    }
+                }
+
+                res.status(200).send({
+                    recentProjects: projects,
+                    heroActions: [
+                        { id: 'create-project', title: 'Create New Project', description: 'Start a new mission from scratch', cta: 'Create Project', variant: 'primary' },
+                        { id: 'load-project', title: 'Load Existing Project', description: 'Open a saved workspace or restore from archive', cta: 'Load Project', variant: 'secondary' },
+                    ],
+                    templates: [
+                        { id: 'template-bms', name: 'Battery Management System', description: 'Complete BMS reference design with protection and monitoring', modules: 5 },
+                        { id: 'template-power', name: 'Power Supply', description: 'AC-DC / DC-DC power supply designs', modules: 3 },
+                    ],
+                    navItems: [
+                        { id: 'home', label: 'Home', icon: '🏠', active: true },
+                        { id: 'mission-dashboard', label: 'Missions', icon: '📊' },
+                        { id: 'workspace', label: 'Workspace', icon: '🗂️', badge: projectContext.project_id ? 'Active' : undefined },
+                    ],
+                    missionFeed: []
+                });
+            } catch (err: any) {
+                res.status(500).send({ error: err.message });
+            }
+        });
+
+
+        app.get('/api/project-state', async (req, res) => {
+            const state = { ...projectContext };
+            
+            // If project is loaded, try to fetch recent artifacts from DB
+            if (state.project_id && state.project_root_dir) {
+                const dbPath = path.join(state.project_root_dir, '.vhl', 'state.db');
+                try {
+                    await fs.access(dbPath);
+                    const db = await open({
+                        filename: dbPath,
+                        driver: sqlite3.Database
+                    });
+                    const artifacts = await db.all(`
+                        SELECT 
+                            sn.id as snapshot_id,
+                            sn.git_commit_hash,
+                            sn.module_name,
+                            sn.timestamp as snapshot_timestamp,
+                            so.op_name,
+                            so.author,
+                            so.status,
+                            so.payload
+                        FROM artifact_snapshots sn
+                        LEFT JOIN semantic_operations so ON sn.id = so.artifact_ref_id
+                        ORDER BY sn.timestamp DESC
+                        LIMIT 10
+                    `);
+                    state.artifacts = artifacts;
+                    await db.close();
+                } catch (err) {
+                    console.warn(`[VHLWebUI] Could not fetch artifacts from DB: ${err}`);
+                }
+            }
+            res.status(200).send(state);
+        });
+
+
         app.post('/api/trigger-workflow', (req, res) => {
             const { module_name } = req.body;
             this.relaySocket?.send(JSON.stringify({ 
@@ -131,6 +327,21 @@ export class VHLWebUI {
             }));
             res.status(200).send({ status: 'Project creation initiated', zip_path: filePath });
         });
+
+        app.post('/api/load-project', (req, res) => {
+            const { project_id } = req.body;
+            console.log(`[VHLWebUI] Loading project ${project_id}`);
+            
+            this.relaySocket?.send(JSON.stringify({ 
+                type: 'LOAD_PROJECT', 
+                source: 'vhl_webui', 
+                payload: { 
+                    project_id
+                } 
+            }));
+            res.status(200).send({ status: 'Project load initiated', project_id });
+        });
+
 
         app.post('/api/vhl-editor/rpc', async (req, res) => {
             const { action, params } = req.body;

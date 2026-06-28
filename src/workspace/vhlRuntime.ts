@@ -7,22 +7,11 @@ import type { WebSocketMessage, AgentMessage } from "../server/types.js";
 import { RuntimeSender, VapContext } from "./types.js";
 
 import { handleVapExecute, handleVapDecision } from "./vapHandlers.js";
-import { setProjectDir, setProjectState as setGlobalProjectState } from "./projectContext.js";
+import { setProjectDir, setProjectState as setGlobalProjectState, ProjectState } from "./projectContext.js";
 
 import { WorkspaceManager } from "../utils/workspaceManager.js";
 import { ROLE_RUNTIME } from "../server/roles.js";
 
-export interface ProjectState {
-    project_id: string | null;
-    project_name: string | null;
-    circuit_name: string | null;
-    project_root_dir: string | null;
-    workspace_dir: string | null;
-    backend_status: "initialized" | "uninitialized" | "initializing";
-    runtime_status: "initialized" | "uninitialized" | "initializing";
-    is_synthesizable: boolean;
-    is_synthesis_completed: boolean;
-}
 
 export class VHLRuntime implements RuntimeSender {
     private ws: WebSocket | null = null;
@@ -35,8 +24,12 @@ export class VHLRuntime implements RuntimeSender {
         project_id: null,
         project_name: null,
         circuit_name: null,
+        workspace_root: null,
+        project_root: null,
         project_root_dir: null,
         workspace_dir: null,
+        worktrees: {},
+        artifacts: [],
         backend_status: "uninitialized",
         runtime_status: "uninitialized",
         is_synthesizable: false,
@@ -141,14 +134,7 @@ export class VHLRuntime implements RuntimeSender {
         this.projectState = { ...this.projectState, ...patch };
         console.log("[VHLRuntime] Project State Updated:", this.projectState);
         this.broadcastProjectState();
-
-        // Keep global project context in sync for legacy code
-        if (patch.project_root_dir !== undefined || patch.circuit_name !== undefined) {
-            setGlobalProjectState({
-                projectDir: this.projectState.project_root_dir,
-                currentCircuitName: this.projectState.circuit_name
-            });
-        }
+        setGlobalProjectState(this.projectState);
     }
 
     private async handleMessage(msg: WebSocketMessage) {
@@ -169,14 +155,18 @@ export class VHLRuntime implements RuntimeSender {
                 const { project_id, workspace_info } = msg.payload;
                 console.log(`[VHLRuntime] Project ${msg.type === "PROJECT_CREATED" ? 'created' : 'loaded'}:`, project_id);
                 
-                const projectDir = workspace_info?.project_root_dir || path.join(this.workspaceDir, project_id ,`${project_id}_root`);
+                const projectDir = workspace_info?.project_root;
                 setProjectDir(projectDir); // NOTE: Project root refactor
 
                 this.setProjectState({
                     project_id: project_id,
                     project_name: project_id,
+                    workspace_root: workspace_info?.workspace_root || this.workspaceDir,
+                    project_root: projectDir,
                     project_root_dir: projectDir,
                     workspace_dir: this.workspaceDir,
+                    worktrees: workspace_info?.worktrees || {},
+                    artifacts: workspace_info?.artifacts || [],
                     is_synthesizable: !!workspace_info?.is_synthesizable,
                     is_synthesis_completed: !!workspace_info?.is_synthesis_completed,
                     circuit_name: workspace_info?.circuit_name || null,
@@ -186,7 +176,8 @@ export class VHLRuntime implements RuntimeSender {
 
                 // Move project initialization to WorkspaceManager
                 try {
-                    await WorkspaceManager.initializeProject(projectDir);
+                    // initialize project in project root worktree  
+                    await WorkspaceManager.initializeProject(workspace_info?.worktrees?.root);
                 } catch (error: any) {
                     this.sendError("TSCI_INIT_FAILED", error.message);
                     break;
@@ -303,11 +294,11 @@ export class VHLRuntime implements RuntimeSender {
 
         this.setProjectState({ circuit_name: circuitName });
 
-        if (this.projectState.project_root_dir) {
+        if (this.projectState.worktrees.root) {
             const entryFile = `${circuitName}.tsx`;
 
             // Check for Workspace directory
-            const workspaceDir = path.join(this.projectState.project_root_dir, "Workspace");
+            const workspaceDir = path.join(this.projectState.worktrees.root, "Workspace");
             const hasWorkspace = existsSync(workspaceDir);
             const activeProjectDir = hasWorkspace ? workspaceDir : this.projectState.project_root_dir;
 

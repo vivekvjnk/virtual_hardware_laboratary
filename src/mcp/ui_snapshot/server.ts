@@ -44,15 +44,15 @@ const LayoutSnapshotSchema = {
  * Common logic to retrieve a snapshot file from the active project's __snapshots__ directory.
  */
 async function getSnapshot(type: "schematic" | "pcb") {
-    const { projectDir, currentCircuitName } = getProjectState();
-    if (!projectDir) {
+    const { project_root_dir, project_id } = getProjectState();
+    if (!project_root_dir) {
         throw new Error("No active project");
     }
 
-    const snapshotsDir = path.join(projectDir, "__snapshots__");
+    const snapshotsDir = path.join(project_root_dir, "__snapshots__");
 
     // 1. Try to use the current circuit name from persisted state
-    let baseName = currentCircuitName;
+    let baseName = project_id;
 
     // 2. If no circuit name is tracked, try to infer it from the snapshots directory
     if (!baseName) {
