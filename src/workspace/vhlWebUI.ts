@@ -26,6 +26,7 @@ export class VHLWebUI {
     private fileSystemProvider: LocalFileSystemProvider;
 
     private relaySocket: WebSocket | null = null;
+    private agentMessages: Map<string, any[]> = new Map();
 
     private readonly GATEWAY_PORT = parseInt(process.env.VHL_WEBUI_PORT || "3020");
     private readonly TSC_DEV_PORT = 3021;
@@ -37,6 +38,7 @@ export class VHLWebUI {
     ) {
         this.fileSystemProvider = new LocalFileSystemProvider(this.workspaceDir);
         this.setupAPIServer();
+        this.connectToRelay();
     }
 
     private async getProjectModules(project_id: string): Promise<string[]> {
@@ -203,6 +205,49 @@ export class VHLWebUI {
                         progress: 0,
                         status: 'Available'
                     }));
+
+
+        app.get('/api/agents/:agentId/messages', (req, res) => {
+            const { agentId } = req.params;
+            const messages = this.agentMessages.get(agentId) || [];
+            res.status(200).send({ messages });
+        });
+
+        app.post('/api/agents/:agentId/send', (req, res) => {
+            const { agentId } = req.params;
+            const { text } = req.body;
+            
+            this.connectToRelay();
+            
+            const gateMessage = {
+                type: 'HUMAN_RESPONSE',
+                payload: { text },
+                sender: 'HIL',
+                receiver: agentId,
+                timestamp: new Date().toISOString(),
+                id: randomUUID()
+            };
+
+            const event = {
+                type: 'MESSAGE_TO_AGENT',
+                source: 'vhl_webui',
+                payload: {
+                    target_agent: agentId,
+                    message: text // AOSM expects message_data = payload.get("message")
+                },
+                timestamp: new Date().toISOString(),
+                id: randomUUID()
+            };
+
+            this.relaySocket?.send(JSON.stringify(event));
+            
+            // Store our own message too
+            const messages = this.agentMessages.get(agentId) || [];
+            messages.push(gateMessage);
+            this.agentMessages.set(agentId, messages);
+
+            res.status(200).send({ status: 'Message sent' });
+        });
 
                 // For each project, try to get more info from its state.db
                 for (const project of projects) {
@@ -376,8 +421,50 @@ export class VHLWebUI {
     private connectToRelay() {
         if (this.relaySocket) return;
         this.relaySocket = new WebSocket('ws://localhost:1080/ws-agent');
-        this.relaySocket.on('open', () => console.log('Connected to relay'));
-        this.relaySocket.on('message', (data) => console.log('Received from relay:', data.toString()));
+        this.relaySocket.on('open', () => {
+            console.log('Connected to relay');
+            this.relaySocket?.send(JSON.stringify({ type: 'IDENTIFY', payload: { role: 'ui' } }));
+        });
+        this.relaySocket.on('message', (data) => {
+            console.log('Received from relay:', data.toString());
+            try {
+                const msg = JSON.parse(data.toString());
+                
+                // Handle MESSAGE_FROM_AGENT from AOSM
+                if (msg.type === 'MESSAGE_FROM_AGENT' && msg.payload) {
+                    const gateMsg = msg.payload;
+                    if (gateMsg.receiver === 'HIL' && gateMsg.sender) {
+                        const agentId = gateMsg.sender;
+                        const messages = this.agentMessages.get(agentId) || [];
+                        const msgId = gateMsg.id || gateMsg.message_id || msg.id;
+                        if (!messages.find(m => (m.id || m.message_id) === msgId)) {
+                            messages.push(gateMsg);
+                            this.agentMessages.set(agentId, messages);
+                        }
+                    }
+                }
+                // Legacy/Direct GATE message handling
+                else if (msg.receiver === 'HIL' && msg.sender) {
+                    const agentId = msg.sender;
+                    const messages = this.agentMessages.get(agentId) || [];
+                    const msgId = msg.id || msg.message_id;
+                    if (!messages.find(m => (m.id || m.message_id) === msgId)) {
+                        messages.push(msg);
+                        this.agentMessages.set(agentId, messages);
+                    }
+                }
+            } catch (err) {
+                console.error('Error parsing relay message:', err);
+            }
+        });
+        this.relaySocket.on('close', () => {
+            console.log('Relay socket closed');
+            this.relaySocket = null;
+        });
+        this.relaySocket.on('error', (err) => {
+            console.error('Relay socket error:', err);
+            this.relaySocket = null;
+        });
     }
 
     private setupGatewayServer() {
