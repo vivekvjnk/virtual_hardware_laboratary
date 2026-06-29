@@ -1,5 +1,7 @@
 import asyncio
 import logging
+
+
 import os
 import sys
 import json
@@ -81,7 +83,43 @@ class AOSM:
             on_status_update=self.update_agent_status
         )
         self.supervisor.register_controller(self.workflow_controller)
-        
+        self.supervisor.register_hil_handler(self._handle_hil_message)
+
+    async def _handle_hil_message(self, message: MessageEnvelope):
+        """
+        Routes messages from GATE (intended for HIL) to the WebSocket relay.
+        """
+        logger.info(f"[AOSM._handle_hil_message] Routing message from {message.sender} to HIL via WebSocket")
+                
+        await self.web_socket_client.emit(
+            EventType.MESSAGE_FROM_AGENT,
+            payload=message
+        )
+
+    async def _handle_message_to_agent(self, event: BaseEvent):
+        """
+        Processes MESSAGE_TO_AGENT event and routes it to the target agent via Gate.
+        """
+        payload = event.payload or {}
+        target_agent = payload.get("target_agent")
+        message_data = payload.get("message", {})
+        if target_agent and message_data:
+            msg_payload = {"text": message_data}
+            message = MessageEnvelope(
+                type="MESSAGE_TO_AGENT", 
+                payload=msg_payload,
+                sender="vhl_webui",
+                receiver=target_agent
+            )
+            await self.supervisor.route_egress(message=message)
+        else:
+            logger.error("[AOSM._handle_message_to_agent] Invalid MESSAGE_TO_AGENT payload: missing target_agent or message")
+            await self.web_socket_client.emit_event(BaseEvent(
+                type=EventType.ERROR,
+                source=EventSource.VHL_AGENT_BACKEND,
+                payload={"message": "Invalid MESSAGE_TO_AGENT payload: missing target_agent or message"}
+            ))
+
     async def start(self):
         """Starts AOSM and the WebSocket client."""
         logger.info("[AOSM.start] Starting AOSM...")
@@ -203,6 +241,11 @@ class AOSM:
         if event.type == EventType.CLOSE_PROJECT:
             logger.info(f"👉 [AOSM] Handling CLOSE_PROJECT")
             await self._handle_close_project(event)
+            return
+
+        if event.type == EventType.MESSAGE_TO_AGENT:
+            logger.info(f"👉 [AOSM] Handling MESSAGE_TO_AGENT")
+            await self._handle_message_to_agent(event)
             return
 
         # Dispatch to handler based on current state and event
@@ -503,27 +546,6 @@ class AOSM:
                     type=EventType.ERROR,
                     source=EventSource.VHL_AGENT_BACKEND,
                     payload={"message": "Project not ready for synthesis. Please upload schematic first."}
-                ))
-        
-        elif event.type == EventType.MESSAGE_TO_AGENT:
-            logger.info(f"[AOSM._handle_idle] Received MESSAGE_TO_AGENT: {event.payload}")
-            # Expected structure of payload: {"target_agent": "agent_id", "message": MessageEnvelope}
-            # Typical example for message from webui:
-            # {"target_agent": "module1.librarian", "message": {"type": "RESOLVE_COMPONENTS", "payload": {"text": "Import all components related to power supply"}}}
-            payload = event.payload or {}
-            target_agent = payload.get("target_agent")
-            message_data = payload.get("message", {})
-            if target_agent and message_data:
-                msg_payload = {"text": message_data}
-
-                message = MessageEnvelope(type="MESSAGE_TO_AGENT", payload=msg_payload,sender="vhl_webui",receiver=target_agent)
-                await self.supervisor.route_egress(message=message)
-            else:
-                logger.error("[AOSM._handle_idle] Invalid MESSAGE_TO_AGENT payload: missing target_agent or message")
-                await self.web_socket_client.emit_event(BaseEvent(
-                    type=EventType.ERROR,
-                    source=EventSource.VHL_AGENT_BACKEND,
-                    payload={"message": "Invalid MESSAGE_TO_AGENT payload: missing target_agent or message"}
                 ))
     
     # --- State Handlers --- END

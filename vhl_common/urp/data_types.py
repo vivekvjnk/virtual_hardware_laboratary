@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Any, Dict, List, Optional, Callable
 from datetime import datetime, timezone
 import uuid
@@ -30,38 +30,37 @@ class FailureCategory(Enum):
     VALIDATION_FAILURE = "VALIDATION_FAILURE"
     INFRASTRUCTURE_FAILURE = "INFRASTRUCTURE_FAILURE"
 
-@dataclass
-class ProcessResultPayload:
+class ProcessResultPayload(BaseModel):
     text: str
 
-@dataclass
-class ProcessResult:
+class ProcessResult(BaseModel):
     outcome: LastTaskOutcome
     category: FailureCategory = FailureCategory.NONE
     payload: ProcessResultPayload | None = None
 
-@dataclass
-class AgentDescriptor:
+class AgentDescriptor(BaseModel):
     agent_id: str
     name: str
     version: str
     capabilities: List[str]
     accepted_message_types: List[str]
 
-@dataclass
-class MessageEnvelope:
+class MessageEnvelope(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    
     type: str
     payload: Any
     sender: str
-    receiver: str = field(default="HIL")
-    message_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    receiver: str = "HIL"
+    message_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     correlation_id: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
-@dataclass
-class AgentState:
+class AgentState(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    
     # URP's tracking of the internal state/session. 
     # For LangGraph, we track the thread_id to maintain conversational state.
     session_id: str
@@ -69,12 +68,13 @@ class AgentState:
     # Execution outcome of last processed message
     last_process_result: ProcessResult | None = None
     outcome_acknowledged: bool = True
-    internal_memory: Dict[str, Any] = field(default_factory=dict)
+    internal_memory: Dict[str, Any] = Field(default_factory=dict)
         
-@dataclass
-class AgentContext:
+class AgentContext(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    
     workspace_handle: Any = None
     tool_registry: Any = None
     llm_adapter: Any = None
     persistent_memory_handle: Any = None
-    configuration: Dict[str, Any] = field(default_factory=dict)
+    configuration: Dict[str, Any] = Field(default_factory=dict)

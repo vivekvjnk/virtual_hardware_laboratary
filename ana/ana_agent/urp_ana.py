@@ -1,5 +1,6 @@
 import os
 import asyncio
+import uuid
 from pathlib import Path
 from typing import Any, Optional
 from dataclasses import dataclass, field
@@ -208,12 +209,22 @@ class AnaURPAgent(AbstractURPAgent):
         )
 
         # ---- Conversation (persistence enables condensation across iterations) ----
-        
+        conv_id_key = f"ana_conversation_id_{self.module_name}"
+        conv_id_str = self.sqlite_manager.get_project_setting(conv_id_key)
+        if conv_id_str:
+            conversation_id = uuid.UUID(conv_id_str)
+            logger.info(f"[AnaURPAgent._on_initialize] Resuming conversation with ID: {conversation_id}")
+        else:
+            conversation_id = uuid.uuid4()
+            self.sqlite_manager.upsert_project_setting(conv_id_key, str(conversation_id))
+            logger.info(f"[AnaURPAgent._on_initialize] Created new conversation with ID: {conversation_id}")
+
         self.conversation = Conversation(
             agent=self.agent,
             workspace=str(self.agent_workspace_path),
             callbacks=[self._conversation_callback],
             persistence_dir=str(self.agent_workspace_path / ".conversation") if config.conversation_persistence else None,
+            conversation_id=conversation_id,
         )
 
 
