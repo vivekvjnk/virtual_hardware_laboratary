@@ -285,43 +285,33 @@ class LibrarianURPAgent(AbstractURPAgent):
     
     async def _check_postconditions(self, message: MessageEnvelope, result: ProcessResult) -> tuple[bool,str]:
         """
-        1. Validate if <project_root>/lib directory has been updated. No strict validation, simply check if there are any files created 
-        2. Validate if the .scud file has been updated with component mapping section
-            - scud file can be found inside the module directory in workspace. 
-            - create new method in workspace manager
-                - use git client in workspace manager to find the new changes made in .scud file
-                - return the changes as raw string
-            - check if the changes contain "Library Mapping" section. Use simple string match(not exact match, check without case sensitivity and ignore special characters and spaces) to validate if the section is added in the .scud file. No need to validate the content of the section for now.
-        3. If validations are failure, simply return False with appropriate message. The orchestration layer will decide the next step based on the False return value from postconditions check.
-        4. If validations are successful call self.workspace_manager.record_operation() 
-            - op_name : "LIBRARY_UPDATE"
-            - author: self.descriptor.agent_id
-            - status: "SUCCESS"
-            - payload: {"library_updated": True/False, "scud_updated": True/False}
-            - commit_message: "Library update by Librarian agent" (for successful update)
-        5. Return True with appropriate message if all validations are successful.
+        Librarian Postconditions Validation:
+        1. Artifact Exists? (Check "imports" directory)
+        2. Artifact Changed? (Check git status of "imports" directory)
+        3. Domain Validation (librarian artefact update activity):
+           - Check git status of scud file. 
+           - Verify if new lines are added under library mapping section.
         """
         
-        # 1. Validate if <project_root>/lib directory has been updated. No strict validation, simply check if there are any files created 
+        # 1. Artifact Exists?
         lib_dir = self.workspace_manager.worktree.get(self.module_name) / "imports"
-        library_updated = False
-        if lib_dir.exists():
-            for root, _, files in os.walk(lib_dir):
-                if files:
-                    library_updated = True
-                    break
+        if not lib_dir.exists():
+            result.category = FailureCategory.AGENTIC_FAILURE
+            return False, "Postconditions check failed: 'imports' directory does not exist."
 
-        if not library_updated:
-            msg = "Postconditions check failed: No files created in lib directory."
-            logger.warning(msg)
-            return False, msg
+        # 2. Artifact Changed?
+        lib_changed = self.workspace_manager.has_path_changes(lib_dir, self.module_name)
+        if not lib_changed:
+            logger.info(f"[{self.descriptor.agent_id}] No changes detected in 'imports' directory. Treating as user question answering iteration.")
+            return True, "User question answering iteration"
 
-        # 2. Validate if the .scud file has been updated with component mapping section
-        
+        # 3. Domain Validation (Librarian artefact update activity)
+        # Check git status of scud file and verify if new lines are added under library mapping section
         scud_file_path = self.workspace_manager.get_scud_path(module_name=self.module_name)
         logger.info(f"[LibrarianURPAgent:_check_postconditions] Checking .scud file changes at: {scud_file_path}")
         try:
-            changes = self.workspace_manager.get_file_changes(file_path=scud_file_path,module_name=self.module_name)
+            # get_file_changes returns git diff HEAD
+            changes = self.workspace_manager.get_file_changes(file_path=scud_file_path, module_name=self.module_name)
         except Exception as e:
             msg = f"Postconditions check failed: Failed to read scud file changes: {e}"
             logger.warning(msg)
@@ -329,18 +319,23 @@ class LibrarianURPAgent(AbstractURPAgent):
             return False, msg
         logger.info(f"[LibrarianURPAgent:_check_postconditions] .scud file changes: {changes}")
         
+        # Check if new lines (+) are added under 'library mapping' section
+        # We look for lines starting with '+' and containing 'library mapping' or being within that section.
+        # Simplest check as per existing implementation:
         target = "librarymapping"
-        cleaned_changes = "".join(c for c in changes.lower() if c.isalnum())
-        scud_updated = target in cleaned_changes
+        # We only care about added lines in the diff
+        added_lines = "\n".join([line for line in changes.splitlines() if line.startswith("+")])
+        cleaned_added_changes = "".join(c for c in added_lines.lower() if c.isalnum())
+        
+        scud_updated = target in cleaned_added_changes
 
         if not scud_updated:
-            msg = f"Postconditions check failed: 'Library Mapping' section not found in .scud file changes. Following are the changes:{cleaned_changes}"
+            msg = f"Postconditions check failed: 'Library Mapping' section not updated in .scud file. Following are the changes: {cleaned_added_changes}"
             logger.warning(msg)
             result.category = FailureCategory.AGENTIC_FAILURE
             return False, msg
 
-        # 6. Return True with appropriate message if all validations are successful.
-        return True, "Postconditions check passed: Library updated and SCUD file updated with Library Mapping."        
+        return True, "Librarian artefact update activity successful"
 
 if __name__ == "__main__":
     # Example usage (simplified)

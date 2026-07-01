@@ -437,15 +437,22 @@ class ArchyURPAgent(AbstractURPAgent):
             return False, f"Error checking start preconditions: {e}"
     
     async def _check_postconditions(self, message: MessageEnvelope, result: ProcessResult) -> tuple[bool, str]:
-        # Check if the module directory contains <module_name>.scud document. If not, return false with missing scud document as response message. If yes move to next step
-        #   1. Check if <module_name>.scud document is present in the module path directory 
+        # 1. Artifact Exists?
         scud_file_name = f"{self.module_name}.scud"
         scud_file = self.agent_workspace_path / scud_file_name
         if not scud_file.exists():
             result.category = FailureCategory.AGENTIC_FAILURE
             return False, f"Missing scud document: {scud_file_name} is not present in module directory."
-         
-        # Check if <module_name>.scud document has 'IN_PROGRESS' string at the very end. If yes, return false with scud is still under construction as response message. If no, send true with scud construction complete as response message
+
+        # 2. Artifact Changed?
+        has_changes = self.workspace_manager.has_path_changes(scud_file, self.module_name)
+        if not has_changes:
+            logger.info(f"[{self.descriptor.agent_id}] No changes detected in SCUD file. Treating as user question answering iteration.")
+            return True, "User question answering iteration"
+
+        # 3. Domain Validation (Archy artefact update activity)
+        # Check if <module_name>.scud document has 'IN_PROGRESS' string at the very end. 
+        # If yes, return false with scud is still under construction as response message. 
         try:
             with open(scud_file, "r", encoding="utf-8") as f:
                 content = f.read().strip()
@@ -455,7 +462,8 @@ class ArchyURPAgent(AbstractURPAgent):
         except Exception as e:
             result.category = FailureCategory.INFRASTRUCTURE_FAILURE
             return False, f"Failed to read scud file: {e}"
-        return True, "SCUD construction complete"
+        
+        return True, "Archy artefact update activity successful"
 
     async def process(self, message: MessageEnvelope) -> ProcessResult:
         """

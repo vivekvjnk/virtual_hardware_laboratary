@@ -267,6 +267,35 @@ class WorkspaceManager:
         else:
             logger.warning(f"[WorkspaceManager.get_module_workspace] Project modules are not configured yet... project_modules: {self.project_modules}")
             return Path("")
+
+    def has_path_changes(self, path: Path, module_name: str) -> bool:
+        """
+        Checks if the specified path (file or directory) has any changes in git (staged, unstaged, or untracked).
+        """
+        if not self.git:
+            raise RuntimeError("Project not loaded. Git persistence not initialized.")
+        
+        # Make path relative to worktree if it's absolute
+        worktree_path = self.worktree.get(module_name)
+        if not worktree_path:
+            logger.error(f"Worktree not found for module {module_name}")
+            return False
+
+        if path.is_absolute():
+            try:
+                rel_path = path.relative_to(worktree_path)
+            except ValueError:
+                rel_path = path
+        else:
+            rel_path = path
+        
+        try:
+            # --porcelain gives a stable output format
+            status_output = self.git.git._run_git(["status", "--porcelain", str(rel_path)], cwd=worktree_path)
+            return len(status_output.strip()) > 0
+        except Exception as e:
+            logger.error(f"Error checking git status for {path} in module {module_name}: {e}")
+            return False
     
     @property
     def module_names(self) -> List[str]:

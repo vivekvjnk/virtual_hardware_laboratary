@@ -328,37 +328,26 @@ class AnaURPAgent(AbstractURPAgent):
     ) -> tuple[bool, str]:
         """
         Post-condition hook — runs after process() succeeds.
-
-        Mapped from:
-        - handle_trigger_w2    : run ANA-W2 validation agent (VAP)
-        - handle_authorize     : act on VAP decision (ACCEPT / REJECT)
-        - handle_exit_success  : promote to Stable/, archive, record op, condense
-
-        VAP ACCEPT path
-        ---------------
-        1. Promote iteration directory contents to Stable/.
-        2. Move all iteration directories to Archives/.
-        3. Record CIRCUIT_SYNTHESIS operation via WorkspaceManager.
-        4. Run AnaEvaluator to write the evaluator signature into semantic_operations.
-        5. Sync project with runtime.
-        6. Condense conversation history (avoids context bloat next iteration).
-        7. Return (True, ...).
-
-        VAP REJECT path
-        ---------------
-        1. Collect evaluation logs from the iteration's eval_results/ directory.
-        2. Save them for the next ANA invocation (stash in self._pending_error_message).
-        3. Condense conversation history.
-        4. Return (False, reject_reason) — URP framework will emit TASK_POSTCONDITIONS_VIOLATED
-           which triggers a new corrective invocation with ANA in error-correction mode.
+        1. Artifact Exists? (Check if ANA-W1 produced the expected circuit file)
+        2. Artifact Changed? (Check git status of the circuit file)
+        3. Domain Validation (ANA artefact update activity):
+           - Trigger VAP validation (ANA-W2), if failure, return agentic failure to repeat ANA error correction.
         """
-        # Confirm ANA-W1 produced the expected circuit file
+        # 1. Artifact Exists?
         circuit_tsx_path = self.workspace_manager.get_maw_workspace_circuit_path(
             module_name=self.module_name
         )
         if not circuit_tsx_path.exists():
             process_result.category = FailureCategory.AGENTIC_FAILURE
-            return False,f"ANA-W1 did not produce a circuit .tsx file ."
+            return False, f"ANA-W1 did not produce a circuit .tsx file."
+        
+        # 2. Artifact Changed?
+        has_changes = self.workspace_manager.has_path_changes(circuit_tsx_path, self.module_name)
+        if not has_changes:
+            logger.info(f"[{self.descriptor.agent_id}] No changes detected in circuit .tsx file. Treating as user question answering iteration.")
+            return True, "User question answering iteration"
+
+        # 3. Domain Validation (ANA artefact update activity)
         logger.info(
             f"[AnaURPAgent._check_postconditions] module='{self.module_name}', iteration='{self.agent_workspace_path}', circuit_tsx_path='{circuit_tsx_path}"
         )
