@@ -22,7 +22,7 @@ export default function AgentChat({ moduleName, agentType, onClose }: { moduleNa
   };
 
   useEffect(() => {
-    scrollToBottom();
+    // scrollToBottom();
   }, [messages]);
 
   useEffect(() => {
