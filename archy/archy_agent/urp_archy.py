@@ -455,54 +455,6 @@ class ArchyURPAgent(AbstractURPAgent):
         except Exception as e:
             result.category = FailureCategory.INFRASTRUCTURE_FAILURE
             return False, f"Failed to read scud file: {e}"
-        
-        # Semantic operation section
-        # ------
-        # Capture 2 semantic operations under success case(scud file is present and 'IN_PROGRESS' string is not there in scud file)
-        # try:
-        #     cursor = self.sqlite_manager.conn.execute(
-        #         "SELECT id FROM project_modules WHERE module_name = ?",
-        #         (self.module_name,)
-        #     )
-        #     row = cursor.fetchone()
-        #     if not row:
-        #         result.category = FailureCategory.INFRASTRUCTURE_FAILURE
-        #         return False, f"Module '{self.module_name}' not found in project_modules database."
-        #     mod_id = row["id"]
-        # except Exception as e:
-        #     result.category = FailureCategory.INFRASTRUCTURE_FAILURE
-        #     return False, f"Database error fetching module ID: {e}"
-
-        # try:
-        #     import hashlib
-        #     sha256_hash = hashlib.sha256()
-        #     with open(scud_file, "rb") as f:
-        #         for byte_block in iter(lambda: f.read(4096), b""):
-        #             sha256_hash.update(byte_block)
-        #     checksum = sha256_hash.hexdigest()
-        # except Exception as e:
-        #     result.category = FailureCategory.INFRASTRUCTURE_FAILURE
-        #     return False, f"Failed to compute checksum for scud file: {e}"
-
-        # try:
-        #     scud_file_path = str(scud_file.relative_to(self.workspace_manager.get_module_workspace(self.module_name)))
-        # except Exception:
-        #     scud_file_path = str(scud_file)
-
-        # try:
-        #     self.sqlite_manager.insert_module_resource(
-        #         module_id=mod_id,
-        #         resource_name=scud_file_name,
-        #         file_path=scud_file_path,
-        #         resource_type="file",
-        #         description="Shared Circuit Understanding Document",
-        #         checksum=checksum
-        #     )
-        # except Exception as e:
-        #     logger.error(f"Error inserting module resource: {e}")
-        #     result.category = FailureCategory.INFRASTRUCTURE_FAILURE
-        #     return False, f"Failed to insert scud resource to database: {e}"
-
         return True, "SCUD construction complete"
 
     async def process(self, message: MessageEnvelope) -> ProcessResult:
@@ -548,7 +500,17 @@ class ArchyURPAgent(AbstractURPAgent):
         # NOTE: FINISHED, ERROR and STUCK are considered as terminal states in agent-sdk. 
               
         # get the final response from the conversation history (last assistant message)
-        response = str(self.llm_messages[-1]) if self.llm_messages else "No response generated"
+        if self.llm_messages:
+            last_msg = self.llm_messages[-1]
+            response = ""
+            for content_item in last_msg.content:
+                if isinstance(content_item, TextContent):
+                    response += content_item.text
+            if not response:
+                response = "No text response generated"
+        else:
+            response = "No response generated"
+            
         payload = ProcessResultPayload(text=response)
         
         return ProcessResult(outcome=process_outcome, payload=payload)

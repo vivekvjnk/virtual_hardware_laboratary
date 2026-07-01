@@ -166,11 +166,19 @@ class VHLWebSocketClient:
     async def emit(self, event_type: EventType, payload: BaseModel, artifact_id: Optional[str] = None, target: Optional[str]=None):
         """Creates and enqueues an event for delivery."""
         source = EventSource.VHL_AGENT_BACKEND if self.role == "agent" or self.role == "vhl_agent_backend" else EventSource.VHL_RUNTIME
+        # If payload is a Pydantic model, convert to dict
+        if hasattr(payload, "model_dump"):
+            dumped_payload = payload.model_dump(by_alias=True)
+        elif hasattr(payload, "dict"):
+            dumped_payload = payload.dict(by_alias=True)
+        else:
+            dumped_payload = payload
+
         event = BaseEvent(
             type=event_type,
             source=source,
             artifact_id=artifact_id,
-            payload=payload.model_dump(by_alias=True),
+            payload=dumped_payload,
             target=target
         )
         await self._send_queue.put(event)

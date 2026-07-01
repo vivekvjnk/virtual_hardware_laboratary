@@ -228,7 +228,17 @@ class LibrarianURPAgent(AbstractURPAgent):
 
         logger.info(f"[LibrarianURPAgent:{self.descriptor.agent_id}] Finished processing.")
 
-        response = str(self.llm_messages[-1]) if self.llm_messages else "No response generated"
+        if self.llm_messages:
+            last_msg = self.llm_messages[-1]
+            response = ""
+            for content_item in last_msg.content:
+                if isinstance(content_item, TextContent):
+                    response += content_item.text
+            if not response:
+                response = "No text response generated"
+        else:
+            response = "No response generated"
+
         payload = ProcessResultPayload(text=response)
         return ProcessResult(outcome=process_outcome, payload=payload)
 
