@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { RunFrame } from '@tscircuit/runframe/runner';
 
-export default function CircuitCanvas({ projectId, moduleName, onClose }: { projectId: string, moduleName: string, onClose: () => void }) {
+export default function CircuitCanvas({ projectId, moduleName, onClose, isEmbedded = false }: { projectId: string, moduleName: string, onClose: () => void, isEmbedded?: boolean }) {
   const [fsMap, setFsMap] = useState<Record<string, string> | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -28,16 +28,22 @@ export default function CircuitCanvas({ projectId, moduleName, onClose }: { proj
     loadCircuit();
   }, [projectId, moduleName]);
 
+  const containerClasses = isEmbedded 
+    ? "flex flex-col h-full w-full bg-slate-950"
+    : "fixed inset-0 bg-slate-950 p-6 flex flex-col z-50";
+
   return (
-    <div className="fixed inset-0 bg-slate-950 p-6 flex flex-col z-50">
+    <div className={containerClasses}>
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-xl font-bold text-white">Circuit: {moduleName}</h2>
-        <button 
-          onClick={onClose}
-          className="bg-slate-800 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded-xl transition-colors cursor-pointer"
-        >
-          Close
-        </button>
+        {!isEmbedded && (
+          <button 
+            onClick={onClose}
+            className="bg-slate-800 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded-xl transition-colors cursor-pointer"
+          >
+            Close
+          </button>
+        )}
       </div>
       <div className="flex-grow bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden relative" id="circuit-container">
         {loading && (

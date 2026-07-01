@@ -2,7 +2,7 @@ import type { NavItem } from '../types/dashboard'
 
 interface SidebarProps {
   items: NavItem[]
-  onNavigate: (view: 'dashboard' | 'editor' | 'mission') => void
+  onNavigate: (view: 'dashboard' | 'editor' | 'mission' | 'module_detail') => void
 }
 
 export default function Sidebar({ items, onNavigate }: SidebarProps) {

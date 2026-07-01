@@ -7,6 +7,7 @@ import RecentProjects from './components/RecentProjects'
 import ProjectTemplates from './components/ProjectTemplates'
 import MissionFeed from './components/MissionFeed'
 import MissionDashboard from './components/MissionDashboard'
+import ModuleDetailView from './components/ModuleDetailView'
 
 import EditorView from './components/EditorView'
 
@@ -14,8 +15,9 @@ function App() {
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
 
-  const [view, setView] = useState<'dashboard' | 'editor' | 'mission'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'editor' | 'mission' | 'module_detail'>('dashboard');
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [activeModuleName, setActiveModuleName] = useState<string | null>(null);
   const [showSidebar, setShowSidebar] = useState(true);
   const [showMissionFeed, setShowMissionFeed] = useState(true);
 
@@ -86,28 +88,50 @@ function App() {
     }
   };
 
+  const isModuleDetail = view === 'module_detail';
+
   return (
-    <div className="min-h-screen bg-slate-950 text-white px-6 py-6">
-      <div className={`mx-auto grid max-w-[1600px] gap-6 ${
-        showSidebar && showMissionFeed ? 'grid-cols-[280px_minmax(720px,1fr)_320px]' :
-        showSidebar ? 'grid-cols-[280px_minmax(720px,1fr)]' :
-        showMissionFeed ? 'grid-cols-[minmax(720px,1fr)_320px]' :
+    <div className={`min-h-screen bg-slate-950 text-white ${isModuleDetail ? 'p-4' : 'px-6 py-6'}`}>
+      <div className={`mx-auto grid ${isModuleDetail ? 'w-full' : 'max-w-[1600px]'} gap-6 ${
+        !isModuleDetail && showSidebar && showMissionFeed ? 'grid-cols-[280px_minmax(720px,1fr)_320px]' :
+        !isModuleDetail && showSidebar ? 'grid-cols-[280px_minmax(720px,1fr)]' :
+        !isModuleDetail && showMissionFeed ? 'grid-cols-[minmax(720px,1fr)_320px]' :
         'grid-cols-[1fr]'
       }`}>
-        {showSidebar && (
+        {!isModuleDetail && showSidebar && (
           <div>
             {dashboardData ? <Sidebar items={dashboardData.navItems} onNavigate={setView} /> : <Sidebar items={[]} onNavigate={setView} />}
           </div>
         )}
 
-        <main className="space-y-6">
+        <main className={isModuleDetail ? "h-[calc(100vh-2rem)]" : "space-y-6"}>
           {view === 'mission' ? (
             activeProjectId ? (
-              <MissionDashboard projectId={activeProjectId} />
+              <MissionDashboard 
+                projectId={activeProjectId} 
+                onOpenModuleDetail={(moduleName) => {
+                  setActiveModuleName(moduleName);
+                  setView('module_detail');
+                }}
+              />
             ) : (
               <div className="rounded-3xl border border-slate-800 bg-slate-900 p-10 text-center text-slate-400">
                 Please select or create a project to view the mission dashboard.
               </div>
+            )
+          ) : view === 'module_detail' ? (
+            activeProjectId && activeModuleName ? (
+              <ModuleDetailView 
+                projectId={activeProjectId}
+                moduleName={activeModuleName}
+                setView={setView}
+                showSidebar={showSidebar}
+                setShowSidebar={setShowSidebar}
+                showMissionFeed={showMissionFeed}
+                setShowMissionFeed={setShowMissionFeed}
+              />
+            ) : (
+              <div className="text-white">Invalid module or project</div>
             )
           ) : view === 'dashboard' ? (
             <>
@@ -201,7 +225,7 @@ function App() {
           )}
         </main>
 
-        {showMissionFeed && (
+        {!isModuleDetail && showMissionFeed && (
           <aside className="space-y-6">
             {dashboardData ? (
               <MissionFeed feed={dashboardData.missionFeed} />

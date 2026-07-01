@@ -2,11 +2,12 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 // Trigger rebuild for Vite cache fix.
 
 interface EditorViewProps {
-  setView: (view: 'dashboard' | 'editor') => void;
+  setView: (view: 'dashboard' | 'editor' | 'mission' | 'module_detail') => void;
   showSidebar: boolean;
   setShowSidebar: (show: boolean) => void;
   showMissionFeed: boolean;
   setShowMissionFeed: (show: boolean) => void;
+  isEmbedded?: boolean;
 }
 
 export default function EditorView({ 
@@ -14,7 +15,8 @@ export default function EditorView({
   showSidebar, 
   setShowSidebar, 
   showMissionFeed, 
-  setShowMissionFeed
+  setShowMissionFeed,
+  isEmbedded = false
 }: EditorViewProps) {
   const [tree, setTree] = useState<[string, number][]>([]);
   const [activeFile, setActiveFile] = useState<string | null>(null);
@@ -144,16 +146,20 @@ export default function EditorView({
     }
   };
 
+  const containerHeight = isEmbedded ? "h-full" : "h-[calc(100vh-3rem)]";
+
   return (
-    <div className="flex h-[calc(100vh-3rem)] text-white bg-slate-900 border border-slate-700 rounded-lg flex-col">
+    <div className={`flex ${containerHeight} text-white bg-slate-900 border border-slate-700 rounded-lg flex-col w-full`}>
       <div className="p-4 border-b border-slate-800 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <button 
-            className="text-sm text-slate-400 hover:text-white"
-            onClick={() => setView('dashboard')}
-          >
-            ← Back
-          </button>
+          {!isEmbedded && (
+            <button 
+              className="text-sm text-slate-400 hover:text-white"
+              onClick={() => setView('dashboard')}
+            >
+              ← Back
+            </button>
+          )}
           <h2 className="text-xl font-bold">VHL Editor</h2>
         </div>
         <div className="flex gap-2">
@@ -163,18 +169,22 @@ export default function EditorView({
           >
             {showFileExplorer ? 'Hide Explorer' : 'Show Explorer'}
           </button>
-          <button 
-            className="text-xs bg-slate-800 px-3 py-1 rounded hover:bg-slate-700"
-            onClick={() => setShowSidebar(!showSidebar)}
-          >
-            {showSidebar ? 'Hide Sidebar' : 'Show Sidebar'}
-          </button>
-          <button 
-            className="text-xs bg-slate-800 px-3 py-1 rounded hover:bg-slate-700"
-            onClick={() => setShowMissionFeed(!showMissionFeed)}
-          >
-            {showMissionFeed ? 'Hide MissionFeed' : 'Show MissionFeed'}
-          </button>
+          {!isEmbedded && (
+            <>
+              <button 
+                className="text-xs bg-slate-800 px-3 py-1 rounded hover:bg-slate-700"
+                onClick={() => setShowSidebar(!showSidebar)}
+              >
+                {showSidebar ? 'Hide Sidebar' : 'Show Sidebar'}
+              </button>
+              <button 
+                className="text-xs bg-slate-800 px-3 py-1 rounded hover:bg-slate-700"
+                onClick={() => setShowMissionFeed(!showMissionFeed)}
+              >
+                {showMissionFeed ? 'Hide MissionFeed' : 'Show MissionFeed'}
+              </button>
+            </>
+          )}
         </div>
       </div>
       <div className="flex h-full overflow-hidden">

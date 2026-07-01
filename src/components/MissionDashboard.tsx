@@ -3,7 +3,7 @@ import CircuitCanvas from './CircuitCanvas';
 import ProjectStateView from './ProjectStateView';
 import AgentChat from './AgentChat';
 
-export default function MissionDashboard({ projectId }: { projectId: string }) {
+export default function MissionDashboard({ projectId, onOpenModuleDetail }: { projectId: string, onOpenModuleDetail: (moduleName: string) => void }) {
   const [modules, setModules] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeCircuit, setActiveCircuit] = useState<string | null>(null);
@@ -72,7 +72,18 @@ export default function MissionDashboard({ projectId }: { projectId: string }) {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {modules.map(moduleName => (
           <div key={moduleName} className="border border-slate-800 bg-slate-900 p-6 rounded-3xl">
-            <h2 className="text-lg font-semibold text-white mb-4">{moduleName}</h2>
+            <div className="flex justify-between items-start mb-4">
+              <h2 className="text-lg font-semibold text-white">{moduleName}</h2>
+              <button 
+                onClick={() => onOpenModuleDetail(moduleName)}
+                className="bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold py-1 px-3 rounded-lg flex items-center gap-1"
+              >
+                <span>Open Detail View</span>
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
+              </button>
+            </div>
             <div className="flex flex-col gap-2">
               <div className="flex gap-2">
                 <button 
