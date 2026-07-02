@@ -231,11 +231,7 @@ class AbstractURPAgent(ABC):
                     
                     await self.emit(MessageEnvelope(
                         type="TASK_POSTCONDITIONS_VIOLATED",
-                        payload={
-                            "result": self._state.last_process_result,
-                            "error": str(e),
-                            "text": str(e)
-                        },
+                        payload= self._state.last_process_result,
                         sender=self.descriptor.agent_id,
                         message_id= message.message_id,
                         correlation_id= message.correlation_id
@@ -249,11 +245,7 @@ class AbstractURPAgent(ABC):
                     self._state.outcome_acknowledged = False
                     await self.emit(MessageEnvelope(
                         type="TASK_PRECONDITIONS_VIOLATED",
-                        payload={
-                            "result": self._state.last_process_result,
-                            "error": str(e),
-                            "text": str(e)
-                        },
+                        payload= self._state.last_process_result,
                         sender=self.descriptor.agent_id,
                         message_id= message.message_id,
                         correlation_id= message.correlation_id
@@ -268,11 +260,7 @@ class AbstractURPAgent(ABC):
                     self._state.outcome_acknowledged = False
                     await self.emit(MessageEnvelope(
                         type="TASK_FAILED",
-                        payload={
-                            "result": self._state.last_process_result,
-                            "error": str(e),
-                            "text": str(e)
-                        },
+                        payload= self._state.last_process_result,
                         sender=self.descriptor.agent_id,
                         message_id= message.message_id,
                         correlation_id= message.correlation_id

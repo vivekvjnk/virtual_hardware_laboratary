@@ -283,7 +283,7 @@ class Workflow1Controller(AbstractController):
             start_time = asyncio.get_event_loop().time()
             found_completion = False
             while (asyncio.get_event_loop().time() - start_time) < timeout:
-                process_result = await self.wait_for_outcome(
+                process_result:ProcessResult = await self.wait_for_outcome(
                     ana_agent_id, 
                     timeout=timeout - (asyncio.get_event_loop().time() - start_time)
                 )
@@ -311,17 +311,17 @@ class Workflow1Controller(AbstractController):
                     found_completion = True
                     break
 
-                # Case 5 — Infrastructure Failure
+                # Case 2 — Infrastructure Failure
                 elif category == FailureCategory.INFRASTRUCTURE_FAILURE:
                     logger.error(f"[{self.controller_id}.handle_ana] Infrastructure failure detected: {process_result}")
                     raise InfrastructureError(f"Infrastructure failure during ANA-D execution: {process_result}")
 
-                # Case 6 — HIL Required
+                # Case 3 — HIL Required
                 elif outcome == LastTaskOutcome.WAITING_FOR_USER_INPUT:
                     logger.warning(f"[{self.controller_id}.handle_ana] ANA-D waiting for user input. Entering wait mode.")
                     continue
 
-                # Case 2 — Validation Failure
+                # Case 4 — Validation Failure
                 elif outcome == LastTaskOutcome.TASK_COMPLETED and category == FailureCategory.VALIDATION_FAILURE:
                     validation_failure_count += 1
                     if validation_failure_count > MAX_VALIDATION_FAILURES:
@@ -337,7 +337,7 @@ class Workflow1Controller(AbstractController):
                     )
                     await self._supervisor.send(ana_agent_id, retry_message)
 
-                # Case 3 — Agent Failed To Produce Artifact (Missing Artifact)
+                # Case 5 — Agent Failed To Produce Artifact (Missing Artifact)
                 elif outcome == LastTaskOutcome.TASK_COMPLETED and category == FailureCategory.AGENTIC_FAILURE:
                     agent_failure_count += 1
                     if agent_failure_count > MAX_AGENT_FAILURES:
@@ -353,7 +353,7 @@ class Workflow1Controller(AbstractController):
                     )
                     await self._supervisor.send(ana_agent_id, retry_message)
 
-                # Case 4 — Agent Stuck Mid-Execution
+                # Case 6 — Agent Stuck Mid-Execution
                 elif outcome == LastTaskOutcome.TASK_FAILED and category == FailureCategory.AGENTIC_FAILURE:
                     agent_failure_count += 1
                     if agent_failure_count > MAX_AGENT_FAILURES:
