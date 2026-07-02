@@ -187,7 +187,7 @@ export default function EditorView({
           )}
         </div>
       </div>
-      <div className="flex h-full overflow-hidden">
+      <div className="flex flex-grow min-h-0 overflow-hidden">
         {showFileExplorer && (
           <>
             <div className="p-4 border-r border-slate-700 overflow-y-auto flex-shrink-0" style={{ width: `${sidebarWidth}px` }}>

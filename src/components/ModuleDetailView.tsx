@@ -79,7 +79,7 @@ export default function ModuleDetailView({
 
         {showChat && (
           <div className="w-1/4 min-w-[350px] h-full flex flex-col gap-2">
-            <div className="flex gap-1 bg-slate-800 p-1 rounded-xl">
+            <div className="flex-none flex gap-1 bg-slate-800 p-1 rounded-xl">
                {['archy', 'librarian', 'ana'].map(agent => (
                  <button
                     key={agent}
@@ -90,12 +90,14 @@ export default function ModuleDetailView({
                  </button>
                ))}
             </div>
-            <AgentChat 
-              moduleName={moduleName}
-              agentType={activeAgent}
-              onClose={() => {}}
-              isEmbedded={true}
-            />
+            <div className="flex-grow min-h-0">
+              <AgentChat 
+                moduleName={moduleName}
+                agentType={activeAgent}
+                onClose={() => {}}
+                isEmbedded={true}
+              />
+            </div>
           </div>
         )}
       </div>
