@@ -438,7 +438,15 @@ export class VHLWebUI {
                         const messages = this.agentMessages.get(agentId) || [];
                         const msgId = gateMsg.id || gateMsg.message_id || msg.id;
                         if (!messages.find(m => (m.id || m.message_id) === msgId)) {
-                            messages.push(gateMsg?.payload);
+                            const p = gateMsg?.payload;
+                            if (p && typeof p === 'object' && p.payload === null && p.outcome && p.category) {
+                                messages.push({
+                                    ...p,
+                                    text: `Task failed: ${p.outcome} (${p.category})`
+                                });
+                            } else {
+                                messages.push(p);
+                            }
                             this.agentMessages.set(agentId, messages);
                         }
                     }
