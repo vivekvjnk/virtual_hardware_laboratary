@@ -117,11 +117,22 @@ export class VHLWebUI {
         });
         const upload = multer({ storage });
 
-        app.post('/api/identify', (req, res) => {
-            const { role } = req.body;
-            this.connectToRelay();
-            this.relaySocket?.send(JSON.stringify({ type: 'IDENTIFY', payload: { role } }));
-            res.status(200).send({ status: 'Identifying' });
+        app.post('/api/upload-file', upload.single('file'), async (req, res) => {
+            if (!req.file) {
+                return res.status(400).send({ error: 'No file uploaded' });
+            }
+            
+            // In a real implementation, we would move this to a project-specific directory
+            // For now, we return the path to the file in the .zip_temp folder
+            const filePath = req.file.path;
+            
+            // Emit FILE_ADDED event
+            this.relaySocket?.send(JSON.stringify({ 
+                type: 'FILE_ADDED', 
+                payload: { file_path: filePath, file_name: req.file.originalname } 
+            }));
+            
+            res.status(200).send({ path: filePath });
         });
 
         app.post('/api/heartbeat', (req, res) => {
@@ -215,13 +226,18 @@ export class VHLWebUI {
 
         app.post('/api/agents/:agentId/send', (req, res) => {
             const { agentId } = req.params;
-            const { text } = req.body;
+            const { text, file_path } = req.body;
             
+            let final_text = text;
+            if (file_path) {
+                final_text = `*User uploaded file: ${file_path}*\n\n${text}`;
+            }
+
             this.connectToRelay();
             
             const gateMessage = {
                 type: 'HUMAN_RESPONSE',
-                payload: { text },
+                payload: { text: final_text },
                 sender: 'HIL',
                 receiver: agentId,
                 timestamp: new Date().toISOString(),
