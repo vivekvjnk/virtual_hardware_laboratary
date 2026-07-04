@@ -12,8 +12,10 @@ interface Message {
 export default function AgentChat({ moduleName, agentType, onClose, isEmbedded = false }: { moduleName: string, agentType: string, onClose: () => void, isEmbedded?: boolean }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
+  const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const agentId = `${moduleName}.${agentType}`;
 
@@ -45,23 +47,41 @@ export default function AgentChat({ moduleName, agentType, onClose, isEmbedded =
 
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim()) return;
+    if (!input.trim() && !file) return;
 
     setLoading(true);
+    let filePath = null;
+
     try {
+      if (file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        const response = await fetch(`http://localhost:3022/api/upload-file`, {
+          method: 'POST',
+          body: formData
+        });
+        if (response.ok) {
+          const data = await response.json();
+          filePath = data.path;
+        }
+      }
+
       const response = await fetch(`http://localhost:3022/api/agents/${agentId}/send`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: input })
+        body: JSON.stringify({ text: input, file_path: filePath })
       });
 
       if (response.ok) {
         setInput('');
+        setFile(null);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+
         // Optimistically add message
         const newMessage: Message = {
             id: Date.now().toString(),
             sender: 'HIL',
-            payload: { text: input },
+            payload: { text: file ? `[File: ${file.name}] ${input}` : input },
             timestamp: new Date().toISOString()
         };
         setMessages(prev => [...prev, newMessage]);
@@ -126,6 +146,19 @@ export default function AgentChat({ moduleName, agentType, onClose, isEmbedded =
         <form onSubmit={sendMessage} className="p-4 border-t border-slate-800 bg-slate-800/30">
           <div className="flex gap-2">
             <input
+              type="file"
+              ref={fileInputRef}
+              onChange={(e) => setFile(e.target.files ? e.target.files[0] : null)}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-xl transition-colors"
+            >
+              {file ? '📄' : '📎'}
+            </button>
+            <input
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -135,7 +168,7 @@ export default function AgentChat({ moduleName, agentType, onClose, isEmbedded =
             />
             <button
               type="submit"
-              disabled={loading || !input.trim()}
+              disabled={loading || (!input.trim() && !file)}
               className="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 text-white font-bold py-2 px-6 rounded-xl transition-colors"
             >
               {loading ? '...' : 'Send'}
