@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { fetchDashboardData } from './api/dashboard'
 import type { DashboardData } from './types/dashboard'
 import Sidebar from './components/Sidebar'
@@ -58,6 +58,23 @@ function App() {
         clearInterval(heartbeatInterval);
     };
   }, []);
+
+  useEffect(() => {
+    if (view === 'mission') {
+      const targets = [document.body, document.documentElement];
+      targets.forEach((el) => {
+        if (el) {
+          el.style.filter = '';
+          (el.style as any).webkitFilter = '';
+          el.classList.remove('grayscale');
+        }
+      });
+      const runframeStyle = document.querySelector('style[data-styles="tscircuit-runframe"]');
+      if (runframeStyle) {
+        runframeStyle.remove();
+      }
+    }
+  }, [view]);
 
   const uploadZip = async (projectName: string, file: File) => {
     // Upload file and create project through the new backend endpoint

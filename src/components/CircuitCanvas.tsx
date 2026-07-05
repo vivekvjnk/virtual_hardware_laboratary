@@ -1,10 +1,52 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 import { RunFrame } from '@tscircuit/runframe/runner';
 
 export default function CircuitCanvas({ projectId, moduleName, onClose, isEmbedded = false }: { projectId: string, moduleName: string, onClose: () => void, isEmbedded?: boolean }) {
   const [fsMap, setFsMap] = useState<Record<string, string> | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Fix: RunFrame can apply CSS filters globally (e.g. grayscale) that persist
+  // after unmount. This cleanup resets them when the component is removed.
+  useLayoutEffect(() => {
+    const originalBodyFilter = document.body.style.filter;
+    const originalBodyWebkit = (document.body.style as any).webkitFilter;
+    const originalHtmlFilter = document.documentElement.style.filter;
+    const originalHtmlWebkit = (document.documentElement.style as any).webkitFilter;
+
+    const bodyHadGrayscale = document.body.classList.contains('grayscale');
+    const htmlHadGrayscale = document.documentElement.classList.contains('grayscale');
+
+    return () => {
+      // Restore original filters
+      document.body.style.filter = originalBodyFilter;
+      (document.body.style as any).webkitFilter = originalBodyWebkit;
+      document.documentElement.style.filter = originalHtmlFilter;
+      (document.documentElement.style as any).webkitFilter = originalHtmlWebkit;
+
+      // Force clear any inline grayscale filter
+      if (document.body.style.filter && document.body.style.filter.includes('grayscale')) {
+        document.body.style.filter = '';
+      }
+      if (document.documentElement.style.filter && document.documentElement.style.filter.includes('grayscale')) {
+        document.documentElement.style.filter = '';
+      }
+
+      // Force clear classList grayscale if it wasn't there before
+      if (!bodyHadGrayscale) {
+        document.body.classList.remove('grayscale');
+      }
+      if (!htmlHadGrayscale) {
+        document.documentElement.classList.remove('grayscale');
+      }
+
+      // Remove runframe stylesheet to prevent CSS style leaks
+      const runframeStyle = document.querySelector('style[data-styles="tscircuit-runframe"]');
+      if (runframeStyle) {
+        runframeStyle.remove();
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const loadCircuit = async () => {

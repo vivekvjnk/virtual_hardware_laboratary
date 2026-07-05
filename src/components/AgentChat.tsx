@@ -9,11 +9,12 @@ interface Message {
   timestamp: string;
 }
 
-export default function AgentChat({ moduleName, agentType, onClose, isEmbedded = false }: { moduleName: string, agentType: string, onClose: () => void, isEmbedded?: boolean }) {
+export default function AgentChat({ moduleName, agentType, onClose, isEmbedded = false, initialMessage }: { moduleName: string, agentType: string, onClose: () => void, isEmbedded?: boolean, initialMessage?: string }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [messageSent, setMessageSent] = useState(false);
 
   const agentId = `${moduleName}.${agentType}`;
 
@@ -22,7 +23,7 @@ export default function AgentChat({ moduleName, agentType, onClose, isEmbedded =
   };
 
   useEffect(() => {
-    // scrollToBottom();
+    scrollToBottom();
   }, [messages]);
 
   useEffect(() => {
@@ -43,25 +44,34 @@ export default function AgentChat({ moduleName, agentType, onClose, isEmbedded =
     return () => clearInterval(interval);
   }, [agentId]);
 
-  const sendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim()) return;
+  useEffect(() => {
+    if (initialMessage && !messageSent) {
+      setMessageSent(true);
+      setTimeout(() => {
+        sendMessage(initialMessage);
+      }, 100);
+    }
+  }, [initialMessage, messageSent]);
+
+  const sendMessage = async (message?: string) => {
+    const messageToSend = message || input;
+    if (!messageToSend.trim()) return;
 
     setLoading(true);
     try {
       const response = await fetch(`http://localhost:3022/api/agents/${agentId}/send`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: input })
+        body: JSON.stringify({ text: messageToSend })
       });
 
       if (response.ok) {
-        setInput('');
+        if (!message) setInput('');
         // Optimistically add message
         const newMessage: Message = {
             id: Date.now().toString(),
             sender: 'HIL',
-            payload: { text: input },
+            payload: { text: messageToSend },
             timestamp: new Date().toISOString()
         };
         setMessages(prev => [...prev, newMessage]);
@@ -71,6 +81,11 @@ export default function AgentChat({ moduleName, agentType, onClose, isEmbedded =
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    sendMessage();
   };
 
   const containerClasses = isEmbedded
@@ -123,7 +138,7 @@ export default function AgentChat({ moduleName, agentType, onClose, isEmbedded =
         </div>
 
         {/* Input */}
-        <form onSubmit={sendMessage} className="p-4 border-t border-slate-800 bg-slate-800/30">
+        <form onSubmit={handleSubmit} className="p-4 border-t border-slate-800 bg-slate-800/30">
           <div className="flex gap-2">
             <input
               type="text"
