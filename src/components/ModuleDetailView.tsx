@@ -55,56 +55,38 @@ export default function ModuleDetailView({
 
 
   return (
-    <div className="flex flex-col h-full text-white gap-4">
+    <div className="flex flex-col h-full text-white gap-4 ">
       <div className="flex justify-between items-center p-4 rounded-3xl border border-slate-800 bg-slate-900">
-        <div className="flex items-center gap-4">
+        <div className="inline-flex rounded-full bg-slate-800 text-slate-400 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em]">
           <button 
             onClick={() => setView('mission')}
             className="text-slate-400 hover:text-white transition-colors"
           >
             ← Back to Mission
           </button>
+        </div>
+        <div className="inline-flex rounded-full bg-slate-800 text-slate-400 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em]">
           <h1 className="text-xl font-bold text-white">Module: {moduleName}</h1>
         </div>
-        <div className="flex gap-3">
-          <button 
-            onClick={() => setShowEditor(!showEditor)}
-            className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${showEditor ? 'bg-violet-600 hover:bg-violet-700 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
-          >
-            {showEditor ? 'Hide Editor' : 'Show Editor'}
-          </button>
-          <button 
-            onClick={() => setShowChat(!showChat)}
-            className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${showChat ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-slate-800 text-slate-400'}`}
-          >
-            {showChat ? 'Hide Chat' : 'Show Chat'}
-          </button>
-        </div>
-      </div>
-      {/* Module action summary (mirrors tile design) */}
-      <div className="rounded-3xl border border-slate-800 bg-slate-900 p-6 mt-4"> 
-        <div className="flex items-start justify-between gap-6">
-          <div>
-            <div className="inline-flex rounded-full bg-slate-800 text-slate-400 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em]">
-              Module
-            </div>
-            <h2 className="mt-3 text-lg font-semibold text-white">{moduleName}</h2>
+        <div className="inline-flex rounded-full bg-slate-800 text-slate-400 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em]">
+        
+          <div className="inline-flex rounded-full bg-slate-800 text-slate-400 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em]">
+            <button 
+              onClick={() => setShowEditor(!showEditor)}
+              className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${showEditor ? 'bg-violet-600 hover:bg-violet-700 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
+            >
+          
+              {showEditor ? 'Hide Editor' : 'Show Editor'}
+            </button>
           </div>
-
-          <div className="flex-1">
-            <div className="flex gap-3 mb-3">
-              <button onClick={triggerWorkflow} disabled={triggering} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-xl text-sm transition-colors">
-                {triggering ? 'Triggering...' : 'Trigger Workflow 1'}
-              </button>
-              <button onClick={renderCircuit} className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-xl text-sm transition-colors">
-                Render Circuit
-              </button>
-            </div>
-            <div className="flex gap-2">
-              <button className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 py-1.5 px-3 rounded-lg transition-colors">Archy</button>
-              <button className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 py-1.5 px-3 rounded-lg transition-colors">Librarian</button>
-              <button className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 py-1.5 px-3 rounded-lg transition-colors">Ana</button>
-            </div>
+          <div className="inline-flex rounded-full bg-slate-800 text-slate-400 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em]">
+          
+            <button 
+              onClick={() => setShowChat(!showChat)}
+              className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${showChat ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-slate-800 text-slate-400'}`}
+            >
+              {showChat ? 'Hide Chat' : 'Show Chat'}
+            </button>
           </div>
         </div>
       </div>
