@@ -1,6 +1,17 @@
 allowBuilds:
   esbuild: true
   sharp: true
+  sqlite3: false
+  unrs-resolver: true
+minimumReleaseAgeExclude:
+  - '@tscircuit/capacity-autorouter@0.0.640'
+  - '@tscircuit/cli@0.1.1617'
+  - '@tscircuit/core@0.0.1403'
+  - '@tscircuit/eval@0.0.979'
+  - '@tscircuit/matchpack@0.0.31'
+  - '@tscircuit/runframe@0.0.2171'
+  - schematic-symbols@0.0.231
+  - tscircuit@0.0.2017
 pnpm:
   allowBuilds:
     esbuild: true

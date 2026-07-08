@@ -29,7 +29,7 @@ services:
       - OBJECT_STORE_BUCKET=vhl
 
     volumes:
-      - ${VHL_WORKSPACE_HOST_PATH:-./workspace}:${VHL_WORKSPACE_HOST_PATH:-./workspace}:z
+      - ${VHL_WORKSPACE_HOST_PATH:-./workspace}:${VHL_WORKSPACE_HOST_PATH:-./workspace}:Z
 
     restart: unless-stopped
 

@@ -116,6 +116,12 @@ export class VHLWebUI {
             }
         });
         const upload = multer({ storage });
+        app.post('/api/identify', (req, res) => {
+            const { role } = req.body;
+            this.connectToRelay();
+            this.relaySocket?.send(JSON.stringify({ type: 'IDENTIFY', payload: { role } }));
+            res.status(200).send({ status: 'Identifying' });
+        });
 
         app.post('/api/upload-file', upload.single('file'), async (req, res) => {
             if (!req.file) {

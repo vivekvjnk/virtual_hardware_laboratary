@@ -1,4 +1,7 @@
-import archiver from "archiver";
+// import archiver from "archiver";
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+
 import { createWriteStream } from "fs";
 import * as fs from "fs/promises";
 import * as path from "path";
@@ -11,6 +14,7 @@ import { TEMP_DIR } from "../config/paths.js";
 export async function compressDirectory(sourceDir: string, outPath: string): Promise<void> {
     return new Promise((resolve, reject) => {
         const output = createWriteStream(outPath);
+        const archiver = require('archiver'); 
         const archive = archiver("zip", {
             zlib: { level: 9 }
         });
@@ -20,7 +24,7 @@ export async function compressDirectory(sourceDir: string, outPath: string): Pro
             resolve();
         });
 
-        archive.on("error", (err) => {
+        archive.on("error", (err:any) => {
             console.error(`[Runtime Workspace] Compression error:`, err);
             reject(err);
         });
