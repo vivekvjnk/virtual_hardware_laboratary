@@ -167,7 +167,7 @@ class WorkspaceManager:
             # Ensure .gitignore exists and ignores .vhl/ directory (SQLite DB)
             gitignore_path = self.stable_worktree / ".gitignore"
             if not gitignore_path.exists():
-                gitignore_path.write_text(".vhl/\n.claude/\nnode-modules/\n.tscircuit/\n.conversation/\n")
+                gitignore_path.write_text(".vhl/\n.claude/\nnode_modules/\n.tscircuit/\n.conversation/\n")
             
             library_git_keep_path = self.stable_worktree / "imports" / ".gitkeep"
             library_git_keep_path.write_text("")
