@@ -20,6 +20,7 @@ from openhands.sdk import (
     TextContent,
 )
 from openhands.tools.file_editor import FileEditorTool
+from openhands.tools.terminal import TerminalTool
 
 from openhands.sdk.conversation.state import (
     ConversationExecutionStatus,
@@ -193,6 +194,7 @@ class AnaURPAgent(AbstractURPAgent):
         submodule_root = Path(__file__).resolve().parent
         tools = [
             Tool(name=FileEditorTool.name),
+            Tool(name=TerminalTool.name)
         ]
         submodule_root = Path(__file__).resolve().parent
         sys_prompt_path = os.path.join(submodule_root, "ana_prompt.j2")

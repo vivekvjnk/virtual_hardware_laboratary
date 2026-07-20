@@ -27,6 +27,8 @@ from openhands.sdk.conversation.state import (
 )
 from openhands.sdk.context import Skill
 from openhands.tools.file_editor import FileEditorTool
+from openhands.tools.terminal import TerminalTool
+
 from vhl_common.project_state_manager.evaluators.project_creation_evaluator import AGENT_ID, OPERATION_NAME
 
 from vhl_common.urp.abstract_urp import AbstractURPAgent
@@ -385,6 +387,7 @@ class ArchyURPAgent(AbstractURPAgent):
             system_prompt_kwargs=sys_prompt_kwargs,
             tools=[
                 Tool(name=FileEditorTool.name),
+                Tool(name=TerminalTool.name)
             ],
         )
 
