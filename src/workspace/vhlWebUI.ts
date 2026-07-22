@@ -157,6 +157,71 @@ export class VHLWebUI {
             }
         });
 
+        app.post('/api/projects/:projectId/modules', upload.array('files'), async (req, res) => {
+            const { projectId } = req.params;
+            const { name, description, resource_descriptions } = req.body;
+            const uploadedFiles = req.files as Express.Multer.File[];
+
+            if (!name || !description) {
+                return res.status(400).send({ error: 'Name and description are required' });
+            }
+
+            try {
+                // Create a unique temporary directory for this module creation session
+                const sessionId = `${Date.now()}-${name}`;
+                const tempDir = path.join(this.workspaceDir, '.module_creation_temp', sessionId);
+                await fs.mkdir(tempDir, { recursive: true });
+
+                const resources: Array<{ name: string; description: string; path: string }> = [];
+                const descriptions = JSON.parse(resource_descriptions || '[]');
+
+                if (uploadedFiles && uploadedFiles.length > 0) {
+                    const resourceDir = path.join(tempDir, 'resources');
+                    await fs.mkdir(resourceDir, { recursive: true });
+
+                    for (let i = 0; i < uploadedFiles.length; i++) {
+                        const file = uploadedFiles[i];
+                        const targetPath = path.join(resourceDir, file.originalname);
+                        
+                        // Move file from uploadDir to session resourceDir
+                        await fs.rename(file.path, targetPath);
+                        
+                        resources.push({
+                            name: file.originalname,
+                            description: descriptions[i] || '',
+                            path: path.relative(tempDir, targetPath)
+                        });
+                    }
+                }
+
+                // Prepare resources.json
+                const manifest = {
+                    projectId,
+                    moduleName: name,
+                    moduleDescription: description,
+                    resources
+                };
+
+                await fs.writeFile(
+                    path.join(tempDir, 'resources.json'),
+                    JSON.stringify(manifest, null, 2)
+                );
+
+                console.log(`[VHLWebUI] Module creation artefacts saved to ${tempDir}`);
+
+                res.status(200).send({
+                    success: true,
+                    moduleId: name, 
+                    worktreePath: tempDir, 
+                    message: 'Module artefacts collected and saved successfully'
+                });
+
+            } catch (err: any) {
+                console.error(`[VHLWebUI] Error in module creation:`, err);
+                res.status(500).send({ error: err.message });
+            }
+        });
+
         app.get('/api/projects/:projectId/modules/:moduleName/circuit', async (req, res) => {
             const { projectId, moduleName } = req.params;
             console.log(`[VHLWebUI] Fetching circuit fsMap for project: ${projectId}, module: ${moduleName}`);

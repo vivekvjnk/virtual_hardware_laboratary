@@ -28,3 +28,46 @@ The `vhl-runtime` package provides the core infrastructure for the VHL-System, a
 
 - Real-time agent communication is handled via WebSockets defined in the **`server`** module.
 - External capabilities (terminal, UI snapshots) are exposed via MCP servers defined in the **`mcp`** module.
+
+## WebUI Interaction & API
+
+The `vhl-runtime` serves as the backend for the `vhl-webui`, providing specialized API endpoints for project management, circuit visualization, and agent interaction.
+
+### API Server (`vhl-runtime/src/workspace/vhlWebUI.ts`)
+
+An Express-based API server runs on port `3022` to handle requests from the WebUI:
+
+<details>
+<summary>Project Management Endpoints</summary>
+
+- `POST /api/create-project`: Initiates new project creation, optionally accepting a ZIP file containing reference design materials.
+- `POST /api/load-project`: Instructs the runtime to load an existing project into the active context.
+- `GET /api/dashboard`: Aggregates metadata for all available projects, including module counts and last-opened timestamps.
+- `GET /api/project-state`: Returns the comprehensive `ProjectState` (defined in `projectContext.ts`), including runtime health status and a history of recent artifact operations.
+</details>
+
+<details>
+<summary>Circuit & Module Operations</summary>
+
+- `POST /api/get-modules`: Fetches the list of modules for a specific project by querying the SQLite project database.
+- `GET /api/projects/:projectId/modules/:moduleName/circuit`: Generates a virtual file map (`fsMap`) for a module, enabling live rendering in the WebUI's `CircuitCanvas`.
+- `POST /api/trigger-workflow`: Emits a `REFERENCE_UPLOADED` event to the agent relay, triggering the automated design synthesis loop.
+- `POST /api/projects/:projectId/modules`: Handles the **Module Creation Workflow**. It collects uploaded design artefacts, saves them to a temporary directory, and prepares a `resources.json` manifest.
+</details>
+
+
+<details>
+<summary>Agent & Editor Integration</summary>
+
+- `GET /api/agents/:agentId/messages`: Retrieves the conversation history for a specific module/agent pair.
+- `POST /api/agents/:agentId/send`: Sends a message (optionally with an attachment) to an agent via the WebSocket relay.
+- `POST /api/vhl-editor/rpc`: Provides a remote procedure call interface for file system operations (read/write/list), powering the WebUI's integrated code editor.
+</details>
+
+### Runtime-to-Relay Communication
+
+The runtime maintains a persistent WebSocket connection to the Agent Relay (`ws://localhost:1080/ws-agent`). It acts as a bridge:
+1.  **Event Forwarding**: WebUI REST calls (like triggering workflows) are translated into WebSocket events for the Orchestration layer.
+2.  **Message Routing**: Agent messages received via WebSocket are cached in-memory and served to the WebUI via the message endpoints.
+3.  **State Synchronization**: Changes in project state (detected via file watchers or database updates) are communicated back to the WebUI to ensure a synchronized "Single Source of Truth".
+

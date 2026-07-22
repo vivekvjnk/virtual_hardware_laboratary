@@ -1,11 +1,9 @@
 /**
  * VAP Evaluator
- * 
- * Core evaluation engine that spawns and manages tsci eval processes.
- * 
- * INVARIANTS ENFORCED:
+ * * Core evaluation engine that spawns and manages tsci eval processes.
+ * * INVARIANTS ENFORCED:
  * - Timeout is a decision boundary, not a diagnosis
- * - Logs are captured verbatim
+ * - Logs are captured verbatim (minus ANSI control characters)
  * - No retry logic
  * - Process cleanup guaranteed
  */
@@ -25,12 +23,21 @@ export interface EvaluationResult {
 }
 
 /**
+ * Utility to strip ANSI escape codes and terminal color blocks
+ */
+function sanitizeLog(rawLog: string): string {
+    if (!rawLog) return "";
+    // Matches 7-bit and 8-bit ANSI escape sequences (colors, text styling, cursor moves)
+    const ansiRegex = /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{1,4})*)?[0-9A-ORZcf-nqry=><]/g;
+    return rawLog.replace(ansiRegex, "");
+}
+
+/**
  * Evaluate a circuit file using tsci eval
- * 
- * @param circuit_name - Name of the .tsx circuit file relative to evalDir
+ * * @param circuit_name - Name of the .tsx circuit file relative to evalDir
  * @param resultsDir - Directory to store evaluation results
  * @param evalDir - Evaluation COW workspace directory (CWD for evaluation)
- * @param timeoutMs - Timeout in milliseconds (default: 30000)
+ * @param timeoutMs - Timeout in milliseconds (default: 300000)
  * @returns EvaluationResult
  */
 export function evaluateCircuit(
@@ -51,7 +58,8 @@ export function evaluateCircuit(
             env: {
                 ...process.env,
                 CI: "true",
-                // Many CLI tools check these to decide whether to output detailed logs
+                // Kept on to ensure compiler outputs verbose log detail, 
+                // but we safely strip the formatting codes right after stream read.
                 FORCE_COLOR: "1",
                 TERM: "xterm-256color",
                 PYTHONUNBUFFERED: "1" // Useful if tsci calls underlying python scripts
@@ -59,9 +67,10 @@ export function evaluateCircuit(
             detached: true,
         });
 
-        // Use a unified handler to capture output from both streams
+        // The unified handler now cleans data before split-parsing lines
         const logHandler = (data: Buffer) => {
-            const lines = data.toString().split(/\r?\n/); // Handle both \n and \r\n
+            const cleanText = sanitizeLog(data.toString());
+            const lines = cleanText.split(/\r?\n/); // Handle both \n and \r\n
             for (const line of lines) {
                 const trimmed = line.trim();
                 if (trimmed) logs.push(trimmed);
