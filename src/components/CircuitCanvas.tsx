@@ -1,7 +1,17 @@
 import { useEffect, useLayoutEffect, useState } from 'react';
 import { RunFrame } from '@tscircuit/runframe/runner';
 
-export default function CircuitCanvas({ projectId, moduleName, onClose, isEmbedded = false }: { projectId: string, moduleName: string, onClose: () => void, isEmbedded?: boolean }) {
+export default function CircuitCanvas({ 
+  projectId, 
+  moduleName, 
+  onClose, 
+  isEmbedded = false 
+}: { 
+  projectId: string; 
+  moduleName: string; 
+  onClose: () => void; 
+  isEmbedded?: boolean; 
+}) {
   const [fsMap, setFsMap] = useState<Record<string, string> | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -70,46 +80,139 @@ export default function CircuitCanvas({ projectId, moduleName, onClose, isEmbedd
     loadCircuit();
   }, [projectId, moduleName]);
 
-  const containerClasses = isEmbedded 
-    ? "flex flex-col h-full w-full bg-slate-950"
-    : "fixed inset-0 bg-slate-950 p-6 flex flex-col z-50";
+  const containerStyle: React.CSSProperties = isEmbedded 
+    ? { display: 'flex', flexDirection: 'column', height: '100%', width: '100%', backgroundColor: '#020617', padding: '0rem' }
+    : { position: 'fixed', inset: 0, backgroundColor: '#020617', padding: '0.75rem', display: 'flex', flexDirection: 'column', zIndex: 50 };
 
   return (
-    <div className={containerClasses}>
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl font-bold text-white">Circuit: {moduleName}</h2>
-        {!isEmbedded && (
+    <div style={containerStyle}>
+      {/* Keyframe animation injected for spinner rotation */}
+      <style>{`
+        @keyframes spinner-rotate {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
+
+      {/* Canvas Header - Only rendered when NOT embedded */}
+      {!isEmbedded && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '0.5rem',
+            backgroundColor: '#0f172a',
+            padding: '0.25rem 0.625rem',
+            borderRadius: '0.5rem',
+            border: '1px solid #1e293b'
+          }}>
+            <span style={{ color: '#64748b', fontSize: '0.7rem', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+              CIRCUIT VIEW
+            </span>
+            <span style={{ color: '#334155', fontSize: '0.75rem' }}>/</span>
+            <span style={{ color: '#38bdf8', fontSize: '0.75rem', fontWeight: 600, fontFamily: 'monospace' }}>
+              {moduleName}
+            </span>
+          </div>
+
           <button 
             onClick={onClose}
-            className="bg-slate-800 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded-xl transition-colors cursor-pointer"
+            style={{
+              backgroundColor: '#1e293b',
+              color: '#ffffff',
+              fontWeight: 600,
+              padding: '0.375rem 0.875rem',
+              borderRadius: '0.5rem',
+              border: '1px solid #334155',
+              cursor: 'pointer',
+              fontSize: '0.75rem'
+            }}
           >
             Close
           </button>
-        )}
-      </div>
-      <div className="flex-grow bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden relative" id="circuit-container">
+        </div>
+      )}
+
+      {/* Main Canvas Frame Container */}
+      <div 
+        id="circuit-container"
+        style={{
+          flexGrow: 1,
+          backgroundColor: '#0f172a',
+          border: '1px solid #1e293b',
+          borderRadius: '1rem',
+          overflow: 'hidden',
+          position: 'relative'
+        }}
+      >
+        {/* Loading Overlay */}
         {loading && (
-          <div className="absolute inset-0 flex items-center justify-center text-white bg-slate-900 z-10">
-            <div className="flex flex-col items-center">
-              <div className="w-10 h-10 border-4 border-sky-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-              <span className="text-slate-400 font-medium">Loading circuit preview...</span>
+          <div style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#ffffff',
+            backgroundColor: '#0f172a',
+            zIndex: 10
+          }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <div style={{
+                width: '2.5rem',
+                height: '2.5rem',
+                border: '4px solid #0ea5e9',
+                borderTopColor: 'transparent',
+                borderRadius: '50%',
+                animation: 'spinner-rotate 1s linear infinite',
+                marginBottom: '1rem'
+              }} />
+              <span style={{ color: '#94a3b8', fontWeight: 500, fontSize: '0.875rem' }}>
+                Loading circuit preview...
+              </span>
             </div>
           </div>
         )}
+
+        {/* Error Overlay */}
         {error && (
-          <div className="absolute inset-0 flex items-center justify-center text-red-400 bg-slate-900 p-4">
-            <div className="text-center max-w-md">
-              <p className="font-semibold text-lg mb-2">Error Loading Circuit</p>
-              <p className="text-sm opacity-80 mb-4">{error}</p>
+          <div style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#f87171',
+            backgroundColor: '#0f172a',
+            padding: '1rem',
+            zIndex: 10
+          }}>
+            <div style={{ textAlign: 'center', maxWidth: '28rem' }}>
+              <p style={{ fontWeight: 600, fontSize: '1.125rem', marginBottom: '0.5rem', color: '#fca5a5' }}>
+                Error Loading Circuit
+              </p>
+              <p style={{ fontSize: '0.875rem', opacity: 0.8, marginBottom: '1rem', color: '#f87171' }}>
+                {error}
+              </p>
               <button 
                 onClick={onClose}
-                className="bg-red-900/30 hover:bg-red-900/50 text-red-200 border border-red-800/50 font-medium py-2 px-4 rounded-lg transition-colors cursor-pointer"
+                style={{
+                  backgroundColor: 'rgba(127, 29, 29, 0.4)',
+                  color: '#fecaca',
+                  border: '1px solid rgba(185, 28, 28, 0.6)',
+                  fontWeight: 500,
+                  padding: '0.5rem 1rem',
+                  borderRadius: '0.5rem',
+                  cursor: 'pointer'
+                }}
               >
                 Go Back
               </button>
             </div>
           </div>
         )}
+
+        {/* Circuit Renderer */}
         {!loading && !error && fsMap && (
           <RunFrame
             fsMap={fsMap}
@@ -122,4 +225,3 @@ export default function CircuitCanvas({ projectId, moduleName, onClose, isEmbedd
     </div>
   );
 }
-

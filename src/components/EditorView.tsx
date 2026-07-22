@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-// Trigger rebuild for Vite cache fix.
 
 interface EditorViewProps {
   setView: (view: 'dashboard' | 'editor' | 'mission' | 'module_detail') => void;
@@ -26,6 +25,7 @@ export default function EditorView({
   useEffect(() => {
     contentRef.current = content;
   }, [content]);
+  
   const [currentPath, setCurrentPath] = useState('.');
   const [sidebarWidth, setSidebarWidth] = useState(300);
   const [isResizing, setIsResizing] = useState(false);
@@ -58,6 +58,7 @@ export default function EditorView({
   useEffect(() => {
     writeFileRef.current = writeFile;
   }, [writeFile]);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.key === 'e') {
@@ -77,8 +78,7 @@ export default function EditorView({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showFileExplorer, showSidebar, showMissionFeed]);
-
+  }, [showFileExplorer, showSidebar, showMissionFeed, setShowSidebar, setShowMissionFeed]);
 
   useEffect(() => {
     fetchDirectory('.');
@@ -106,7 +106,7 @@ export default function EditorView({
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isResizing]);
+  }, [isResizing, resizeStartX, resizeStartWidth]);
 
   const fetchDirectory = async (targetPath: string) => {
     const response = await fetch('http://localhost:3022/api/vhl-editor/rpc', {
@@ -146,39 +146,97 @@ export default function EditorView({
     }
   };
 
-  const containerHeight = isEmbedded ? "h-full" : "h-[calc(100vh-3rem)]";
-
   return (
-    <div className={`flex ${containerHeight} text-white bg-slate-900 border border-slate-700 rounded-lg flex-col w-full`}>
-      <div className="p-4 border-b border-slate-800 flex items-center justify-between">
-        <div className="flex items-center gap-4">
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      height: isEmbedded ? '100%' : 'calc(100vh - 3rem)',
+      width: '100%',
+      color: '#ffffff',
+      backgroundColor: '#0f172a',
+      border: '1px solid #334155',
+      borderRadius: '0.75rem',
+      overflow: 'hidden'
+    }}>
+      {/* Top Bar */}
+      <div style={{
+        padding: '0.75rem 1rem',
+        borderBottom: '1px solid #1e293b',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        backgroundColor: '#0f172a'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           {!isEmbedded && (
             <button 
-              className="text-sm text-slate-400 hover:text-white"
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#94a3b8',
+                fontSize: '0.875rem',
+                cursor: 'pointer'
+              }}
               onClick={() => setView('dashboard')}
             >
               ← Back
             </button>
           )}
-          <h2 className="text-xl font-bold">VHL Editor</h2>
+          <h2 style={{ fontSize: '0.825rem', fontWeight: 'bold', margin: 0, color: '#ffffff' }}>
+            EDITOR
+          </h2>
         </div>
-        <div className="flex gap-2">
+        
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
           <button 
-            className="bg-slate-800 text-white px-3 py-1 rounded text-sm hover:bg-slate-700"
+            style={{ 
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            padding: '0.5rem 1rem', 
+            borderRadius: '0.75rem', 
+            fontSize: '0.75rem', 
+            fontWeight: 600, 
+            textTransform: 'uppercase', 
+            letterSpacing: '0.05em',
+            cursor: 'pointer',
+            backgroundColor: 'rgba(37, 99, 235, 0.15)' ,
+            border: '1px solid rgba(59, 130, 246, 0.5)' ,
+            color: '#60a5fa',
+            boxShadow: '0 0 2px rgba(59, 130, 246, 0.2)' ,
+            transition: 'all 0.2s ease'
+          }}
             onClick={() => setShowFileExplorer(!showFileExplorer)}
           >
             {showFileExplorer ? 'Hide Explorer' : 'Show Explorer'}
           </button>
+
           {!isEmbedded && (
             <>
               <button 
-                className="text-xs bg-slate-800 px-3 py-1 rounded hover:bg-slate-700"
+                style={{
+                  backgroundColor: '#1e293b',
+                  color: '#ffffff',
+                  padding: '0.375rem 0.75rem',
+                  borderRadius: '0.375rem',
+                  border: '1px solid #334155',
+                  fontSize: '0.75rem',
+                  cursor: 'pointer'
+                }}
                 onClick={() => setShowSidebar(!showSidebar)}
               >
                 {showSidebar ? 'Hide Sidebar' : 'Show Sidebar'}
               </button>
               <button 
-                className="text-xs bg-slate-800 px-3 py-1 rounded hover:bg-slate-700"
+                style={{
+                  backgroundColor: '#1e293b',
+                  color: '#ffffff',
+                  padding: '0.375rem 0.75rem',
+                  borderRadius: '0.375rem',
+                  border: '1px solid #334155',
+                  fontSize: '0.75rem',
+                  cursor: 'pointer'
+                }}
                 onClick={() => setShowMissionFeed(!showMissionFeed)}
               >
                 {showMissionFeed ? 'Hide MissionFeed' : 'Show MissionFeed'}
@@ -187,23 +245,59 @@ export default function EditorView({
           )}
         </div>
       </div>
-      <div className="flex flex-grow min-h-0 overflow-hidden">
+
+      {/* Main Workspace Area */}
+      <div style={{ display: 'flex', flexGrow: 1, minHeight: 0, overflow: 'hidden' }}>
         {showFileExplorer && (
           <>
-            <div className="p-4 border-r border-slate-700 overflow-y-auto flex-shrink-0" style={{ width: `${sidebarWidth}px` }}>
-              <h3 className="text-lg font-semibold mb-4">Files</h3>
-              <p className="text-xs text-slate-400 mb-2">Current: {currentPath}</p>
+            {/* File Explorer Tree Panel */}
+            <div style={{
+              width: `${sidebarWidth}px`,
+              padding: '1rem',
+              borderRight: '1px solid #334155',
+              overflowY: 'auto',
+              flexShrink: 0,
+              backgroundColor: '#0f172a'
+            }}>
+              <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.75rem', marginTop: 0 }}>Files</h3>
+              <p style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.5rem', wordBreak: 'break-all' }}>
+                Current: {currentPath}
+              </p>
+              
               {currentPath !== '.' && (
-                <button className="text-violet-400 mb-2" onClick={goBack}>.. (Back)</button>
+                <button 
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#c084fc',
+                    fontSize: '0.875rem',
+                    cursor: 'pointer',
+                    padding: 0,
+                    marginBottom: '0.5rem',
+                    fontWeight: 600
+                  }} 
+                  onClick={goBack}
+                >
+                  .. (Back)
+                </button>
               )}
+
               {tree.map(([name, type]) => {
                 const path = currentPath === '.' ? name : `${currentPath}/${name}`;
                 const isActive = activeFile === path;
                 return (
                   <div 
                     key={name} 
-                    className={`cursor-pointer px-2 py-2 border-b border-slate-800 last:border-b-0 transition-colors 
-                      ${isActive ? 'bg-slate-800 text-violet-400' : 'hover:bg-slate-800 hover:text-white text-slate-300'}`}
+                    style={{
+                      cursor: 'pointer',
+                      padding: '0.5rem',
+                      borderBottom: '1px solid #1e293b',
+                      backgroundColor: isActive ? '#1e293b' : 'transparent',
+                      color: isActive ? '#c084fc' : '#cbd5e1',
+                      fontSize: '0.875rem',
+                      borderRadius: '0.25rem',
+                      transition: 'background-color 0.15s'
+                    }}
                     onClick={() => {
                       if (type === 2) fetchDirectory(path);
                       else if (type === 1) readFile(path);
@@ -214,8 +308,16 @@ export default function EditorView({
                 );
               })}
             </div>
+
+            {/* Resize Splitter Handle */}
             <div 
-              className="w-1 cursor-col-resize bg-slate-700 hover:bg-violet-500 transition-colors"
+              style={{
+                width: '4px',
+                cursor: 'col-resize',
+                backgroundColor: isResizing ? '#8b5cf6' : '#334155',
+                flexShrink: 0,
+                transition: 'background-color 0.15s'
+              }}
               onMouseDown={(e) => {
                 setIsResizing(true);
                 setResizeStartX(e.clientX);
@@ -224,24 +326,95 @@ export default function EditorView({
             />
           </>
         )}
-        <div className="flex-grow p-4 flex flex-col overflow-hidden relative">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-lg font-semibold">{activeFile || 'No file selected'}</h3>
+
+        {/* Code Editor Panel */}
+        <div style={{
+          flexGrow: 1,
+          padding: '1rem',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+          position: 'relative',
+          backgroundColor: '#020617'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+            <h3 style={{ fontSize: '0.875rem', fontWeight: 600, color: '#e2e8f0', margin: 0, fontFamily: 'monospace' }}>
+              {activeFile || 'No file selected'}
+            </h3>
           </div>
+
           <textarea
-            className="flex-grow bg-slate-950 p-2 font-mono w-full"
+            style={{
+              flexGrow: 1,
+              backgroundColor: '#0f172a',
+              color: '#f8fafc',
+              padding: '0.75rem',
+              fontFamily: 'monospace',
+              fontSize: '0.875rem',
+              width: '100%',
+              border: '1px solid #1e293b',
+              borderRadius: '0.5rem',
+              resize: 'none',
+              outline: 'none',
+              boxSizing: 'border-box'
+            }}
             value={content}
             onChange={(e) => setContent(e.target.value)}
             disabled={!activeFile}
           />
+
           {notification && (
-            <div className="absolute bottom-6 left-6 bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg text-sm">
+            <div style={{
+              position: 'absolute',
+              bottom: '1.5rem',
+              left: '1.5rem',
+              backgroundColor: '#16a34a',
+              color: '#ffffff',
+              padding: '0.5rem 1rem',
+              borderRadius: '0.5rem',
+              boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.5)',
+              fontSize: '0.875rem',
+              border: '1px solid #22c55e',
+              zIndex: 20
+            }}>
               {notification}
             </div>
           )}
+
           {activeFile && (
             <button 
-              className="absolute bottom-6 right-6 bg-violet-600 px-4 py-2 rounded-lg shadow-lg text-sm hover:bg-violet-700" 
+              style={{
+                position: 'absolute',
+                bottom: '1.5rem',
+                right: '1.5rem',
+                backgroundColor: 'rgba(12, 31, 73, 0.83)' ,
+                border: '1px solid rgba(59, 130, 246, 0.5)' ,
+                color: '#60a5fa',
+                padding: '0.5rem 1.25rem',
+                borderRadius: '0.5rem',
+                boxShadow: '0 0 5px rgba(59, 130, 246, 0.2)' ,
+                fontSize: '0.875rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                zIndex: 20
+              }} 
+          //     style={{ 
+          //   display: 'inline-flex',
+          //   alignItems: 'center',
+          //   gap: '0.5rem',
+          //   padding: '0.5rem 1rem', 
+          //   borderRadius: '0.75rem', 
+          //   fontSize: '0.75rem', 
+          //   fontWeight: 600, 
+          //   textTransform: 'uppercase', 
+          //   letterSpacing: '0.05em',
+          //   cursor: 'pointer',
+          //   backgroundColor: 'rgba(37, 99, 235, 0.15)' ,
+          //   border: '1px solid rgba(59, 130, 246, 0.5)' ,
+          //   color: '#60a5fa',
+          //   boxShadow: '0 0 2px rgba(59, 130, 246, 0.2)' ,
+          //   transition: 'all 0.2s ease'
+          // }}
               onClick={writeFile}
             >
               Save

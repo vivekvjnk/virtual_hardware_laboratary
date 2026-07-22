@@ -103,27 +103,35 @@ export default function MissionDashboard({ projectId, onOpenModuleDetail }: { pr
                     Render Circuit
                   </button>
                 </div>
-
-                {/* Agent buttons */}
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    onClick={() => openChat(moduleName, 'archy')}
-                    className="bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold py-2 px-1 rounded-lg transition-colors"
-                  >
-                    Archy
-                  </button>
-                  <button
-                    onClick={() => openChat(moduleName, 'librarian')}
-                    className="bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold py-2 px-1 rounded-lg transition-colors"
-                  >
-                    Librarian
-                  </button>
-                  <button
-                    onClick={() => openChat(moduleName, 'ana')}
-                    className="bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold py-2 px-1 rounded-lg transition-colors"
-                  >
-                    Ana
-                  </button>
+                {/* Agent Action Buttons */}
+                <div style={{ display: 'flex', gap: '0.5rem', width: '100%' }}>
+                  {[
+                    { id: 'archy', label: 'ARCHY', color: '#60a5fa', border: 'rgba(59, 130, 246, 0.4)', bg: 'rgba(37, 99, 235, 0.1)' },
+                    { id: 'librarian', label: 'LIBRARIAN', color: '#c084fc', border: 'rgba(139, 92, 246, 0.4)', bg: 'rgba(124, 58, 237, 0.1)' },
+                    { id: 'ana', label: 'ANA', color: '#2dd4bf', border: 'rgba(45, 212, 191, 0.4)', bg: 'rgba(13, 148, 136, 0.1)' }
+                  ].map((agent) => (
+                    <button
+                      key={agent.id}
+                      onClick={() => openChat(moduleName, agent.id)}
+                      style={{
+                        flex: 1,
+                        padding: '0.5rem 0.75rem',
+                        borderRadius: '0.875rem',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                        cursor: 'pointer',
+                        backgroundColor: agent.bg,
+                        border: `1px solid ${agent.border}`,
+                        color: agent.color,
+                        transition: 'all 0.2s ease',
+                        textAlign: 'center'
+                      }}
+                    >
+                      {agent.label}
+                    </button>
+                  ))}
                 </div>
               </div>
             </div>

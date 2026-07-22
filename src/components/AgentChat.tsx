@@ -9,13 +9,24 @@ interface Message {
   timestamp: string;
 }
 
-export default function AgentChat({ moduleName, agentType, onClose, isEmbedded = false, initialMessage }: { moduleName: string, agentType: string, onClose: () => void, isEmbedded?: boolean, initialMessage?: string }) {
+export default function AgentChat({ 
+  moduleName, 
+  agentType, 
+  onClose, 
+  isEmbedded = false, 
+  initialMessage 
+}: { 
+  moduleName: string; 
+  agentType: string; 
+  onClose: () => void; 
+  isEmbedded?: boolean; 
+  initialMessage?: string; 
+}) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [messageSent, setMessageSent] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const agentId = `${moduleName}.${agentType}`;
@@ -96,71 +107,163 @@ export default function AgentChat({ moduleName, agentType, onClose, isEmbedded =
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    sendMessage();
+    sendMessage(e);
   };
 
-  const containerClasses = isEmbedded
-    ? "bg-slate-900 border border-slate-800 rounded-3xl w-full h-full flex flex-col shadow-2xl overflow-hidden"
-    : "bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-2xl h-[600px] flex flex-col shadow-2xl overflow-hidden";
+  const isDisabled = loading || (!input.trim() && !file);
+
+  const wrapperStyle: React.CSSProperties = isEmbedded
+    ? { 
+        width: '100%', 
+        height: '100%',
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        minHeight: 0
+      }
+    : {
+        position: 'fixed',
+        inset: 0,
+        backgroundColor: 'rgba(0, 0, 0, 0.6)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '1rem',
+        zIndex: 50
+      };
+
+  const containerStyle: React.CSSProperties = {
+    backgroundColor: '#020617',
+    border: '3px solid #1e293b',
+    borderRadius: isEmbedded ? '0.75rem' : '1.5rem',
+    width: '100%',
+    height: isEmbedded ? '100%' : '600px',
+    maxWidth: isEmbedded ? 'none' : '42rem',
+    display: 'flex',
+    flexDirection: 'column',
+    boxShadow: isEmbedded ? 'none' : '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+    overflow: 'hidden',
+    flex: 1
+  };
 
   return (
-    <div className={isEmbedded ? "w-full h-full" : "fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"}>
-      <div className={containerClasses}>
-        {/* Header */}
-        <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-800/50">
-          <div>
-            <h2 className="text-white font-bold text-lg">Chat with {agentType.charAt(0).toUpperCase() + agentType.slice(1)}</h2>
-            <p className="text-slate-400 text-xs">{moduleName}</p>
-          </div>
-          {!isEmbedded && (
+    <div style={wrapperStyle}>
+      <div style={containerStyle}>
+        {/* Header - Only shown when NOT embedded */}
+        {!isEmbedded && (
+          <div style={{
+            padding: '1rem',
+            borderBottom: '1px solid #1e293b',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            backgroundColor: '#0f172a'
+          }}>
+            <div>
+              <h2 style={{ color: '#ffffff', fontWeight: 'bold', fontSize: '1.125rem', margin: 0 }}>
+                Chat with {agentType.charAt(0).toUpperCase() + agentType.slice(1)}
+              </h2>
+              <p style={{ color: '#94a3b8', fontSize: '0.75rem', margin: 0 }}>{moduleName}</p>
+            </div>
             <button 
               onClick={onClose}
-              className="text-slate-400 hover:text-white transition-colors"
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#94a3b8',
+                cursor: 'pointer',
+                padding: '0.25rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
             >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg xmlns="http://www.w3.org/2000/svg" style={{ height: '1.5rem', width: '1.5rem' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
-          )}
-        </div>
+          </div>
+        )}
 
-        {/* Messages */}
-        <div className="flex-grow overflow-y-auto p-4 space-y-4 bg-slate-900/50">
+        {/* Messages Body */}
+        <div style={{
+          flexGrow: 1,
+          overflowY: 'auto',
+          padding: '1rem',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '1rem',
+          backgroundColor: '#020617'
+        }}>
           {messages.length === 0 ? (
-            <div className="text-center text-slate-500 mt-10">No messages yet. Start the conversation!</div>
+            <div style={{ textAlign: 'center', color: '#64748b', marginTop: '2.5rem', fontSize: '0.875rem' }}>
+              No messages yet. Start the conversation!
+            </div>
           ) : (
-            messages.map((msg) => (
-              <div key={msg.id} className={`flex ${msg.sender === 'HIL' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[80%] p-3 rounded-2xl ${
-                  msg.sender === 'HIL' 
-                    ? 'bg-blue-600 text-white rounded-tr-none' 
-                    : 'bg-slate-800 text-slate-200 rounded-tl-none'
-                }`}>
-                  <div className="text-xs font-bold mb-1 opacity-70">{msg.sender}</div>
-                  <div className="whitespace-pre-wrap">{msg.payload.text}</div>
-                  <div className="text-[10px] mt-1 opacity-50 text-right">
-                    {new Date(msg.timestamp).toLocaleTimeString()}
+            messages.map((msg) => {
+              const isHIL = msg.sender === 'HIL';
+              return (
+                <div key={msg.id} style={{ display: 'flex', justifyContent: isHIL ? 'flex-end' : 'flex-start' }}>
+                  <div style={{
+                    maxWidth: '80%',
+                    padding: '0.75rem',
+                    borderRadius: '1rem',
+                    borderTopRightRadius: isHIL ? 0 : '1rem',
+                    borderTopLeftRadius: isHIL ? '1rem' : 0,
+                    backgroundColor: isHIL ? '#2563eb' : '#1e293b',
+                    color: isHIL ? '#ffffff' : '#e2e8f0',
+                    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.2)'
+                  }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '0.25rem', opacity: 0.7 }}>
+                      {msg.sender}
+                    </div>
+                    <div style={{ whiteSpace: 'pre-wrap', fontSize: '0.875rem', lineHeight: '1.25rem' }}>
+                      {msg.payload.text}
+                    </div>
+                    <div style={{ fontSize: '0.625rem', marginTop: '0.25rem', opacity: 0.5, textAlign: 'right' }}>
+                      {new Date(msg.timestamp).toLocaleTimeString()}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Input */}
-        <form onSubmit={handleSubmit} className="p-4 border-t border-slate-800 bg-slate-800/30">
-          <div className="flex gap-2">
+        {/* Input Form */}
+        <form onSubmit={handleSubmit} style={{
+          padding: '0.75rem 1rem',
+          borderTop: '1px solid #1e293b',
+          backgroundColor: '#0f172a'
+        }}>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
             <input
               type="file"
               ref={fileInputRef}
               onChange={(e) => setFile(e.target.files ? e.target.files[0] : null)}
-              className="hidden"
+              style={{ display: 'none' }}
             />
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-xl transition-colors"
+              style={{ 
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                padding: '0.5rem 0.75rem', 
+                borderRadius: '0.75rem', 
+                fontSize: '0.75rem', 
+                fontWeight: 600, 
+                textTransform: 'uppercase', 
+                letterSpacing: '0.05em',
+                cursor: 'pointer',
+                backgroundColor: 'rgba(37, 99, 235, 0.15)',
+                border: '1px solid rgba(59, 130, 246, 0.5)',
+                color: '#60a5fa',
+                boxShadow: '0 0 2px rgba(59, 130, 246, 0.2)',
+                transition: 'all 0.2s ease'
+              }}
             >
               {file ? '📄' : '📎'}
             </button>
@@ -169,13 +272,38 @@ export default function AgentChat({ moduleName, agentType, onClose, isEmbedded =
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder={`Message ${agentType}...`}
-              className="flex-grow bg-slate-950 border border-slate-700 rounded-xl px-4 py-2 text-white focus:outline-none focus:border-blue-500 transition-colors"
+              style={{
+                flexGrow: 1,
+                backgroundColor: '#020617',
+                border: '1px solid #334155',
+                borderRadius: '0.75rem',
+                padding: '0.5rem 1rem',
+                color: '#ffffff',
+                outline: 'none',
+                fontSize: '0.875rem'
+              }}
               disabled={loading}
             />
             <button
               type="submit"
-              disabled={loading || (!input.trim() && !file)}
-              className="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 text-white font-bold py-2 px-6 rounded-xl transition-colors"
+              disabled={isDisabled}
+              style={{ 
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                padding: '0.5rem 1rem', 
+                borderRadius: '0.75rem', 
+                fontSize: '0.75rem', 
+                fontWeight: 600, 
+                textTransform: 'uppercase', 
+                letterSpacing: '0.05em',
+                cursor: 'pointer',
+                backgroundColor: 'rgba(37, 99, 235, 0.15)',
+                border: '1px solid rgba(59, 130, 246, 0.5)',
+                color: '#60a5fa',
+                boxShadow: '0 0 2px rgba(59, 130, 246, 0.2)',
+                transition: 'all 0.2s ease'
+              }}
             >
               {loading ? '...' : 'Send'}
             </button>
