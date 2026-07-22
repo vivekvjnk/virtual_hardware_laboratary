@@ -25,24 +25,6 @@ export default function ModuleDetailView({
   const [showEditor, setShowEditor] = useState(true);
   const [showChat, setShowChat] = useState(true);
   const [activeAgent, setActiveAgent] = useState('archy');
-  const [triggering, setTriggering] = useState(false);
-
-  const triggerWorkflow = async () => {
-    setTriggering(true);
-    try {
-      await fetch('http://localhost:3022/api/trigger-workflow', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ module_name: moduleName })
-      });
-      alert(`Workflow triggered for ${moduleName}`);
-    } catch (err) {
-      console.error('Error triggering workflow:', err);
-      alert('Failed to trigger workflow');
-    } finally {
-      setTriggering(false);
-    }
-  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', color: 'white', gap: '1rem', padding: '0.5rem', backgroundColor: '#020617' }}>

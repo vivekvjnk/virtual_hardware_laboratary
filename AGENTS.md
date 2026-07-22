@@ -28,9 +28,22 @@ The `vhl-webui` backend runs an Express server in the runtime to facilitate comm
 - `src/api/`: Handles communication with the VHL backend.
   - `dashboard.ts`: Dashboard data fetching.
   - `editor.ts`: RPC-based file system interaction with the backend.
-- `src/components/`: UI components.
-  - `Editor/`: Components related to file editing and navigation.
-  - `MissionDashboard.tsx`, `MissionFeed.tsx`, etc.: Feature-specific components.
+- `src/components/`: Modular UI components organized by feature. The WebUI follows a composition pattern where `App.tsx` manages high-level routing between views (`dashboard`, `mission`, `module_detail`, `editor`). Each view composes specialized components to provide a focused workspace.
+  - **Layout & Navigation**:
+    - `Sidebar.tsx`: Persistent navigation drawer for switching between system views.
+    - `TopActions.tsx`: Hero section containing primary action buttons and project initialization tools.
+    - `MissionFeed.tsx`: Sidebar activity feed tracking system-wide events and agent progress.
+  - **Dashboard & Project Management**:
+    - `RecentProjects.tsx`: Displays a grid of recently accessed projects.
+    - `ProjectTemplates.tsx`: Showcases available hardware templates for starting new designs.
+    - `ProjectStateView.tsx`: Visualizes the synchronized project state, including backend/runtime health, worktree paths, and an audit log of recent operations.
+  - **Mission & Design Workspaces**:
+    - `MissionDashboard.tsx`: Project-level overview displaying all modules. Acts as the orchestration hub for triggering workflows and opening module-specific views.
+    - `ModuleDetailView.tsx`: A comprehensive, multi-pane workspace for specific modules. It composes the `EditorView`, `CircuitCanvas`, and `AgentChat` into a single integrated environment, enabling a seamless design-validate-refine loop.
+  - **Core Feature Components**:
+    - `EditorView.tsx`: A feature-rich IDE component providing a file explorer and code editor with remote file system sync via RPC.
+    - `CircuitCanvas.tsx`: Renders live circuit previews using `@tscircuit/runframe`, supporting PCB, Schematic, and CAD views.
+    - `AgentChat.tsx`: Dedicated messaging interface for Human-in-the-Loop (HIL) interaction with specialized agents (Archy, Librarian, ANA).
 - `src/data/`: Mock data for development.
 - `src/types/`: TypeScript type definitions.
 

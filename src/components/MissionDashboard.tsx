@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import CircuitCanvas from './CircuitCanvas';
 import ProjectStateView from './ProjectStateView';
 import AgentChat from './AgentChat';
+import CreateModuleModal from './CreateModuleModal';
+import { Plus } from 'lucide-react';
 
 export default function MissionDashboard({ projectId, onOpenModuleDetail }: { projectId: string, onOpenModuleDetail: (moduleName: string) => void }) {
   const [modules, setModules] = useState<string[]>([]);
@@ -9,9 +11,10 @@ export default function MissionDashboard({ projectId, onOpenModuleDetail }: { pr
   const [activeCircuit, setActiveCircuit] = useState<string | null>(null);
   const [projectState, setProjectState] = useState<any>(null);
   const [activeChat, setActiveChat] = useState<{ moduleName: string, agentType: string, initialMessage?: string } | null>(null);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
-  useEffect(() => {
-    // Fetch modules
+  const fetchModules = () => {
+    setLoading(true);
     fetch('http://localhost:3022/api/get-modules', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -26,6 +29,10 @@ export default function MissionDashboard({ projectId, onOpenModuleDetail }: { pr
         console.error('Error fetching modules:', err);
         setLoading(false);
       });
+  };
+
+  useEffect(() => {
+    fetchModules();
 
     // Fetch project state
     const fetchState = () => {
@@ -67,7 +74,17 @@ export default function MissionDashboard({ projectId, onOpenModuleDetail }: { pr
 
   return (
     <div className="p-6">
-      <h1 className="text-2xl font-bold text-white mb-4">Mission Dashboard</h1>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold text-white">Mission Dashboard</h1>
+        <button
+          onClick={() => setIsCreateModalOpen(true)}
+          className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition-all hover:bg-blue-500 active:scale-95"
+        >
+          <Plus size={18} />
+          <span>New Module</span>
+        </button>
+      </div>
+      
       {projectState && <ProjectStateView state={projectState} />}
       <div className="grid gap-4 grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 mt-4">
         {modules.map(moduleName => {
@@ -154,6 +171,12 @@ export default function MissionDashboard({ projectId, onOpenModuleDetail }: { pr
           onClose={() => setActiveChat(null)}
         />
       )}
+      <CreateModuleModal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        projectId={projectId}
+        onSuccess={fetchModules}
+      />
     </div>
   );
 }

@@ -1,10 +1,14 @@
 import { useState, useRef } from 'react';
 import type { HeroAction } from '../types/dashboard';
+import CreateModuleModal from './CreateModuleModal';
+import { Plus } from 'lucide-react';
 
 interface TopActionsProps {
   actions: HeroAction[];
   isIdentified: boolean;
   onUpload: (projectName: string, file: File) => void;
+  projectId?: string | null;
+  onModuleCreated?: () => void;
 }
 
 const variantStyles = {
@@ -12,9 +16,10 @@ const variantStyles = {
   secondary: 'border border-slate-800 bg-slate-900 text-slate-100',
 };
 
-export default function TopActions({ actions, isIdentified, onUpload }: TopActionsProps) {
+export default function TopActions({ actions, isIdentified, onUpload, projectId, onModuleCreated }: TopActionsProps) {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [projectName, setProjectName] = useState('');
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleUploadClick = () => {
@@ -36,6 +41,29 @@ export default function TopActions({ actions, isIdentified, onUpload }: TopActio
         <span className={`h-3 w-3 rounded-full ${isIdentified ? 'bg-green-500' : 'bg-red-500'}`}></span>
         {isIdentified ? 'Connected' : 'Disconnected'}
       </div>
+      
+      {projectId && (
+        <div className="rounded-3xl border border-blue-800/50 bg-blue-900/20 p-6 shadow-xl shadow-slate-950/30">
+          <div className="flex items-center justify-between gap-4 text-sm text-slate-400">
+            <span className="uppercase tracking-[0.24em] text-blue-500">Active Project</span>
+            <span className="rounded-full bg-blue-900/40 px-3 py-1 text-xs uppercase tracking-[0.2em] text-blue-400 border border-blue-800/50">
+              In Progress
+            </span>
+          </div>
+          <h2 className="mt-4 text-2xl font-semibold text-white">Add New Module</h2>
+          <p className="mt-2 text-slate-400">Expand your design by adding a new functional module to the current project.</p>
+          
+          <button
+            type="button"
+            onClick={() => setIsCreateModalOpen(true)}
+            className="mt-8 inline-flex items-center justify-center gap-2 rounded-2xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-500 active:scale-95"
+          >
+            <Plus size={18} />
+            <span>Create Module</span>
+          </button>
+        </div>
+      )}
+
       {actions.map((action) => (
         <div
           key={action.id}
@@ -74,6 +102,15 @@ export default function TopActions({ actions, isIdentified, onUpload }: TopActio
           )}
         </div>
       ))}
+
+      {projectId && (
+        <CreateModuleModal
+          isOpen={isCreateModalOpen}
+          onClose={() => setIsCreateModalOpen(false)}
+          projectId={projectId}
+          onSuccess={() => onModuleCreated?.()}
+        />
+      )}
     </div>
   );
 }

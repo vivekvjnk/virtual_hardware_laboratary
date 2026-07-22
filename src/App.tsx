@@ -193,7 +193,16 @@ function App() {
                 Loading dashboard...
               </div>
             ) : dashboardData ? (
-              <TopActions actions={dashboardData.heroActions} isIdentified={isIdentified} onUpload={uploadZip} />
+              <TopActions 
+                actions={dashboardData.heroActions} 
+                isIdentified={isIdentified} 
+                onUpload={uploadZip} 
+                projectId={activeProjectId}
+                onModuleCreated={() => {
+                  // Maybe refresh something or show a message
+                  console.log('Module created successfully via TopActions');
+                }}
+              />
             ) : (
               <div className="rounded-3xl border border-slate-800 bg-slate-900 p-10 text-center text-slate-400">
                 Unable to load dashboard data.

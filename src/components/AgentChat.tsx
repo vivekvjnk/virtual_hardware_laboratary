@@ -13,8 +13,7 @@ export default function AgentChat({
   moduleName, 
   agentType, 
   onClose, 
-  isEmbedded = false, 
-  initialMessage 
+  isEmbedded = false
 }: { 
   moduleName: string; 
   agentType: string; 
@@ -36,7 +35,7 @@ export default function AgentChat({
   };
 
   useEffect(() => {
-    // scrollToBottom();
+    scrollToBottom();
   }, [messages]);
 
   useEffect(() => {
