@@ -345,27 +345,31 @@ class WorkspaceManager:
         return tree.get(module_name, {})
 
 
-    def setup_modules_in_root(self, project_root_path: Path, modules: List[str] , system_boundary_doc: str = "system-boundary.md"):
+    def _setup_single_module(self, project_root_path: Path, module_name: str, system_boundary_doc: str = "system-boundary.md"):
+        """Sets up the directory structure for a single module."""
+        module_dir = project_root_path / module_name
+        module_dir.mkdir(exist_ok=True)
+        workspace_dir = module_dir / "Workspace"
+        workspace_dir.mkdir(exist_ok=True)
+        
+        # Symlinks
+        lib_link = workspace_dir / "imports"
+        if not os.path.lexists(lib_link):
+            rel_lib_source = os.path.relpath(project_root_path / "imports", lib_link.parent)
+            os.symlink(rel_lib_source, lib_link)
+            
+        sb_link = workspace_dir / system_boundary_doc
+        if not os.path.lexists(sb_link) and (project_root_path / system_boundary_doc).exists():
+            rel_sb_source = os.path.relpath(project_root_path / system_boundary_doc, sb_link.parent)
+            os.symlink(rel_sb_source, sb_link)
+
+        self.update_circuit_name_in_db(name=f"{module_name}.tsx", module=module_name)
+        return workspace_dir
+
+    def setup_modules_in_root(self, project_root_path: Path, modules: List[str], system_boundary_doc: str = "system-boundary.md"):
         """Sets up the directory structure for multiple modules in a project."""
         for module_name in modules:
-            # Module directory creation logic
-            module_dir = project_root_path / module_name
-            module_dir.mkdir(exist_ok=True)
-            worksapce_dir = module_dir / "Workspace"
-            worksapce_dir.mkdir(exist_ok=True)
-            
-            # Symlinks
-            lib_link = worksapce_dir / "imports"
-            if not os.path.lexists(lib_link):
-                rel_lib_source = os.path.relpath(project_root_path / "imports", lib_link.parent)
-                os.symlink(rel_lib_source, lib_link)
-                
-            sb_link = worksapce_dir / system_boundary_doc
-            if not os.path.lexists(sb_link) and (project_root_path / system_boundary_doc).exists():
-                rel_sb_source = os.path.relpath(project_root_path / system_boundary_doc, sb_link.parent)
-                os.symlink(rel_sb_source, sb_link)
-
-            self.update_circuit_name_in_db(name=f"{module_name}.tsx",module=module_name)
+            self._setup_single_module(project_root_path, module_name, system_boundary_doc)
 
     def create_project_from_zip(self, project_id: str, zip_path: str = None)-> Dict[str, Any]:
         """
@@ -399,6 +403,129 @@ class WorkspaceManager:
             logger.error(f"[WorkspaceManager.create_project_from_zip] Failed to clean up temp directory: {e}")
         
         return restoration_result
+
+    def add_module(self, module_name: str, description: str, temp_dir: Union[str, Path]) -> Path:
+        """
+        Adds a new module to an active project.
+        Follows the 11-step logic for module creation and synchronization.
+        """
+        if not self.project_id:
+            raise RuntimeError("No project is currently loaded.")
+
+        if module_name in self.project_modules:
+            raise ValueError(f"Module '{module_name}' already exists in project '{self.project_id}'.")
+
+        temp_dir = Path(temp_dir)
+        if not temp_dir.exists():
+            raise FileNotFoundError(f"Temporary directory not found at {temp_dir}")
+
+        logger.info(f"[WorkspaceManager.add_module] Adding module '{module_name}' to project '{self.project_id}'.")
+
+        # 3. Create module folder in the project root worktree
+        # stable_worktree points to the project root worktree
+        workspace_dir = self._setup_single_module(self.stable_worktree, module_name)
+
+        # 4. Populate module directory structure
+        agents_dir = workspace_dir / ".agents"
+        agents_dir.mkdir(exist_ok=True)
+        resources_dir = workspace_dir / "resources"
+        resources_dir.mkdir(exist_ok=True)
+
+        # Copy skills
+        skills_source = Path(__file__).parent.parent / "agent-skills"
+        if skills_source.exists():
+            shutil.copytree(skills_source, agents_dir / "skills", dirs_exist_ok=True)
+            logger.info(f"[WorkspaceManager.add_module] Copied agent skills from {skills_source}")
+
+        # 5 & 6. Read resources.json and Move files from temp_dir to Workspace/resources/
+        manifest_path = temp_dir / "resources.json"
+        resources_manifest = []
+        if manifest_path.exists():
+            with open(manifest_path, 'r') as f:
+                data = json.load(f)
+                resources_manifest = data.get("resources", [])
+
+        temp_resources_dir = temp_dir / "resources"
+        if temp_resources_dir.exists():
+            for item in temp_resources_dir.iterdir():
+                shutil.move(str(item), str(resources_dir / item.name))
+                logger.info(f"[WorkspaceManager.add_module] Moved resource {item.name} to {resources_dir}")
+
+        # Create AGENTS.md
+        agents_md_path = workspace_dir / "AGENTS.md"
+        with open(agents_md_path, 'w') as f:
+            f.write(f"# {module_name} Agent Workspace\n\n")
+            f.write(f"{description}\n\n")
+            f.write("## Resources\n\n")
+            for res in resources_manifest:
+                f.write(f"- **{res['name']}**: {res['description']}\n")
+        logger.info(f"[WorkspaceManager.add_module] Created AGENTS.md for module {module_name}")
+
+        # 7. Update SQLite DB
+        mod_id = self.db.insert_project_module(
+            module_name=module_name,
+            module_type="WORKER",
+            rel_path=module_name,
+            description=description
+        )
+        for res in resources_manifest:
+            res_name = res["name"]
+            res_path = resources_dir / res_name
+            if res_path.exists():
+                self.db.insert_module_resource(
+                    module_id=mod_id,
+                    resource_name=res_name,
+                    file_path=str(res_path.relative_to(self.stable_worktree)),
+                    resource_type="file",
+                    description=res["description"],
+                    checksum=""
+                )
+        logger.info(f"[WorkspaceManager.add_module] Registered module and resources in SQLite.")
+
+        # 8. Commit the project root worktree
+        self.git.git.add_all(cwd=self.stable_worktree)
+        self.record_operation(
+            module_name="root",
+            op_name="ADD_MODULE",
+            author="WORKSPACE_MANAGER",
+            status="SUCCESS",
+            payload={"module_name": module_name},
+            commit_message=f"INITIALIZE_MODULE: {module_name}"
+        )
+
+        # Push the root worktree branch if remote repo is configured
+        if self.git.git.has_remote(cwd=self.stable_worktree):
+            try:
+                self.git.git.push(cwd=self.stable_worktree)
+                logger.info(f"[WorkspaceManager.add_module] Pushed root worktree changes to remote.")
+            except Exception as e:
+                logger.warning(f"[WorkspaceManager.add_module] Failed to push root changes: {e}")
+        
+        # 9. Create a new module worktree
+        module_worktree_path = self.project_root / f"{self.project_id}_{module_name}"
+        self.worktree[module_name] = module_worktree_path
+        root_branch = self.git.git.get_current_branch(cwd=self.stable_worktree)
+        module_branch = f"module/{module_name}"
+        
+        self.git.git.worktree_add(
+            path=module_worktree_path,
+            branch=module_branch,
+            new_branch=True
+        )
+        logger.info(f"[WorkspaceManager.add_module] Created new worktree for module '{module_name}' at {module_worktree_path}")
+
+        # 10. Synchronize all other module worktrees
+        for other_mod, other_path in self.worktree.items():
+            if other_mod != module_name and other_mod != "root":
+                try:
+                    # Sync other modules with root branch
+                    self.git.git._run_git(["merge", root_branch, "--no-ff"], cwd=other_path)
+                    logger.info(f"[WorkspaceManager.add_module] Synchronized module '{other_mod}' with branch '{root_branch}'")
+                except Exception as e:
+                    logger.error(f"[WorkspaceManager.add_module] Failed to synchronize module '{other_mod}': {e}")
+
+        self.project_modules.append(module_name)
+        return workspace_dir
 
     def move_scud_to_stable(self,module):
         """move .scud file from workspace to module root"""

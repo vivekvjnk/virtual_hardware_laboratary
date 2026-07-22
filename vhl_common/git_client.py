@@ -236,3 +236,21 @@ class GitClient:
         # -r for recursive, -l for long format (includes size), -t to show trees
         return self._run_git(["ls-tree", "-r", "-l", "-t", commit_ish], cwd=cwd)
 
+
+    def push(self, remote: str = "origin", branch: Optional[str] = None, cwd: Optional[Union[str, Path]] = None):
+        """Pushes changes to the remote repository."""
+        args = ["push", remote]
+        if branch:
+            args.append(branch)
+        response = self._run_git(args, cwd=cwd)
+        logger.info(f"Pushed changes to {remote} {branch or ''}\nGit response: {response}")
+        return response
+
+    def has_remote(self, remote: str = "origin", cwd: Optional[Union[str, Path]] = None) -> bool:
+        """Checks if a remote is configured."""
+        try:
+            remotes = self._run_git(["remote"], cwd=cwd, quiet=True)
+            return remote in remotes.splitlines()
+        except Exception:
+            return False
+

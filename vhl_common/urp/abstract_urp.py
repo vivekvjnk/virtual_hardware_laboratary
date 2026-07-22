@@ -30,8 +30,26 @@ class StartPreconditionsViolatedError(Exception):
 
 class AbstractURPAgent(ABC):
     """
-    Abstract Unified Runtime Primitive (URP).
-    Enforces the lifecycle, mailbox, and state invariants.
+    Python reference implementation of the Unified Runtime Primitive (URP).
+
+    The URP is a language-agnostic, stateful, message-driven agent primitive
+    designed for deterministic execution within the VHL system.
+
+    Key characteristics implemented:
+    - Addressable Identity: Each agent has a unique descriptor and session ID.
+    - Persistent State: Internal state survives across message processing cycles.
+    - Mailbox-driven Invocation: Messages are delivered asynchronously via an internal queue.
+    - Asynchronous Execution: Non-blocking from the caller's perspective.
+    - Event Emission: Outputs are emitted as events rather than stack returns.
+    - Lifecycle Contract: Strict transitions (UNINITIALIZED -> INITIALIZED -> WAITING -> PROCESSING).
+
+    Invariants maintained:
+    - Initialized exactly once.
+    - Messages enter only through the mailbox.
+    - Outputs leave only through the 'emit' bus.
+    - State is opaque and never mutated directly by external systems.
+
+    Reference: docs/urp/URP.md
     """
 
     def __init__(self, descriptor: 'AgentDescriptor'):

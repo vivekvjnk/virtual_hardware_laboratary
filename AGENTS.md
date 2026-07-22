@@ -12,6 +12,8 @@ The VHL Agent Backend is a multi-agent, state-aware orchestration system for aut
 - **`librarian`**: Component resolution agent. It parses the SCUD's component inventory and utilizes the Model Context Protocol (MCP) to browse and import necessary libraries.
 - **`vhl_common`**: A shared library containing cross-agent utility code, including workspace management (Copy-on-Write iteration handling), LLM interaction helpers, skill definitions, and supervision logic.
 - **`vhl_protocol`**: Defines the event-driven communication backbone. It contains the data models, event schemas (e.g., `REFERENCE_UPLOADED`, `VAP_COMPLETE`), and WebSocket utilities used for bidirectional communication between the agents and the VHL Runtime.
+- **`workspace_manager`**: Handles project bootstrapping and the **Module Creation Workflow**. It manages Git worktrees for isolation, synchronizes state across modules, and prepares the standard directory structure (Workspace, .agents, resources) for new modules.
+
 
 ## Architecture Pattern:
 The system uses a **State-Machine Orchestration** pattern (`aosm`) to drive **Agentic Refinement Loops** (`ana`), anchored by a **Shared Circuit Understanding Document (SCUD)** that maps intent from perception (`archy`) to code (`ana`).
