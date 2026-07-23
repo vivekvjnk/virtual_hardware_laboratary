@@ -494,18 +494,19 @@ class WorkspaceManager:
         )
 
         # Push the root worktree branch if remote repo is configured
-        if self.git.git.has_remote(cwd=self.stable_worktree):
-            try:
-                self.git.git.push(cwd=self.stable_worktree)
-                logger.info(f"[WorkspaceManager.add_module] Pushed root worktree changes to remote.")
-            except Exception as e:
-                logger.warning(f"[WorkspaceManager.add_module] Failed to push root changes: {e}")
+        # NOTE: Uncomment this workflow once implementation is stable
+        # if self.git.git.has_remote(cwd=self.stable_worktree):
+        #     try:
+        #         self.git.git.push(cwd=self.stable_worktree)
+        #         logger.info(f"[WorkspaceManager.add_module] Pushed root worktree changes to remote.")
+        #     except Exception as e:
+        #         logger.warning(f"[WorkspaceManager.add_module] Failed to push root changes: {e}")
         
         # 9. Create a new module worktree
         module_worktree_path = self.project_root / f"{self.project_id}_{module_name}"
         self.worktree[module_name] = module_worktree_path
         root_branch = self.git.git.get_current_branch(cwd=self.stable_worktree)
-        module_branch = f"module/{module_name}"
+        module_branch = f"{module_name}"
         
         self.git.git.worktree_add(
             path=module_worktree_path,

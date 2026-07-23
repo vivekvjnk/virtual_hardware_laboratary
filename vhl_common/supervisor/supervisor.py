@@ -378,3 +378,7 @@ class Supervisor:
         """Register the HIL communication handler."""
         logger.info("[Supervisor] Registering modern HIL handling logic with context Gate.")
         self.gate.register("HIL", handler)
+
+    def has_agent(self, agent_id: str) -> bool:
+        """Check if an agent is registered in the supervisor."""
+        return agent_id in self._agents

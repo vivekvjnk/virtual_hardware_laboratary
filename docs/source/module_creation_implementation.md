@@ -62,3 +62,16 @@ Each new module follows this standard structure:
 ## Workflow Integration
 
 This implementation serves as the foundational infrastructure. It is designed to be triggered by the `vhl-runtime` via the Agentic Orchestration State Machine (AOSM) when a user initiates a "New Module" workflow from the WebUI.
+
+### 3. WebSocket Communication & Orchestration
+
+The module creation pipeline is triggered via a WebSocket-based event loop:
+
+1.  **Event Definition**: Added `CREATE_MODULE` and `MODULE_CREATED` to the `vhl_protocol` event types.
+2.  **Runtime Trigger**: The `vhl-runtime` API endpoint (`POST /api/projects/:projectId/modules`) now emits a `CREATE_MODULE` event to the `vhl-agent-backend` after successfully staging uploaded artefacts.
+3.  **AOSM Handling**: 
+    - The `AOSM` (Agent Orchestration State Machine) listens for `CREATE_MODULE` while in the `IDLE` state.
+    - Upon receipt, it invokes `WorkspaceManager.add_module()` to perform the filesystem and Git operations.
+    - It then re-registers agents for the new module and notifies the UI via a `MODULE_CREATED` event.
+    - Finally, it automatically triggers **Workflow 1** (Archy -> Librarian -> ANA) for the new module to begin the automated design synthesis.
+

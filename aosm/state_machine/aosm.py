@@ -418,101 +418,104 @@ class AOSM:
             projects = self.workspace_manager.list_projects()
             await self.web_socket_client.emit_projects_list(projects)
 
-    async def register_agents(self, workspace_manager: WorkspaceManager):
-        """Registers Archy and Librarian agents for each module in the project."""
+    async def register_agents(self, workspace_manager: WorkspaceManager, module_name: Optional[str] = None):
+        """Registers Archy, Librarian, and ANA agents for modules. If module_name is provided, only registers for that module."""
 
-        for module_name in workspace_manager.module_names:
-            archy_agent_id = f"{module_name}.archy"
-            librarian_agent_id = f"{module_name}.librarian"
+        modules_to_register = [module_name] if module_name else workspace_manager.module_names
+        
+        for m_name in modules_to_register:
+            archy_agent_id = f"{m_name}.archy"
+            librarian_agent_id = f"{m_name}.librarian"
+            ana_agent_id = f"{m_name}.ana"
+
             # ----Archy setup----
-            archy_descriptor = AgentDescriptor(
-                agent_id=archy_agent_id,
-                name=f"{module_name} Archy",
-                version="1.0",
-                capabilities=["SCUD_GENERATION", "SCUD_REFINEMENT"],
-                accepted_message_types=["BUILD_SCUD"]
-            )
-            register_agent_if_absent(descriptor=archy_descriptor,factory_func=ArchyURPAgent,name=archy_agent_id)
-            
-            # Step 2: Get archy agent from factory                                                                      
-            factory = get_agent_factory(name=archy_agent_id)
-            archy_agent = factory.factory_func(descriptor=factory.descriptor) 
-            # Step 3: Prepare context and initialize Archy agent
-            context = {
-                "config": ArchyConfig(conversation_persistence=True),
-                "workspace": self.workspace_manager,
-                "sqlite_manager": self.project_semantic_db,
-                "module_name": module_name
-            }
-            # Initial callback is a no-op; Supervisor will enforce egress routing
-            archy_agent.initialize(context=context, emit_callback=lambda msg: None)
+            if not self.supervisor.has_agent(archy_agent_id):
+                archy_descriptor = AgentDescriptor(
+                    agent_id=archy_agent_id,
+                    name=f"{m_name} Archy",
+                    version="1.0",
+                    capabilities=["SCUD_GENERATION", "SCUD_REFINEMENT"],
+                    accepted_message_types=["BUILD_SCUD"]
+                )
+                register_agent_if_absent(descriptor=archy_descriptor,factory_func=ArchyURPAgent,name=archy_agent_id)
+                
+                factory = get_agent_factory(name=archy_agent_id)
+                archy_agent = factory.factory_func(descriptor=factory.descriptor) 
+                context = {
+                    "config": ArchyConfig(conversation_persistence=True),
+                    "workspace": self.workspace_manager,
+                    "sqlite_manager": self.project_semantic_db,
+                    "module_name": m_name
+                }
+                archy_agent.initialize(context=context, emit_callback=lambda msg: None)
 
-            logger.info("Starting Archy agent")
-            # Step 4: Start Archy agent (enters WAITING state)
-            await archy_agent.start()
-            # Store the instantiated agent for subsequent state retrieval
-            self.supervisor.attach_agent(archy_agent)
+                logger.info(f"Starting Archy agent for module: {m_name}")
+                await archy_agent.start()
+                self.supervisor.attach_agent(archy_agent)
 
-            archy_state = self.supervisor.get_agent_state(archy_agent_id)
-            self.update_agent_status("archy", archy_state["status"])
+                archy_state = self.supervisor.get_agent_state(archy_agent_id)
+                self.update_agent_status("archy", archy_state["status"])
+            else:
+                logger.debug(f"Archy agent for module '{m_name}' already registered.")
 
             # ----Librarian setup----
-            librarian_descriptor = AgentDescriptor(
-                agent_id=librarian_agent_id,
-                name=f"{module_name} Librarian",
-                version="1.0",
-                capabilities=["LIBRARY_COMPONENT_RESOLUTION"],
-                accepted_message_types=["IMPORT_COMPONENTS", "FIND_COMPONENTS"]
-            )
-            register_agent_if_absent(descriptor=librarian_descriptor,factory_func=LibrarianURPAgent,name=librarian_agent_id)
+            if not self.supervisor.has_agent(librarian_agent_id):
+                librarian_descriptor = AgentDescriptor(
+                    agent_id=librarian_agent_id,
+                    name=f"{m_name} Librarian",
+                    version="1.0",
+                    capabilities=["LIBRARY_COMPONENT_RESOLUTION"],
+                    accepted_message_types=["IMPORT_COMPONENTS", "FIND_COMPONENTS"]
+                )
+                register_agent_if_absent(descriptor=librarian_descriptor,factory_func=LibrarianURPAgent,name=librarian_agent_id)
 
-            # # Step 2: Configure librarian agent
-            factory = get_agent_factory(name=f"{module_name}.librarian")
-            # # Step 3: Prepare context and initialize librarian agent
-            context = {
-                "config": LibrarianConfig(conversation_persistence=True),
-                "workspace": self.workspace_manager,
-                "sqlite_manager": self.project_semantic_db,
-                "module_name": module_name,
-            }
-            librarian = factory.factory_func(descriptor=factory.descriptor)             
-            librarian.initialize(context=context, emit_callback=lambda msg: None)
+                factory = get_agent_factory(name=librarian_agent_id)
+                context = {
+                    "config": LibrarianConfig(conversation_persistence=True),
+                    "workspace": self.workspace_manager,
+                    "sqlite_manager": self.project_semantic_db,
+                    "module_name": m_name,
+                }
+                librarian = factory.factory_func(descriptor=factory.descriptor)             
+                librarian.initialize(context=context, emit_callback=lambda msg: None)
 
-            logger.info("Starting librarian agent")
-            # Step 4: Start librarian agent (enters WAITING state)
-            await librarian.start()
-            # # Step 5: Register Gate with Supervisor wrapper for message routing
-            self.supervisor.attach_agent(librarian)
-            librarian_state = self.supervisor.get_agent_state(librarian_agent_id)
-            self.update_agent_status("librarian", librarian_state["status"])
+                logger.info(f"Starting librarian agent for module: {m_name}")
+                await librarian.start()
+                self.supervisor.attach_agent(librarian)
+                librarian_state = self.supervisor.get_agent_state(librarian_agent_id)
+                self.update_agent_status("librarian", librarian_state["status"])
+            else:
+                logger.debug(f"Librarian agent for module '{m_name}' already registered.")
 
             # ----ANA setup----
-            ana_agent_id = f"{module_name}.ana"
-            ana_descriptor = AgentDescriptor(
-                agent_id=ana_agent_id,
-                name=f"{module_name} ANA",
-                version="1.0",
-                capabilities=["CIRCUIT_SYNTHESIS", "CIRCUIT_ERROR_CORRECTION"],
-                accepted_message_types=["SYNTHESIZE_CIRCUIT", "RETRY_SYNTHESIS", "CONTINUE"]
-            )
-            register_agent_if_absent(descriptor=ana_descriptor, factory_func=AnaURPAgent, name=ana_agent_id)
+            if not self.supervisor.has_agent(ana_agent_id):
+                ana_descriptor = AgentDescriptor(
+                    agent_id=ana_agent_id,
+                    name=f"{m_name} ANA",
+                    version="1.0",
+                    capabilities=["CIRCUIT_SYNTHESIS", "CIRCUIT_ERROR_CORRECTION"],
+                    accepted_message_types=["SYNTHESIZE_CIRCUIT", "RETRY_SYNTHESIS", "CONTINUE"]
+                )
+                register_agent_if_absent(descriptor=ana_descriptor, factory_func=AnaURPAgent, name=ana_agent_id)
 
-            factory = get_agent_factory(name=ana_agent_id)
-            ana_agent = factory.factory_func(descriptor=factory.descriptor)
-            ana_context = AnaContext(
-                module_name=module_name,
-                workspace=self.workspace_manager,
-                sqlite_manager=self.project_semantic_db,
-                web_socket_client=self.web_socket_client,
-                config=AnaConfig(conversation_persistence=True)
-            )
-            ana_agent.initialize(context=ana_context, emit_callback=lambda msg: None)
+                factory = get_agent_factory(name=ana_agent_id)
+                ana_agent = factory.factory_func(descriptor=factory.descriptor)
+                ana_context = AnaContext(
+                    module_name=m_name,
+                    workspace=self.workspace_manager,
+                    sqlite_manager=self.project_semantic_db,
+                    web_socket_client=self.web_socket_client,
+                    config=AnaConfig(conversation_persistence=True)
+                )
+                ana_agent.initialize(context=ana_context, emit_callback=lambda msg: None)
 
-            logger.info("Starting ANA agent")
-            await ana_agent.start()
-            self.supervisor.attach_agent(ana_agent)
-            ana_state = self.supervisor.get_agent_state(ana_agent_id)
-            self.update_agent_status("ana", ana_state["status"])
+                logger.info(f"Starting ANA agent for module: {m_name}")
+                await ana_agent.start()
+                self.supervisor.attach_agent(ana_agent)
+                ana_state = self.supervisor.get_agent_state(ana_agent_id)
+                self.update_agent_status("ana", ana_state["status"])
+            else:
+                logger.debug(f"ANA agent for module '{m_name}' already registered.")
 
     
     async def _handle_idle(self, event: BaseEvent):
@@ -546,6 +549,49 @@ class AOSM:
                     type=EventType.ERROR,
                     source=EventSource.VHL_AGENT_BACKEND,
                     payload={"message": "Project not ready for synthesis. Please upload schematic first."}
+                ))
+        elif event.type == EventType.CREATE_MODULE:
+            logger.info(f"[AOSM._handle_idle] Received CREATE_MODULE: {event.payload}")
+            payload = event.payload or {}
+            module_name = payload.get("module_name")
+            description = payload.get("description", "")
+            temp_dir = payload.get("temp_dir")
+
+            if not module_name or not temp_dir:
+                logger.error(f"[AOSM._handle_idle] Missing module_name or temp_dir in CREATE_MODULE payload")
+                return
+
+            try:
+                # Call WorkspaceManager to add the module
+                module_path = self.workspace_manager.add_module(
+                    module_name=module_name,
+                    description=description,
+                    temp_dir=Path(temp_dir)
+                )
+
+                # Re-register agents for the new module
+                await self.register_agents(workspace_manager=self.workspace_manager, module_name=module_name)
+
+                # Notify success
+                await self.web_socket_client.emit_event(BaseEvent(
+                    type=EventType.MODULE_CREATED,
+                    source=EventSource.VHL_AGENT_BACKEND,
+                    payload={
+                        "module_name": module_name,
+                        "module_path": str(module_path),
+                        "workspace_info": self.workspace_manager.get_workspace_info()
+                    }
+                ))
+                
+                # Automatically trigger Workflow 1 (Archy -> Librarian -> ANA) for the new module
+                # asyncio.create_task(self.run_workflow_1(module_name, {}))
+                
+            except Exception as e:
+                logger.error(f"[AOSM._handle_idle] Failed to create module: {e}", exc_info=True)
+                await self.web_socket_client.emit_event(BaseEvent(
+                    type=EventType.ERROR,
+                    source=EventSource.VHL_AGENT_BACKEND,
+                    payload={"message": f"Failed to create module: {str(e)}"}
                 ))
     
     # --- State Handlers --- END
