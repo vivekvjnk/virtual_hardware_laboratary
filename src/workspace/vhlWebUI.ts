@@ -209,11 +209,23 @@ export class VHLWebUI {
 
                 console.log(`[VHLWebUI] Module creation artefacts saved to ${tempDir}`);
 
+                // Emit CREATE_MODULE event to backend
+                this.relaySocket?.send(JSON.stringify({ 
+                    type: 'CREATE_MODULE', 
+                    source: 'vhl_webui', 
+                    payload: { 
+                        module_name: name,
+                        description,
+                        temp_dir: tempDir,
+                        project_id: projectId
+                    } 
+                }));
+
                 res.status(200).send({
                     success: true,
                     moduleId: name, 
                     worktreePath: tempDir, 
-                    message: 'Module artefacts collected and saved successfully'
+                    message: 'Module creation initiated'
                 });
 
             } catch (err: any) {
