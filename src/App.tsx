@@ -10,12 +10,13 @@ import MissionDashboard from './components/MissionDashboard'
 import ModuleDetailView from './components/ModuleDetailView'
 
 import EditorView from './components/EditorView'
+import Presentation from './components/Presentation'
 
 function App() {
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
 
-  const [view, setView] = useState<'dashboard' | 'editor' | 'mission' | 'module_detail'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'editor' | 'mission' | 'module_detail' | 'presentation'>('dashboard');
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [activeModuleName, setActiveModuleName] = useState<string | null>(null);
   const [showSidebar, setShowSidebar] = useState(true);
@@ -106,16 +107,17 @@ function App() {
   };
 
   const isModuleDetail = view === 'module_detail';
+  const isPresentation = view === 'presentation';
 
   return (
     <div className={`min-h-screen bg-slate-950 text-white ${isModuleDetail ? 'p-4' : 'px-6 py-6'}`}>
       <div className={`mx-auto grid ${isModuleDetail ? 'w-full' : 'max-w-[1600px]'} gap-6 ${
-        !isModuleDetail && showSidebar && showMissionFeed ? 'grid-cols-[280px_minmax(720px,1fr)_320px]' :
+        !isModuleDetail && !isPresentation && showSidebar && showMissionFeed ? 'grid-cols-[280px_minmax(720px,1fr)_320px]' :
         !isModuleDetail && showSidebar ? 'grid-cols-[280px_minmax(720px,1fr)]' :
-        !isModuleDetail && showMissionFeed ? 'grid-cols-[minmax(720px,1fr)_320px]' :
+        !isModuleDetail && !isPresentation && showMissionFeed ? 'grid-cols-[minmax(720px,1fr)_320px]' :
         'grid-cols-[1fr]'
       }`}>
-        {!isModuleDetail && showSidebar && (
+        {!isModuleDetail && !isPresentation && showSidebar && (
           <div>
             {dashboardData ? <Sidebar items={dashboardData.navItems} onNavigate={setView} /> : <Sidebar items={[]} onNavigate={setView} />}
           </div>
@@ -150,6 +152,8 @@ function App() {
             ) : (
               <div className="text-white">Invalid module or project</div>
             )
+          ) : view === 'presentation' ? (
+            <Presentation onClose={() => setView('dashboard')} />
           ) : view === 'dashboard' ? (
             <>
               <section className="rounded-3xl border border-slate-800 bg-slate-950/95 p-6 shadow-xl shadow-slate-950/30">
@@ -251,7 +255,7 @@ function App() {
           )}
         </main>
 
-        {!isModuleDetail && showMissionFeed && (
+        {!isModuleDetail && !isPresentation && showMissionFeed && (
           <aside className="space-y-6">
             {dashboardData ? (
               <MissionFeed feed={dashboardData.missionFeed} />
