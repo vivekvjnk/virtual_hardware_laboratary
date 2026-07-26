@@ -301,6 +301,58 @@ export class VHLWebUI {
                     }));
 
 
+                // For each project, try to get more info from its state.db
+                for (const project of projects) {
+                    const dbPath = path.join(this.workspaceDir, project.id, '.vhl', 'state.db');
+                    try {
+                        const db = await open({
+                            filename: dbPath,
+                            driver: sqlite3.Database
+                        });
+                        const modules = await db.all('SELECT module_name FROM project_modules');
+                        project.modules = modules.length;
+                        
+                        const lastOp = await db.get('SELECT timestamp FROM semantic_operations ORDER BY timestamp DESC LIMIT 1');
+                        if (lastOp) {
+                            project.lastOpened = new Date(lastOp.timestamp).toLocaleDateString();
+                        }
+                        
+                        const synthesisStatus = await db.get("SELECT setting_value FROM project_settings WHERE setting_key LIKE '%.is_synthesis_completed'");
+                        if (synthesisStatus && synthesisStatus.setting_value === 'true') {
+                            project.progress = 100;
+                            project.status = 'Complete';
+                        } else {
+                            project.status = 'In Progress';
+                        }
+                        await db.close();
+                    } catch (e) {
+                        // Ignore if db doesn't exist yet
+                    }
+                }
+
+                res.status(200).send({
+                    recentProjects: projects,
+                    heroActions: [
+                        { id: 'create-project', title: 'Create New Project', description: 'Start a new mission from scratch', cta: 'Create Project', variant: 'primary' },
+                        { id: 'load-project', title: 'Load Existing Project', description: 'Open a saved workspace or restore from archive', cta: 'Load Project', variant: 'secondary' },
+                    ],
+                    templates: [
+                        { id: 'template-bms', name: 'Battery Management System', description: 'Complete BMS reference design with protection and monitoring', modules: 5 },
+                        { id: 'template-power', name: 'Power Supply', description: 'AC-DC / DC-DC power supply designs', modules: 3 },
+                    ],
+                    navItems: [
+                        { id: 'home', label: 'Home', icon: '🏠', active: true },
+                        { id: 'presentation', label: 'Presentation', icon: '📽️' },
+                        { id: 'mission-dashboard', label: 'Missions', icon: '📊' },
+                        { id: 'workspace', label: 'Workspace', icon: '🗂️', badge: projectContext.project_id ? 'Active' : undefined },
+                    ],
+                    missionFeed: []
+                });
+            } catch (err: any) {
+                res.status(500).send({ error: err.message });
+            }
+        });
+
         app.get('/api/agents/:agentId/messages', (req, res) => {
             const { agentId } = req.params;
             const messages = this.agentMessages.get(agentId) || [];
@@ -346,57 +398,6 @@ export class VHLWebUI {
             this.agentMessages.set(agentId, messages);
 
             res.status(200).send({ status: 'Message sent' });
-        });
-
-                // For each project, try to get more info from its state.db
-                for (const project of projects) {
-                    const dbPath = path.join(this.workspaceDir, project.id, '.vhl', 'state.db');
-                    try {
-                        const db = await open({
-                            filename: dbPath,
-                            driver: sqlite3.Database
-                        });
-                        const modules = await db.all('SELECT module_name FROM project_modules');
-                        project.modules = modules.length;
-                        
-                        const lastOp = await db.get('SELECT timestamp FROM semantic_operations ORDER BY timestamp DESC LIMIT 1');
-                        if (lastOp) {
-                            project.lastOpened = new Date(lastOp.timestamp).toLocaleDateString();
-                        }
-                        
-                        const synthesisStatus = await db.get("SELECT setting_value FROM project_settings WHERE setting_key LIKE '%.is_synthesis_completed'");
-                        if (synthesisStatus && synthesisStatus.setting_value === 'true') {
-                            project.progress = 100;
-                            project.status = 'Complete';
-                        } else {
-                            project.status = 'In Progress';
-                        }
-                        await db.close();
-                    } catch (e) {
-                        // Ignore if db doesn't exist yet
-                    }
-                }
-
-                res.status(200).send({
-                    recentProjects: projects,
-                    heroActions: [
-                        { id: 'create-project', title: 'Create New Project', description: 'Start a new mission from scratch', cta: 'Create Project', variant: 'primary' },
-                        { id: 'load-project', title: 'Load Existing Project', description: 'Open a saved workspace or restore from archive', cta: 'Load Project', variant: 'secondary' },
-                    ],
-                    templates: [
-                        { id: 'template-bms', name: 'Battery Management System', description: 'Complete BMS reference design with protection and monitoring', modules: 5 },
-                        { id: 'template-power', name: 'Power Supply', description: 'AC-DC / DC-DC power supply designs', modules: 3 },
-                    ],
-                    navItems: [
-                        { id: 'home', label: 'Home', icon: '🏠', active: true },
-                        { id: 'mission-dashboard', label: 'Missions', icon: '📊' },
-                        { id: 'workspace', label: 'Workspace', icon: '🗂️', badge: projectContext.project_id ? 'Active' : undefined },
-                    ],
-                    missionFeed: []
-                });
-            } catch (err: any) {
-                res.status(500).send({ error: err.message });
-            }
         });
 
 
