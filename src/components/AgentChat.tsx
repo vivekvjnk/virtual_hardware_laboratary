@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import MarkdownRenderer from './MarkdownRenderer';
 
 interface Message {
   id: string;
@@ -25,8 +26,10 @@ export default function AgentChat({
   const [input, setInput] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const agentId = `${moduleName}.${agentType}`;
 
@@ -35,8 +38,26 @@ export default function AgentChat({
   };
 
   useEffect(() => {
-    scrollToBottom();
+    // scrollToBottom();
   }, [messages]);
+
+  const handleCopy = (id: string, text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedId(id);
+      setTimeout(() => {
+        setCopiedId(null);
+      }, 2000);
+    }).catch((err) => {
+      console.error('Failed to copy text: ', err);
+    });
+  };
+
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 140)}px`;
+    }
+  }, [input]);
 
   useEffect(() => {
     const fetchMessages = async () => {
@@ -56,8 +77,8 @@ export default function AgentChat({
     return () => clearInterval(interval);
   }, [agentId]);
 
-  const sendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const sendMessage = async (e?: React.FormEvent | React.KeyboardEvent) => {
+    if (e) e.preventDefault();
     if (!input.trim() && !file) return;
 
     setLoading(true);
@@ -109,6 +130,15 @@ export default function AgentChat({
     sendMessage(e);
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (!isDisabled) {
+        sendMessage(e);
+      }
+    }
+  };
+
   const isDisabled = loading || (!input.trim() && !file);
 
   const wrapperStyle: React.CSSProperties = isEmbedded
@@ -123,26 +153,25 @@ export default function AgentChat({
     : {
         position: 'fixed',
         inset: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.6)',
+        backgroundColor: '#020617',
         display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '1rem',
+        flexDirection: 'column',
+        padding: '0.75rem',
         zIndex: 50
       };
 
   const containerStyle: React.CSSProperties = {
-    backgroundColor: '#020617',
-    border: '3px solid #1e293b',
-    borderRadius: isEmbedded ? '0.75rem' : '1.5rem',
+    backgroundColor: isEmbedded ? 'transparent' : '#0f172a',
+    border: isEmbedded ? 'none' : '1px solid #1e293b',
+    borderRadius: isEmbedded ? 0 : '1rem',
     width: '100%',
-    height: isEmbedded ? '100%' : '600px',
-    maxWidth: isEmbedded ? 'none' : '42rem',
+    height: '100%',
+    maxWidth: 'none',
     display: 'flex',
     flexDirection: 'column',
-    boxShadow: isEmbedded ? 'none' : '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
     overflow: 'hidden',
-    flex: 1
+    flex: 1,
+    minHeight: 0
   };
 
   return (
@@ -151,35 +180,54 @@ export default function AgentChat({
         {/* Header - Only shown when NOT embedded */}
         {!isEmbedded && (
           <div style={{
-            padding: '1rem',
+            padding: '0.75rem 1.25rem',
             borderBottom: '1px solid #1e293b',
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
             backgroundColor: '#0f172a'
           }}>
-            <div>
-              <h2 style={{ color: '#ffffff', fontWeight: 'bold', fontSize: '1.125rem', margin: 0 }}>
-                Chat with {agentType.charAt(0).toUpperCase() + agentType.slice(1)}
-              </h2>
-              <p style={{ color: '#94a3b8', fontSize: '0.75rem', margin: 0 }}>{moduleName}</p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                backgroundColor: '#020617',
+                padding: '0.25rem 0.75rem',
+                borderRadius: '0.5rem',
+                border: '1px solid #1e293b'
+              }}>
+                <span style={{ color: '#64748b', fontSize: '0.7rem', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                  AGENT CHAT
+                </span>
+                <span style={{ color: '#334155', fontSize: '0.75rem' }}>/</span>
+                <span style={{ color: '#60a5fa', fontSize: '0.75rem', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                  {agentType}
+                </span>
+                <span style={{ color: '#334155', fontSize: '0.75rem' }}>/</span>
+                <span style={{ color: '#38bdf8', fontSize: '0.75rem', fontWeight: 600, fontFamily: 'monospace' }}>
+                  {moduleName}
+                </span>
+              </div>
             </div>
             <button 
               onClick={onClose}
               style={{
-                background: 'none',
-                border: 'none',
-                color: '#94a3b8',
+                backgroundColor: '#1e293b',
+                color: '#ffffff',
+                fontWeight: 600,
+                padding: '0.375rem 0.875rem',
+                borderRadius: '0.5rem',
+                border: '1px solid #334155',
                 cursor: 'pointer',
-                padding: '0.25rem',
+                fontSize: '0.75rem',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center'
+                gap: '0.375rem',
+                transition: 'all 0.2s ease'
               }}
             >
-              <svg xmlns="http://www.w3.org/2000/svg" style={{ height: '1.5rem', width: '1.5rem' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              <span>✕</span> Close
             </button>
           </div>
         )}
@@ -187,37 +235,73 @@ export default function AgentChat({
         {/* Messages Body */}
         <div style={{
           flexGrow: 1,
+          minHeight: 0,
           overflowY: 'auto',
-          padding: '1rem',
+          padding: isEmbedded ? '0.75rem' : '1rem',
           display: 'flex',
           flexDirection: 'column',
-          gap: '1rem',
-          backgroundColor: '#020617'
+          gap: isEmbedded ? '0.75rem' : '1rem',
+          backgroundColor: '#020617',
+          borderRadius: isEmbedded ? '0.75rem' : 0
         }}>
           {messages.length === 0 ? (
             <div style={{ textAlign: 'center', color: '#64748b', marginTop: '2.5rem', fontSize: '0.875rem' }}>
               No messages yet. Start the conversation!
             </div>
           ) : (
-            messages.map((msg) => {
+            messages.map((msg, index) => {
               const isHIL = msg.sender === 'HIL';
+              const msgKey = msg.id ? `${msg.id}-${index}` : `${index}`;
               return (
-                <div key={msg.id} style={{ display: 'flex', justifyContent: isHIL ? 'flex-end' : 'flex-start' }}>
+                <div key={msgKey} style={{ display: 'flex', justifyContent: isHIL ? 'flex-end' : 'flex-start' }}>
                   <div style={{
-                    maxWidth: '80%',
-                    padding: '0.75rem',
-                    borderRadius: '1rem',
-                    borderTopRightRadius: isHIL ? 0 : '1rem',
-                    borderTopLeftRadius: isHIL ? '1rem' : 0,
+                    maxWidth: isEmbedded ? '88%' : '80%',
+                    padding: isEmbedded ? '0.625rem 0.75rem' : '0.75rem',
+                    borderRadius: isEmbedded ? '0.75rem' : '1rem',
+                    borderTopRightRadius: isHIL ? 0 : (isEmbedded ? '0.75rem' : '1rem'),
+                    borderTopLeftRadius: isHIL ? (isEmbedded ? '0.75rem' : '1rem') : 0,
                     backgroundColor: isHIL ? '#2563eb' : '#1e293b',
                     color: isHIL ? '#ffffff' : '#e2e8f0',
                     boxShadow: '0 1px 3px rgba(0, 0, 0, 0.2)'
                   }}>
-                    <div style={{ fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '0.25rem', opacity: 0.7 }}>
-                      {msg.sender}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.375rem', gap: '0.75rem' }}>
+                      <div style={{ fontSize: '0.75rem', fontWeight: 'bold', opacity: 0.7 }}>
+                        {msg.sender}
+                      </div>
+                      {!isHIL && (
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(msgKey, msg.payload.text)}
+                          title="Copy raw markdown"
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: copiedId === msgKey ? '#4ade80' : '#94a3b8',
+                            cursor: 'pointer',
+                            fontSize: '0.7rem',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.25rem',
+                            padding: '0.125rem 0.375rem',
+                            borderRadius: '0.25rem',
+                            backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                            transition: 'all 0.2s ease'
+                          }}
+                        >
+                          {copiedId === msgKey ? (
+                            <>
+                              <span>✓</span> Copied
+                            </>
+                          ) : (
+                            <>
+                              <span>📋</span> Copy
+                            </>
+                          )}
+                        </button>
+                      )}
                     </div>
-                    <div style={{ whiteSpace: 'pre-wrap', fontSize: '0.875rem', lineHeight: '1.25rem' }}>
-                      {msg.payload.text}
+                    <div style={{ fontSize: '0.875rem', lineHeight: '1.25rem' }}>
+                      <MarkdownRenderer content={msg.payload.text} />
                     </div>
                     <div style={{ fontSize: '0.625rem', marginTop: '0.25rem', opacity: 0.5, textAlign: 'right' }}>
                       {new Date(msg.timestamp).toLocaleTimeString()}
@@ -232,11 +316,11 @@ export default function AgentChat({
 
         {/* Input Form */}
         <form onSubmit={handleSubmit} style={{
-          padding: '0.75rem 1rem',
-          borderTop: '1px solid #1e293b',
-          backgroundColor: '#0f172a'
+          padding: isEmbedded ? '0.5rem 0 0 0' : '0.75rem 1rem',
+          borderTop: isEmbedded ? 'none' : '1px solid #1e293b',
+          backgroundColor: isEmbedded ? 'transparent' : '#0f172a'
         }}>
-          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end' }}>
             <input
               type="file"
               ref={fileInputRef}
@@ -250,7 +334,7 @@ export default function AgentChat({
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: '0.5rem',
-                padding: '0.5rem 0.75rem', 
+                padding: '0.55rem 0.75rem', 
                 borderRadius: '0.75rem', 
                 fontSize: '0.75rem', 
                 fontWeight: 600, 
@@ -261,15 +345,18 @@ export default function AgentChat({
                 border: '1px solid rgba(59, 130, 246, 0.5)',
                 color: '#60a5fa',
                 boxShadow: '0 0 2px rgba(59, 130, 246, 0.2)',
-                transition: 'all 0.2s ease'
+                transition: 'all 0.2s ease',
+                marginBottom: '1px'
               }}
             >
               {file ? '📄' : '📎'}
             </button>
-            <input
-              type="text"
+            <textarea
+              ref={textareaRef}
+              rows={1}
               value={input}
               onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
               placeholder={`Message ${agentType}...`}
               style={{
                 flexGrow: 1,
@@ -279,7 +366,12 @@ export default function AgentChat({
                 padding: '0.5rem 1rem',
                 color: '#ffffff',
                 outline: 'none',
-                fontSize: '0.875rem'
+                fontSize: '0.875rem',
+                resize: 'none',
+                maxHeight: '140px',
+                overflowY: 'auto',
+                fontFamily: 'inherit',
+                lineHeight: '1.4'
               }}
               disabled={loading}
             />
@@ -290,7 +382,7 @@ export default function AgentChat({
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: '0.5rem',
-                padding: '0.5rem 1rem', 
+                padding: '0.55rem 1rem', 
                 borderRadius: '0.75rem', 
                 fontSize: '0.75rem', 
                 fontWeight: 600, 
@@ -301,7 +393,8 @@ export default function AgentChat({
                 border: '1px solid rgba(59, 130, 246, 0.5)',
                 color: '#60a5fa',
                 boxShadow: '0 0 2px rgba(59, 130, 246, 0.2)',
-                transition: 'all 0.2s ease'
+                transition: 'all 0.2s ease',
+                marginBottom: '1px'
               }}
             >
               {loading ? '...' : 'Send'}
