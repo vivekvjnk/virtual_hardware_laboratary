@@ -88,6 +88,9 @@ export default function AgentChat({
       if (file) {
         const formData = new FormData();
         formData.append('file', file);
+        formData.append('module_name', moduleName);
+        formData.append('agent_name', agentType);
+        formData.append('message', input);
         const response = await fetch(`http://localhost:3022/api/upload-file`, {
           method: 'POST',
           body: formData
@@ -95,6 +98,21 @@ export default function AgentChat({
         if (response.ok) {
           const data = await response.json();
           filePath = data.path;
+
+          // Cleanup and optimistic update for file upload
+          setInput('');
+          setFile(null);
+          if (fileInputRef.current) fileInputRef.current.value = '';
+
+          const newMessage: Message = {
+              id: Date.now().toString(),
+              sender: 'HIL',
+              payload: { text: `[File: ${file.name}] ${input}` },
+              timestamp: new Date().toISOString()
+          };
+          setMessages(prev => [...prev, newMessage]);
+          setLoading(false);
+          return;
         }
       }
 
