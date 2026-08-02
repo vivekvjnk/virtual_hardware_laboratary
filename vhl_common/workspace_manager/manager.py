@@ -823,3 +823,42 @@ class WorkspaceManager:
         rows = self.db.conn.execute(query, params).fetchall()
         return [self._build_operation(row) for row in rows]
 
+
+    def add_user_artifact(self, module_name: str, file_path: Path, file_name: str) -> Path:
+        """
+        Copies a user-uploaded artifact to the module's Workspace/resources/user_artefacts/ directory.
+        """
+        if module_name not in self.worktree:
+            # Fallback to root if module not found, or use the first available module
+            if self.project_modules:
+                module_name = self.project_modules[0]
+                logger.warning(f"[WorkspaceManager.add_user_artifact] Module not found. Falling back to {module_name}")
+            else:
+                module_name = "root"
+
+        module_path = self.worktree.get(module_name)
+        if not module_path:
+             raise ValueError(f"Module '{module_name}' path not found in workspace.")
+
+        target_dir = module_path / module_name / "Workspace" / "resources" / "user_artefacts"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        
+        target_path = target_dir / file_name
+        shutil.copy2(file_path, target_path)
+
+        # Clean up source file from .zip_temp
+        try:
+            if file_path.exists():
+                file_path.unlink()
+                logger.info(f"[WorkspaceManager.add_user_artifact] Cleaned up source file: {file_path}")
+        except Exception as e:
+            logger.warning(f"[WorkspaceManager.add_user_artifact] Failed to clean up source file {file_path}: {e}")
+
+        logger.info(f"[WorkspaceManager.add_user_artifact] Copied {file_name} to {target_path}")
+        
+        # Calculate path relative to the module's Workspace directory
+        try:
+            relative_path = target_path.relative_to(module_path / module_name / "Workspace")
+            return relative_path
+        except ValueError:
+            return target_path

@@ -82,6 +82,8 @@ class EventType(str, Enum):
     # Agent events 
     MESSAGE_TO_AGENT = "MESSAGE_TO_AGENT"
     MESSAGE_FROM_AGENT = "MESSAGE_FROM_AGENT"
+    FILE_ADDED = "FILE_ADDED"
+
 class BaseEvent(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     
@@ -211,6 +213,14 @@ class AgentStatePayload(BaseModel):
     librarian: AgentStatus
     ana: AgentStatus
     aosm: AgentStatus
+
+
+class FileAddedPayload(BaseModel):
+    file_path: str
+    file_name: str
+    module_name: Optional[str] = None
+    agent_name: Optional[str] = None
+    message: Optional[str] = None
 
 class AgentHealthPayload(BaseModel):
     mcp_manager_status: str

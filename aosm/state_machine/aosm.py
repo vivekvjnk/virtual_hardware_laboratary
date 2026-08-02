@@ -120,6 +120,53 @@ class AOSM:
                 payload={"message": "Invalid MESSAGE_TO_AGENT payload: missing target_agent or message"}
             ))
 
+
+    async def _handle_file_added(self, event: BaseEvent):
+        """
+        Handles FILE_ADDED event.
+        - Moves file to the correct location in the workspace.
+        - Sends a message to the respective agent.
+        """
+        payload = event.payload or {}
+        file_path = payload.get("file_path")
+        file_name = payload.get("file_name")
+        module_name = payload.get("module_name")
+        agent_name = payload.get("agent_name")
+        user_message = payload.get("message", "")
+
+        if not file_path or not file_name:
+            logger.error("[AOSM._handle_file_added] Missing file_path or file_name")
+            return
+
+        try:
+            # Move file using WorkspaceManager
+            relative_path = self.workspace_manager.add_user_artifact(
+                module_name=module_name,
+                file_path=Path(file_path),
+                file_name=file_name
+            )
+
+            # Construct message for the agent
+            # eg: """ *User uploaded file:<file-path under Workspace/resources>* \n <user-message> """
+            final_text = f"*User uploaded file: {relative_path}*\n{user_message}"
+            
+            if agent_name and module_name:
+                target_agent = f"{module_name}.{agent_name}"
+                msg_payload = {"text": final_text}
+                message = MessageEnvelope(
+                    type="MESSAGE_TO_AGENT", 
+                    payload=msg_payload,
+                    sender="vhl_webui",
+                    receiver=target_agent
+                )
+                await self.supervisor.route_egress(message=message)
+                logger.info(f"[AOSM._handle_file_added] Routed file message to {target_agent}")
+            else:
+                logger.warning("[AOSM._handle_file_added] agent_name or module_name missing, cannot route message")
+
+        except Exception as e:
+            logger.error(f"[AOSM._handle_file_added] Error: {e}", exc_info=True)
+
     async def start(self):
         """Starts AOSM and the WebSocket client."""
         logger.info("[AOSM.start] Starting AOSM...")
@@ -246,6 +293,11 @@ class AOSM:
         if event.type == EventType.MESSAGE_TO_AGENT:
             logger.info(f"👉 [AOSM] Handling MESSAGE_TO_AGENT")
             await self._handle_message_to_agent(event)
+            return
+
+        if event.type == EventType.FILE_ADDED:
+            logger.info(f"👉 [AOSM] Handling FILE_ADDED")
+            await self._handle_file_added(event)
             return
 
         # Dispatch to handler based on current state and event
