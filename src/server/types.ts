@@ -53,6 +53,7 @@ export type EventType =
     | "AGENT_HEALTH"
     | "MESSAGE_TO_AGENT"
     | "MESSAGE_FROM_AGENT"
+    | "FILE_ADDED"
 
 import { ROLE_WEBUI, ROLE_AGENT_BACKEND, ROLE_RUNTIME } from "./roles.js";
 

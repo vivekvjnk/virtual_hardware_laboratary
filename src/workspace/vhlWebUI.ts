@@ -119,11 +119,16 @@ export class VHLWebUI {
         app.post('/api/identify', (req, res) => {
             const { role } = req.body;
             this.connectToRelay();
-            this.relaySocket?.send(JSON.stringify({ type: 'IDENTIFY', payload: { role } }));
+            this.relaySocket?.send(JSON.stringify({ 
+                type: 'IDENTIFY', 
+                source: 'vhl_runtime',
+                payload: { role } 
+            }));
             res.status(200).send({ status: 'Identifying' });
         });
 
         app.post('/api/upload-file', upload.single('file'), async (req, res) => {
+            const { module_name, agent_name, message } = req.body;
             if (!req.file) {
                 return res.status(400).send({ error: 'No file uploaded' });
             }
@@ -135,8 +140,31 @@ export class VHLWebUI {
             // Emit FILE_ADDED event
             this.relaySocket?.send(JSON.stringify({ 
                 type: 'FILE_ADDED', 
-                payload: { file_path: filePath, file_name: req.file.originalname } 
+                source: 'vhl_runtime',
+                payload: { 
+                    file_path: filePath, 
+                    file_name: req.file.originalname,
+                    module_name,
+                    agent_name,
+                    message
+                } 
             }));
+            
+            // Store the message for chat history if agent_name and module_name are provided
+            if (agent_name && module_name) {
+                const agentId = `${module_name}.${agent_name}`;
+                const gateMessage = {
+                    type: 'HUMAN_RESPONSE',
+                    payload: { text: `[File: ${req.file.originalname}] ${message || ""}` },
+                    sender: 'HIL',
+                    receiver: agentId,
+                    timestamp: new Date().toISOString(),
+                    id: randomUUID()
+                };
+                const messages = this.agentMessages.get(agentId) || [];
+                messages.push(gateMessage);
+                this.agentMessages.set(agentId, messages);
+            }
             
             res.status(200).send({ path: filePath });
         });
