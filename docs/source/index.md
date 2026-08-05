@@ -7,5 +7,6 @@ Welcome to the Virtual Hardware Laboratary (VHL) documentation.
 :caption: Contents:
 
 repo_overview
+user_project_model
 workspace_manager
 ```
