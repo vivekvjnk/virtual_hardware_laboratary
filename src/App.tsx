@@ -11,12 +11,13 @@ import ModuleDetailView from './components/ModuleDetailView'
 
 import EditorView from './components/EditorView'
 import Presentation from './components/Presentation'
+import { ArchitectureExplorer } from './components/ArchitectureExplorer/ArchitectureExplorer'
 
 function App() {
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
 
-  const [view, setView] = useState<'dashboard' | 'editor' | 'mission' | 'module_detail' | 'presentation'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'editor' | 'mission' | 'module_detail' | 'presentation' | 'architecture'>('dashboard');
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [activeModuleName, setActiveModuleName] = useState<string | null>(null);
   const [showSidebar, setShowSidebar] = useState(true);
@@ -108,23 +109,26 @@ function App() {
 
   const isModuleDetail = view === 'module_detail';
   const isPresentation = view === 'presentation';
+  const isArchitecture = view === 'architecture';
 
   return (
-    <div className={`min-h-screen bg-slate-950 text-white ${isModuleDetail ? 'p-4' : 'px-6 py-6'}`}>
-      <div className={`mx-auto grid ${isModuleDetail ? 'w-full' : 'max-w-[1600px]'} gap-6 ${
-        !isModuleDetail && !isPresentation && showSidebar && showMissionFeed ? 'grid-cols-[280px_minmax(720px,1fr)_320px]' :
-        !isModuleDetail && showSidebar ? 'grid-cols-[280px_minmax(720px,1fr)]' :
-        !isModuleDetail && !isPresentation && showMissionFeed ? 'grid-cols-[minmax(720px,1fr)_320px]' :
+    <div className={`min-h-screen bg-slate-950 text-white ${isModuleDetail || isArchitecture ? 'p-4' : 'px-6 py-6'}`}>
+      <div className={`mx-auto grid ${isModuleDetail || isArchitecture ? 'w-full' : 'max-w-[1600px]'} gap-6 ${
+        !isModuleDetail && !isPresentation && !isArchitecture && showSidebar && showMissionFeed ? 'grid-cols-[280px_minmax(720px,1fr)_320px]' :
+        !isModuleDetail && !isArchitecture && showSidebar ? 'grid-cols-[280px_minmax(720px,1fr)]' :
+        !isModuleDetail && !isPresentation && !isArchitecture && showMissionFeed ? 'grid-cols-[minmax(720px,1fr)_320px]' :
         'grid-cols-[1fr]'
       }`}>
-        {!isModuleDetail && !isPresentation && showSidebar && (
+        {!isModuleDetail && !isPresentation && !isArchitecture && showSidebar && (
           <div>
             {dashboardData ? <Sidebar items={dashboardData.navItems} onNavigate={setView} /> : <Sidebar items={[]} onNavigate={setView} />}
           </div>
         )}
 
         <main className={isModuleDetail ? "h-[calc(100vh-2rem)]" : "space-y-6"}>
-          {view === 'mission' ? (
+          {view === 'architecture' ? (
+            <ArchitectureExplorer onClose={() => setView('dashboard')} />
+          ) : view === 'mission' ? (
             activeProjectId ? (
               <MissionDashboard 
                 projectId={activeProjectId} 
@@ -255,7 +259,7 @@ function App() {
           )}
         </main>
 
-        {!isModuleDetail && !isPresentation && showMissionFeed && (
+        {!isModuleDetail && !isPresentation && !isArchitecture && showMissionFeed && (
           <aside className="space-y-6">
             {dashboardData ? (
               <MissionFeed feed={dashboardData.missionFeed} />

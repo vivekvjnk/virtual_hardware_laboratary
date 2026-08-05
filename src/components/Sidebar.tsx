@@ -2,7 +2,7 @@ import type { NavItem } from '../types/dashboard'
 
 interface SidebarProps {
   items: NavItem[]
-  onNavigate: (view: 'dashboard' | 'editor' | 'mission' | 'module_detail' | 'presentation') => void
+  onNavigate: (view: 'dashboard' | 'editor' | 'mission' | 'module_detail' | 'presentation' | 'architecture') => void
 }
 
 export default function Sidebar({ items, onNavigate }: SidebarProps) {
@@ -23,6 +23,7 @@ export default function Sidebar({ items, onNavigate }: SidebarProps) {
               if (item.label === 'Workspace') onNavigate('editor');
               else if (item.label === 'Missions') onNavigate('mission');
               else if (item.label === 'Presentation') onNavigate('presentation');
+              else if (item.label === 'Architecture' || item.id === 'architecture') onNavigate('architecture');
               else onNavigate('dashboard');
             }}
             className={`flex w-full items-center justify-between rounded-3xl px-4 py-3 text-left transition ${

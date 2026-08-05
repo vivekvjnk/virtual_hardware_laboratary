@@ -38,7 +38,7 @@ export default function AgentChat({
   };
 
   useEffect(() => {
-    // scrollToBottom();
+    scrollToBottom();
   }, [messages]);
 
   const handleCopy = (id: string, text: string) => {
