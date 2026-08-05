@@ -10,10 +10,10 @@ The `vhl-runtime` package provides the core infrastructure for the VHL-System, a
 | **`editor`** | Provides filesystem abstractions to enable platform-agnostic file operations (e.g., local disk vs. browser-based environments). |
 | **`mcp`** | Hosts Model Context Protocol (MCP) servers, allowing external agents to interface with local system capabilities like terminal execution and UI snapshotting. |
 | **`runtime`** | Manages the core filesystem operations, specifically responsible for the lifecycle and atomic validation/commit of components to the component library. |
-| **`server`** | Implements the WebSocket infrastructure used for real-time communication between agents, the VHL-System, and client interfaces. |
+| **`server`** | Implements the [WebSocket infrastructure](src/server/AGENTS.md) used for real-time communication between agents, the VHL-System, and client interfaces. |
 | **`utils`** | Contains helper modules, such as `workspaceManager`, for managing project context and interactions. |
 | **`vap`** | The "VAP" (Validation/Agent/Prototyping) engine. It manages the stateful execution and evaluation of circuits (e.g., using `tsci eval`) and ensures proper process isolation. |
-| **`workspace`** | The high-level application layer. `VHLRuntime` sits here, acting as the main controller that integrates the WebSocket server, VAP evaluation logic, and project state management. |
+| **`workspace`** | The [high-level application layer](src/workspace/AGENTS.md). `VHLRuntime` sits here, acting as the main controller that integrates the WebSocket server, VAP evaluation logic, and project state management. |
 
 ## Workflow Patterns
 
