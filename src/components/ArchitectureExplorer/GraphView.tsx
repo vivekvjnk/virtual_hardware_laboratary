@@ -103,7 +103,7 @@ export const GraphView: React.FC<Props> = ({ graph, selectedId, onSelectNode, he
     const out: Array<{ fp: Pos; tp: Pos; fid: string; tid: string }> = [];
     Object.values(graph.nodes).forEach(n => {
       if (!vis.has(n.id)) return;
-      n.children.forEach(cid => {
+      n.children?.forEach(cid => {
         const fp = posMap[n.id], tp = posMap[cid];
         if (fp && tp && vis.has(cid)) out.push({ fp, tp, fid: n.id, tid: cid });
       });
