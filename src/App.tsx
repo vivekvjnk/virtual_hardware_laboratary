@@ -29,7 +29,7 @@ function App() {
       .finally(() => setLoading(false))
 
     // Initialize activeProjectId from current runtime state
-    fetch('http://localhost:3022/api/project-state')
+    fetch('/api/project-state')
       .then(res => res.json())
       .then(state => {
         if (state && state.project_id) {
@@ -43,7 +43,7 @@ function App() {
 
   useEffect(() => {
     // Identify ourselves to the backend server
-    fetch('http://localhost:3022/api/identify', {
+    fetch('/api/identify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ role: 'vhl_webui' })
@@ -53,7 +53,7 @@ function App() {
 
     // Heartbeat interval
     const heartbeatInterval = setInterval(() => {
-        fetch('http://localhost:3022/api/heartbeat', { method: 'POST' });
+        fetch('/api/heartbeat', { method: 'POST' });
     }, 5000);
     
     return () => {
@@ -85,7 +85,7 @@ function App() {
     formData.append('project_name', projectName);
     
     try {
-      const response = await fetch('http://localhost:3022/api/create-project', {
+      const response = await fetch('/api/create-project', {
         method: 'POST',
         body: formData,
       });
@@ -226,7 +226,7 @@ function App() {
                   setActiveProjectId(id);
                   setView('mission');
                   // Notify runtime to load the project
-                  fetch('http://localhost:3022/api/load-project', {
+                  fetch('/api/load-project', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ project_id: id })

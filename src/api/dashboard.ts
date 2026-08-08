@@ -4,7 +4,7 @@ import type { DashboardData } from '../types/dashboard'
 // Replace these hooks with real backend API calls.
 export async function fetchDashboardData(): Promise<DashboardData> {
   try {
-    const response = await fetch('http://localhost:3022/api/dashboard');
+    const response = await fetch('/api/dashboard');
     if (!response.ok) {
       throw new Error('Failed to fetch dashboard data');
     }

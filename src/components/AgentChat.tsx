@@ -62,7 +62,7 @@ export default function AgentChat({
   useEffect(() => {
     const fetchMessages = async () => {
       try {
-        const response = await fetch(`http://localhost:3022/api/agents/${agentId}/messages`);
+        const response = await fetch(`/api/agents/${agentId}/messages`);
         const data = await response.json();
         if (data.messages) {
           setMessages(data.messages);
@@ -91,7 +91,7 @@ export default function AgentChat({
         formData.append('module_name', moduleName);
         formData.append('agent_name', agentType);
         formData.append('message', input);
-        const response = await fetch(`http://localhost:3022/api/upload-file`, {
+        const response = await fetch(`/api/upload-file`, {
           method: 'POST',
           body: formData
         });
@@ -116,7 +116,7 @@ export default function AgentChat({
         }
       }
 
-      const response = await fetch(`http://localhost:3022/api/agents/${agentId}/send`, {
+      const response = await fetch(`/api/agents/${agentId}/send`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: input, file_path: filePath })

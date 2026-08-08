@@ -15,7 +15,7 @@ export default function MissionDashboard({ projectId, onOpenModuleDetail }: { pr
 
   const fetchModules = () => {
     setLoading(true);
-    fetch('http://localhost:3022/api/get-modules', {
+    fetch('/api/get-modules', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ project_id: projectId })
@@ -36,7 +36,7 @@ export default function MissionDashboard({ projectId, onOpenModuleDetail }: { pr
 
     // Fetch project state
     const fetchState = () => {
-        fetch('http://localhost:3022/api/project-state')
+        fetch('/api/project-state')
           .then(res => res.json())
           .then(data => {
             setProjectState(data);
@@ -56,7 +56,7 @@ export default function MissionDashboard({ projectId, onOpenModuleDetail }: { pr
   };
 
   const triggerWorkflow = (moduleName: string) => {
-    fetch('http://localhost:3022/api/trigger-workflow', {
+    fetch('/api/trigger-workflow', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ module_name: moduleName })

@@ -1,6 +1,6 @@
 import type { CreateModuleRequest, CreateModuleResponse } from '../types/module';
 
-const API_BASE = 'http://localhost:3022/api';
+const API_BASE = '/api';
 
 export async function createModule(payload: CreateModuleRequest): Promise<CreateModuleResponse> {
   const formData = new FormData();

@@ -44,7 +44,7 @@ export default function EditorView({
   
   const writeFile = useCallback(async () => {
     if (!activeFile) return;
-    await fetch('http://localhost:3022/api/vhl-editor/rpc', {
+    await fetch('/api/vhl-editor/rpc', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -109,7 +109,7 @@ export default function EditorView({
   }, [isResizing, resizeStartX, resizeStartWidth]);
 
   const fetchDirectory = async (targetPath: string) => {
-    const response = await fetch('http://localhost:3022/api/vhl-editor/rpc', {
+    const response = await fetch('/api/vhl-editor/rpc', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -131,7 +131,7 @@ export default function EditorView({
   };
 
   const readFile = async (targetPath: string) => {
-    const response = await fetch('http://localhost:3022/api/vhl-editor/rpc', {
+    const response = await fetch('/api/vhl-editor/rpc', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

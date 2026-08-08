@@ -63,7 +63,7 @@ export default function CircuitCanvas({
       try {
         setLoading(true);
         setError(null);
-        const response = await fetch(`http://localhost:3022/api/projects/${projectId}/modules/${moduleName}/circuit`);
+        const response = await fetch(`/api/projects/${projectId}/modules/${moduleName}/circuit`);
         if (!response.ok) {
           throw new Error(`Failed to fetch circuit: ${response.statusText}`);
         }
