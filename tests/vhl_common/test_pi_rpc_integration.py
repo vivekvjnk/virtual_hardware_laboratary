@@ -15,10 +15,13 @@ from vhl_common.pi_harness import (
 )
 
 
+FAKE_PI_SCRIPT = str(Path(__file__).resolve().parent.parent / "fixtures" / "fake_pi_rpc.py")
+
+
 @pytest.mark.asyncio
 async def test_pi_rpc_lifecycle_and_state(tmp_path):
     """Test 1: Spawns live pi --mode rpc subprocess, queries state, and closes cleanly."""
-    client = PiRpcClient(workspace_dir=tmp_path, no_session=True)
+    client = PiRpcClient(workspace_dir=tmp_path, no_session=True, executable_path=FAKE_PI_SCRIPT)
     assert not client.is_running
 
     await client.start()
@@ -37,7 +40,7 @@ async def test_pi_rpc_lifecycle_and_state(tmp_path):
 @pytest.mark.asyncio
 async def test_pi_rpc_direct_bash_execution(tmp_path):
     """Test 2: Direct bash execution with streaming update checks."""
-    client = PiRpcClient(workspace_dir=tmp_path, no_session=True)
+    client = PiRpcClient(workspace_dir=tmp_path, no_session=True, executable_path=FAKE_PI_SCRIPT)
     await client.start()
 
     bash_updates = []
@@ -65,7 +68,7 @@ async def test_pi_rpc_direct_bash_execution(tmp_path):
 @pytest.mark.asyncio
 async def test_pi_rpc_prompt_event_streaming(tmp_path):
     """Test 3: Prompt sending and streamed events ingestion."""
-    client = PiRpcClient(workspace_dir=tmp_path, no_session=True)
+    client = PiRpcClient(workspace_dir=tmp_path, no_session=True, executable_path=FAKE_PI_SCRIPT)
     await client.start()
 
     captured_events = []
@@ -100,7 +103,7 @@ async def test_pi_rpc_prompt_event_streaming(tmp_path):
 @pytest.mark.asyncio
 async def test_pi_rpc_steer_and_abort(tmp_path):
     """Test 4: Abort and steer commands."""
-    client = PiRpcClient(workspace_dir=tmp_path, no_session=True)
+    client = PiRpcClient(workspace_dir=tmp_path, no_session=True, executable_path=FAKE_PI_SCRIPT)
     await client.start()
 
     # Send abort on idle process (should be successful no-op or clean)
@@ -117,7 +120,7 @@ async def test_pi_rpc_steer_and_abort(tmp_path):
 @pytest.mark.asyncio
 async def test_pi_rpc_extension_ui_subprotocol(tmp_path):
     """Test 5: Extension UI sub-protocol handling."""
-    client = PiRpcClient(workspace_dir=tmp_path, no_session=True)
+    client = PiRpcClient(workspace_dir=tmp_path, no_session=True, executable_path=FAKE_PI_SCRIPT)
 
     handled_requests = []
 
@@ -154,7 +157,7 @@ async def test_pi_rpc_extension_ui_subprotocol(tmp_path):
 @pytest.mark.asyncio
 async def test_pi_rpc_error_handling_and_crash_recovery(tmp_path):
     """Test 6: Process termination and error handling."""
-    client = PiRpcClient(workspace_dir=tmp_path, no_session=True)
+    client = PiRpcClient(workspace_dir=tmp_path, no_session=True, executable_path=FAKE_PI_SCRIPT)
     await client.start()
 
     # Manually terminate process to simulate crash
@@ -172,7 +175,7 @@ async def test_pi_rpc_error_handling_and_crash_recovery(tmp_path):
 @pytest.mark.asyncio
 async def test_pi_rpc_model_switch_and_compaction(tmp_path):
     """Test 7: Model discovery, session stats, and compaction operations."""
-    client = PiRpcClient(workspace_dir=tmp_path, no_session=True)
+    client = PiRpcClient(workspace_dir=tmp_path, no_session=True, executable_path=FAKE_PI_SCRIPT)
     await client.start()
 
     models_resp = await client.get_available_models()

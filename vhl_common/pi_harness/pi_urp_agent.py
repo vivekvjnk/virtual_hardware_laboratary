@@ -51,6 +51,7 @@ class PiURPAgent(AbstractURPAgent):
         name = config.get("name") or self.descriptor.name
         extra_args = config.get("extra_args")
         env = config.get("env")
+        executable_path = config.get("executable_path") or "pi"
 
         # Configurable settlement timeout defaulting to 10 minutes (600 seconds)
         self.settlement_timeout: float = float(
@@ -67,6 +68,7 @@ class PiURPAgent(AbstractURPAgent):
             name=name,
             extra_args=extra_args,
             env=env,
+            executable_path=executable_path,
         )
 
         # Register wildcard telemetry event forwarder

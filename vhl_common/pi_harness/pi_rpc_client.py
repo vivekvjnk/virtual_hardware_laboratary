@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import sys
 import uuid
 from pathlib import Path
 from typing import Any, Callable, Coroutine, Dict, List, Optional, Union
@@ -79,7 +80,10 @@ class PiRpcClient:
             logger.warning("PiRpcClient is already running.")
             return
 
-        cmd = [self.executable_path, "--mode", "rpc"]
+        if self.executable_path.endswith(".py"):
+            cmd = [sys.executable, self.executable_path, "--mode", "rpc"]
+        else:
+            cmd = [self.executable_path, "--mode", "rpc"]
 
         if self.no_session:
             cmd.append("--no-session")

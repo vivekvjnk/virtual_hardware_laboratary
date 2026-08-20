@@ -42,12 +42,16 @@ class FailingPostconditionAgent(DummyPiURPAgent):
         return False, "Postcondition artificially failed for test"
 
 
+FAKE_PI_SCRIPT = str(Path(__file__).resolve().parent.parent / "fixtures" / "fake_pi_rpc.py")
+
+
 @pytest.fixture
 def agent_context(tmp_path):
     return AgentContext(
         configuration={
             "workspace_dir": str(tmp_path),
             "no_session": True,
+            "executable_path": FAKE_PI_SCRIPT,
         }
     )
 
