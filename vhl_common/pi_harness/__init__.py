@@ -1,4 +1,5 @@
 from .pi_rpc_client import PiRpcClient
+from .pi_urp_agent import PiURPAgent
 from .rpc_types import (
     ExtensionUiRequest,
     ExtensionUiResponse,
@@ -14,6 +15,7 @@ from .rpc_types import (
 
 __all__ = [
     "PiRpcClient",
+    "PiURPAgent",
     "PiRpcError",
     "PiRpcConnectionError",
     "PiRpcProcessTerminatedError",
