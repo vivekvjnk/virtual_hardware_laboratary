@@ -272,3 +272,45 @@ async def test_pi_urp_agent_multiturn_loop(agent_context):
 
     agent.acknowledge_outcome()
     await agent.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_pi_urp_agent_timeout_handling(tmp_path):
+    """Test 7: Configurable settlement timeout aborts agent run and returns AGENTIC_FAILURE."""
+    context = AgentContext(
+        configuration={
+            "workspace_dir": str(tmp_path),
+            "no_session": True,
+            "settlement_timeout": 0.5,  # Ultra-short 0.5s timeout to trigger timeout handling
+        }
+    )
+
+    agent = DummyPiURPAgent()
+    emitted = []
+    task_done_event = asyncio.Event()
+
+    def emit_cb(msg: MessageEnvelope):
+        emitted.append(msg)
+        if msg.type == "TASK_FAILED":
+            task_done_event.set()
+
+    agent.initialize(context, emit_cb)
+    await agent.start()
+
+    msg = MessageEnvelope(
+        type="TASK",
+        payload={"text": "Write a long 500 word story about electronic circuit engineering."},
+        sender="controller"
+    )
+
+    await agent.send(msg)
+    await asyncio.wait_for(task_done_event.wait(), timeout=10.0)
+
+    result = agent.state["last_process_result"]
+    assert result is not None
+    assert result.outcome == LastTaskOutcome.TASK_FAILED
+    assert result.category == FailureCategory.AGENTIC_FAILURE
+    assert "timed out after 0.5 seconds" in result.payload.text
+
+    agent.acknowledge_outcome()
+    await agent.shutdown()

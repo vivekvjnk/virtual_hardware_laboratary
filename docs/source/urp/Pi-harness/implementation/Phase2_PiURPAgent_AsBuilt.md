@@ -48,6 +48,7 @@ This document serves as the **As-Built Technical Specification** for the **`PiUR
 
 1. **`_on_initialize(context: AgentContext)`**:
    - Reads workspace configuration, model, provider, session parameters, system prompts, and extra environment options.
+   - Sets configurable settlement timeout (`self.settlement_timeout`), defaulting to **600 seconds (10 minutes)**.
    - Instantiates `self.pi_client = PiRpcClient(...)`.
    - Registers wildcard event listener `_handle_pi_telemetry_event` on `self.pi_client`.
 
@@ -58,8 +59,12 @@ This document serves as the **As-Built Technical Specification** for the **`PiUR
 3. **`process(message: MessageEnvelope) -> ProcessResult`**:
    - Extracts prompt text and image attachments from `message.payload`.
    - Issues `await self.pi_client.send_prompt(user_text, images=images)`.
-   - Listens for `agent_settled` / `agent_end` events to await execution turn completion.
-   - Retrieves final assistant text via `get_last_assistant_text()` and returns `ProcessResult(outcome=LastTaskOutcome.TASK_COMPLETED, payload=ProcessResultPayload(text=...))`.
+   - Listens for `agent_settled` / `agent_end` events to await execution turn completion using `self.settlement_timeout`.
+   - **Timeout Handling Strategy**:
+     - If execution exceeds `self.settlement_timeout`, issues `await self.pi_client.abort()` to stop agent execution.
+     - Retrieves the last assistant text generated prior to timeout via `get_last_assistant_text()`.
+     - Returns `ProcessResult(outcome=LastTaskOutcome.TASK_FAILED, category=FailureCategory.AGENTIC_FAILURE, payload=ProcessResultPayload(text="Agent execution timed out..."))` so workflow controllers can handle the escalation or retry.
+   - For successful completion, retrieves final assistant text via `get_last_assistant_text()` and returns `ProcessResult(outcome=LastTaskOutcome.TASK_COMPLETED, payload=ProcessResultPayload(text=...))`.
    - Captures infrastructure failures / crashes and returns `ProcessResult(outcome=LastTaskOutcome.TASK_FAILED, category=FailureCategory.INFRASTRUCTURE_FAILURE)`.
 
 4. **`_on_shutdown()`**:
@@ -106,6 +111,7 @@ The implementation was validated using TDD against live `pi --mode rpc` processe
 | `test_pi_urp_agent_conditions_validation` | URP precondition violation (`TASK_PRECONDITIONS_VIOLATED`) and postcondition violation (`TASK_POSTCONDITIONS_VIOLATED`) failure enforcement. | **PASSED** |
 | `test_pi_urp_agent_infrastructure_failure` | Subprocess termination during execution cleanly mapped to `LastTaskOutcome.TASK_FAILED` with `FailureCategory.INFRASTRUCTURE_FAILURE`. | **PASSED** |
 | `test_pi_urp_agent_multiturn_loop` | Queue hold on turn 2 until turn 1 outcome is explicitly acknowledged via `agent.acknowledge_outcome()`. | **PASSED** |
+| `test_pi_urp_agent_timeout_handling` | Configurable settlement timeout triggers `pi_client.abort()`, retrieves last partial text, and returns `TASK_FAILED` with `FailureCategory.AGENTIC_FAILURE`. | **PASSED** |
 
 ### Execution Command & Output
 ```bash
@@ -114,12 +120,12 @@ cd vhl-agent-backend && .venv/bin/pytest tests/vhl_common/test_pi_rpc_integratio
 ```
 ============================= test session starts ==============================
 platform linux -- Python 3.13.13, pytest-9.0.3, pluggy-1.6.0
-collected 13 items
+collected 14 items
 
-tests/vhl_common/test_pi_rpc_integration.py .......                      [ 53%]
-tests/vhl_common/test_pi_urp_agent_integration.py ......                 [100%]
+tests/vhl_common/test_pi_rpc_integration.py .......                      [ 50%]
+tests/vhl_common/test_pi_urp_agent_integration.py .......                [100%]
 
-======================== 13 passed, 1 warning in 35.94s ========================
+======================== 14 passed, 1 warning in 38.56s ========================
 ```
 
 ---

@@ -52,6 +52,11 @@ class PiURPAgent(AbstractURPAgent):
         extra_args = config.get("extra_args")
         env = config.get("env")
 
+        # Configurable settlement timeout defaulting to 10 minutes (600 seconds)
+        self.settlement_timeout: float = float(
+            config.get("settlement_timeout") or config.get("timeout") or 600.0
+        )
+
         self.pi_client = PiRpcClient(
             workspace_dir=workspace_dir,
             model=model,
@@ -164,13 +169,40 @@ class PiURPAgent(AbstractURPAgent):
                     payload=ProcessResultPayload(text=prompt_resp.error or "Pi prompt command failed")
                 )
 
-            # Wait for execution turn settlement
+            # Wait for execution turn settlement with configurable timeout (default 600s / 10m)
             try:
-                await asyncio.wait_for(settled_event.wait(), timeout=120.0)
+                await asyncio.wait_for(settled_event.wait(), timeout=self.settlement_timeout)
             except asyncio.TimeoutError:
-                logger.warning(f"[{self.descriptor.agent_id}] Timed out waiting for agent settlement.")
+                logger.warning(
+                    f"[{self.descriptor.agent_id}] Agent execution timed out after {self.settlement_timeout}s. "
+                    f"Aborting execution in Pi RPC harness..."
+                )
 
-            # 4. Fetch last assistant response
+                # 1. Stop current agent execution in Pi harness
+                try:
+                    await self.pi_client.abort()
+                except Exception as abort_err:
+                    logger.error(f"[{self.descriptor.agent_id}] Error sending abort command on timeout: {abort_err}")
+
+                # 2. Collect last assistant response text generated prior to timeout
+                assistant_text = ""
+                try:
+                    text_resp = await self.pi_client.get_last_assistant_text()
+                    if text_resp.success:
+                        assistant_text = text_resp.data.get("text") or ""
+                except Exception as fetch_err:
+                    logger.error(f"[{self.descriptor.agent_id}] Error fetching last text after timeout: {fetch_err}")
+
+                # 3. Return TASK_FAILED with FailureCategory.AGENTIC_FAILURE
+                return ProcessResult(
+                    outcome=LastTaskOutcome.TASK_FAILED,
+                    category=FailureCategory.AGENTIC_FAILURE,
+                    payload=ProcessResultPayload(
+                        text=f"Agent execution timed out after {self.settlement_timeout} seconds. Last response: {assistant_text}"
+                    )
+                )
+
+            # 4. Fetch last assistant response for successful settlement
             text_resp = await self.pi_client.get_last_assistant_text()
             assistant_text = text_resp.data.get("text") if text_resp.success else ""
 
