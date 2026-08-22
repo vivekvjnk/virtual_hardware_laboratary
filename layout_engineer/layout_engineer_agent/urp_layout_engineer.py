@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from vhl_common.pi_harness.pi_urp_agent import PiURPAgent
+from urp.pi_harness import PiURPAgent
 from vhl_common.urp.data_types import AgentContext, AgentDescriptor
 from vhl_common.utils import setup_dedicated_logger
 

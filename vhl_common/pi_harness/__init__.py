@@ -1,13 +1,13 @@
-from .pi_rpc_client import PiRpcClient
-from .pi_urp_agent import PiURPAgent
-from .rpc_types import (
+from urp.pi_harness import (
     ExtensionUiRequest,
     ExtensionUiResponse,
+    PiRpcClient,
     PiRpcCommandError,
     PiRpcConnectionError,
     PiRpcError,
     PiRpcProcessTerminatedError,
     PiRpcTimeoutError,
+    PiURPAgent,
     RpcCommand,
     RpcEvent,
     RpcResponse,
