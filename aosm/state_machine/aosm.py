@@ -723,8 +723,9 @@ def main():
     )
     
     ws_url = os.getenv("VHL_WS_URL", "ws://localhost:1080")
-    workspace_arg = sys.argv[1] if len(sys.argv) > 1 else None
-    workspace_path = Path(workspace_arg).expanduser().resolve() if workspace_arg else Path("vhl_workspace").resolve()
+    workspace_env = os.getenv('VHL_WORKSPACE_DIR')
+    workspace_arg = sys.argv[1] if len(sys.argv) > 1 else workspace_env
+    workspace_path = Path(workspace_arg).expanduser().resolve() if workspace_arg else Path('vhl_workspace').resolve()
     aosm = AOSM(ws_url=ws_url, workspace_path=workspace_path)
     
     loop = asyncio.new_event_loop()
