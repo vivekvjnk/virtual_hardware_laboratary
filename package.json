@@ -15,7 +15,8 @@
     "start:ui_snapshot": "tsx src/mcp/ui_snapshot/index.ts",
     "test": "vitest",
     "test:jest": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "setup:python": "bash scripts/setup-host-python.sh"
   },
   "pnpm": {
     "allowedBuildScripts": [

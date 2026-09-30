@@ -10,3 +10,8 @@ incremental_log.log
 package.json
 vhl_det.log
 node_modules/*
+.venv/
+.venv
+.tmp/
+*.egg-info/
+*.egg-info
