@@ -1,6 +1,6 @@
 import path from "path";
 import fs from "fs";
-import { LOCAL_LIBRARY_DIR, ACTIVE_PROJECT_STATE_FILE } from "../config/paths.js";
+import { WORKSPACE_DIR, LOCAL_LIBRARY_DIR, ACTIVE_PROJECT_STATE_FILE } from "../config/paths.js";
 
 export interface ProjectState {
     project_id: string | null;
@@ -25,7 +25,7 @@ export const projectContext:ProjectState = {
     workspace_root: null,
     project_root: null,
     project_root_dir: null,
-    workspace_dir: process.env.VHL_WORKSPACE_DIR || LOCAL_LIBRARY_DIR,
+    workspace_dir: process.env.VHL_WORKSPACE_DIR || WORKSPACE_DIR,
     worktrees: {},
     artifacts: [],
     backend_status: "uninitialized",

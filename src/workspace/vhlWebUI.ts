@@ -3,6 +3,7 @@ import * as path from "path";
 import * as http from "http";
 import httpProxy from "http-proxy";
 import * as fs from "fs/promises";
+import { existsSync } from "fs";
 import * as crypto from "crypto";
 import { randomUUID } from "crypto";
 import { RuntimeSender } from "./types.js";
@@ -701,10 +702,16 @@ export class VHLWebUI {
             this.currentDevServerPath = projectPath;
             this.currentEntryFile = entryFile;
 
-            const env = {
-                ...process.env,
-                RUNFRAME_STANDALONE_FILE_PATH: process.env.RUNFRAME_STANDALONE_FILE_PATH || "/app/runframe/standalone.min.js"
+            const env: NodeJS.ProcessEnv = {
+                ...process.env
             };
+            if (process.env.RUNFRAME_STANDALONE_FILE_PATH) {
+                env.RUNFRAME_STANDALONE_FILE_PATH = process.env.RUNFRAME_STANDALONE_FILE_PATH;
+            } else if (existsSync("/app/runframe/standalone.min.js")) {
+                env.RUNFRAME_STANDALONE_FILE_PATH = "/app/runframe/standalone.min.js";
+            } else {
+                delete env.RUNFRAME_STANDALONE_FILE_PATH;
+            }
 
             this.devServerProcess = spawn("tsci", ["dev", entryFile, "--port", this.TSC_DEV_PORT.toString()], {
                 cwd: projectPath,

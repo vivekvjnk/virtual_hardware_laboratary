@@ -18,7 +18,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("terminal_server")
 
 # 1. Path Configurations consistent with VHL_runtime/src/config/paths.ts
-PROJECT_ROOT = os.environ.get("VHL_PROJECT_ROOT", "/app")
+PROJECT_ROOT = os.environ.get("VHL_PROJECT_ROOT", str(Path(__file__).resolve().parents[3]))
 STATE_FILE = os.path.join(PROJECT_ROOT, ".tmp", "active_project.json")
 DEFAULT_DIR = PROJECT_ROOT
 
