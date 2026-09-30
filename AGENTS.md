@@ -1,54 +1,88 @@
 # VHL-WebUI Agent Knowledge Base
 
 ## Overview
-`vhl-webui` is the React-based frontend for the Virtual Hardware Laboratory (VHL) system. It provides an interface for interacting with hardware design, validation, and mission management.
+`vhl-webui` is the React-based frontend and engineering workbench for the Virtual Hardware Laboratory (VHL). It provides an interactive cockpit for schematic-to-circuit generation, live circuit visualization, module creation, Human-in-the-Loop (HIL) agent collaboration, and remote code editing.
 
 ## Key Technologies
-- **Framework**: React (using Vite)
+- **Framework**: React 19 (bundled with Vite)
 - **Language**: TypeScript
-- **Styling**: Tailwind CSS
-- **Frontend-Backend Interface**: Communicates with a backend at `http://localhost:3022`.
+- **Styling**: Tailwind CSS v4 (via `@tailwindcss/vite`)
+- **Circuit Visualization**: `@tscircuit/runframe` (Schematic, PCB layout, and 3D CAD views)
+- **Networking & Proxy**: Vite dev server binds to `0.0.0.0:5173` with proxy forwarding `/api` to the runtime Express API server at `http://localhost:3022`. Supports remote development via `allowedHosts: true`.
 
-## Backend Architecture (`vhl-runtime/src/workspace/vhlWebUI.ts`)
-The `vhl-webui` backend runs an Express server in the runtime to facilitate communication between the frontend and the underlying file system/agents.
+## Environment Setup & Execution
 
-### API Endpoints
-- `POST /api/identify`: Identifies the client role (payload: `{ role: 'vhl_webui' }`) and initializes connection to the runtime relay.
-- `POST /api/heartbeat`: Sends a heartbeat signal to the relay.
-- `POST /api/get-modules`: Retrieves modules for a given `project_id` from the SQLite state database (`.vhl/state.db`).
-- `GET /api/projects/:projectId/modules/:moduleName/circuit`: Returns a map of file paths to content (`fsMap`) for a project circuit.
-- `POST /api/trigger-workflow`: Triggers a design workflow in the backend.
-- `POST /api/create-project`: Handles project creation via ZIP file upload (using Multer).
+Follow these proven steps to build and run `vhl-webui` in a new environment:
 
-### Dev Server & Tools
-- The backend manages a `tsci` dev server process, which runs on port 3021.
-- Provides `captureSnapshots` functionality using `tsci snapshot`.
+```bash
+# 1. Install dependencies
+pnpm install
 
-## Project Structure
-- `src/api/`: Handles communication with the VHL backend.
-  - `dashboard.ts`: Dashboard data fetching.
-  - `editor.ts`: RPC-based file system interaction with the backend.
-- `src/components/`: Modular UI components organized by feature. The WebUI follows a composition pattern where `App.tsx` manages high-level routing between views (`dashboard`, `mission`, `module_detail`, `editor`). Each view composes specialized components to provide a focused workspace.
-  - **Layout & Navigation**:
-    - `Sidebar.tsx`: Persistent navigation drawer for switching between system views.
-    - `TopActions.tsx`: Hero section containing primary action buttons and project initialization tools.
-    - `MissionFeed.tsx`: Sidebar activity feed tracking system-wide events and agent progress.
-  - **Dashboard & Project Management**:
-    - `RecentProjects.tsx`: Displays a grid of recently accessed projects.
-    - `ProjectTemplates.tsx`: Showcases available hardware templates for starting new designs.
-    - `ProjectStateView.tsx`: Visualizes the synchronized project state, including backend/runtime health, worktree paths, and an audit log of recent operations.
-  - **Mission & Design Workspaces**:
-    - `MissionDashboard.tsx`: Project-level overview displaying all modules. Acts as the orchestration hub for triggering workflows and opening module-specific views.
-    - `ModuleDetailView.tsx`: A comprehensive, multi-pane workspace for specific modules. It composes the `EditorView`, `CircuitCanvas`, and `AgentChat` into a single integrated environment, enabling a seamless design-validate-refine loop.
-  - **Core Feature Components**:
-    - `EditorView.tsx`: A feature-rich IDE component providing a file explorer and code editor with remote file system sync via RPC.
-    - `CircuitCanvas.tsx`: Renders live circuit previews using `@tscircuit/runframe`, supporting PCB, Schematic, and CAD views.
-    - `AgentChat.tsx`: Dedicated messaging interface for Human-in-the-Loop (HIL) interaction with specialized agents (Archy, Librarian, ANA).
-- `src/data/`: Mock data for development.
-- `src/types/`: TypeScript type definitions.
+# 2. Build the bundle / verify TypeScript compilation
+pnpm run build
 
-## Guidelines
-1. **Adding API Endpoints**: When adding new functionality, try to use the RPC mechanism if it involves file system or agent tasks. Otherwise, add new REST endpoints to `VHLWebUI` in `vhl-runtime/src/workspace/vhlWebUI.ts` and call them from the frontend.
-2. **Component Structure**: Keep components modular. If a component grows large, split it into smaller sub-components within the same directory.
-3. **TypeScript**: Ensure all new components and API functions are properly typed using the `types/` directory.
-4. **Styling**: Follow the existing Tailwind CSS usage patterns.
+# 3. Start the Vite development server
+pnpm run dev
+```
+
+> **Note:** The WebUI communicates with the `vhl-runtime` Express API server at `http://localhost:3022` (proxied via `/api`). Ensure `vhl-runtime` is running before launching workflows or opening project modules.
+
+## Architecture & Communication Flow
+
+### 1. Client Lifecycle & Identity
+- **Self-Identification**: On mount, the frontend self-identifies to the runtime by calling `POST /api/identify` with payload `{ role: 'vhl_webui' }`.
+- **Heartbeat**: Maintains an active connection by dispatching `POST /api/heartbeat` every 5 seconds.
+- **State Restoration**: Queries `GET /api/project-state` on boot to initialize the active project context and health metrics.
+
+### 2. Available Views (`App.tsx`)
+The top-level `App` component manages switching across multiple specialized views:
+- **`dashboard`**: Primary landing view displaying `RecentProjects`, `ProjectTemplates`, `TopActions` (new project creation via ZIP upload), and `MissionFeed`.
+- **`mission`**: Project overview dashboard (`MissionDashboard`) detailing all project modules, their current design lifecycle states, and actions to trigger automated synthesis workflows.
+- **`module_detail`**: Multi-pane engineering workspace (`ModuleDetailView`) dedicated to a single hardware module. Integrates `CircuitCanvas`, `EditorView`, and `AgentChat`.
+- **`editor`**: Full-screen IDE workspace (`EditorView`) providing a file tree and code editor backed by runtime RPC.
+- **`architecture`**: Interactive architecture visualizer (`ArchitectureExplorer`) diagramming the relationships between WebUI, Runtime, and Agent Backend.
+- **`presentation`**: Slide deck presentation view (`Presentation`) documenting VHL features and system vision.
+
+### 3. Core Feature Components
+- **`CircuitCanvas.tsx`**: Embeds `@tscircuit/runframe` to render interactive PCB layouts, Schematics, and 3D CAD models from a virtual filesystem map (`fsMap`) fetched via `GET /api/projects/:projectId/modules/:moduleName/circuit`.
+- **`AgentChat.tsx`**: Conversational interface for interacting with specialized backend agents (Archy, Librarian, ANA, Layout Engineer). Features:
+  - Real-time agent message polling (`GET /api/agents/:agentId/messages`) and sending (`POST /api/agents/:agentId/send`).
+  - Rich markdown rendering and code copying via `MarkdownRenderer.tsx`.
+  - Full-screen chat toggle for intensive design reviews.
+  - User file attachment upload (`POST /api/upload-file`) allowing users to attach reference schematics, datasheets (PDFs), or text notes to chat prompts.
+- **`CreateModuleModal.tsx`**: Modal interface for creating new modules within an active project. Supports uploading multiple reference design artifacts via `POST /api/projects/:projectId/modules`.
+- **`EditorView.tsx` & `Editor/`**: Monaco/CodeMirror editor that executes remote filesystem commands (read, write, list files) using RPC calls to `POST /api/vhl-editor/rpc`.
+- **`ProjectStateView.tsx`**: Displays synchronized backend/runtime state, SQLite semantic data, worktree paths, and runtime health status.
+
+## Directory Structure
+```text
+src/
+├── api/
+│   ├── dashboard.ts          # Project list and dashboard metric fetching
+│   ├── modules.ts            # Module fetching and module creation API calls
+│   └── editor.ts             # Remote filesystem RPC calls (read/write/list)
+├── components/
+│   ├── ArchitectureExplorer/ # Interactive system topology visualizer
+│   ├── Editor/               # Code editor implementation
+│   ├── AgentChat.tsx         # Agent conversation interface with file upload & HIL
+│   ├── CircuitCanvas.tsx     # tscircuit runframe renderer (Schematic, PCB, 3D)
+│   ├── CreateModuleModal.tsx # Multi-file module initialization modal
+│   ├── EditorView.tsx        # Integrated remote IDE view
+│   ├── MarkdownRenderer.tsx  # Markdown renderer with code copy support
+│   ├── MissionDashboard.tsx  # Module grid and workflow trigger controls
+│   ├── MissionFeed.tsx       # System activity and agent task stream
+│   ├── ModuleDetailView.tsx  # Multi-pane design/validate/chat workspace
+│   ├── Presentation.tsx      # VHL presentation viewer
+│   ├── ProjectStateView.tsx  # Runtime/backend synchronization health view
+│   ├── ProjectTemplates.tsx  # Pre-configured hardware project templates
+│   ├── RecentProjects.tsx    # Recent projects listing and switching
+│   ├── Sidebar.tsx           # Persistent view navigation drawer
+│   └── TopActions.tsx        # Project ZIP upload and top-level triggers
+├── data/                     # Mock data and architecture graph definitions
+└── types/                    # Shared TypeScript interfaces (editor, module, dashboard, architecture)
+```
+
+## Developer Guidelines
+1. **API Endpoints**: Always use relative paths starting with `/api/` (e.g. `fetch('/api/...')`). The Vite proxy forwards them to `http://localhost:3022` in development and avoids hardcoding hostnames.
+2. **Component Architecture**: Keep components modular; subcomponents for complex views should be organized under dedicated subfolders within `src/components/`.
+3. **State Management**: Module and project states are authoritative in the backend. When an action changes state, refresh through the corresponding `/api/` endpoints to maintain synchronization with `.vhl/state.db`.
