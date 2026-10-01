@@ -56,5 +56,6 @@ vhl-common = { workspace = true }
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+pythonpath = ["."]
 asyncio_mode = "auto"
 addopts = "--html=tests/archy/report.html --self-contained-html"

@@ -67,9 +67,14 @@ class WorkspaceManager:
             self.git = GitClientWrapper(GitClient(self.stable_worktree))
             logger.info(f"[WorkspaceManager._init_project_persistence] Git initialized at: {self.stable_worktree}")
         
-        # Initialize SQLite at project_root/.vhl/state.db
+        # Initialize SQLite at project_root/.vhl/state.db or stable_worktree/.vhl/state.db
         if not self.db:
-            db_path = self.project_root / ".vhl" / "state.db"
+            if (self.project_root / ".vhl" / "state.db").exists():
+                db_path = self.project_root / ".vhl" / "state.db"
+            elif self.stable_worktree and (self.stable_worktree / ".vhl" / "state.db").exists():
+                db_path = self.stable_worktree / ".vhl" / "state.db"
+            else:
+                db_path = self.project_root / ".vhl" / "state.db"
             db_path.parent.mkdir(parents=True, exist_ok=True)
             self.db = SQLiteManager(str(db_path))
             logger.info(f"[WorkspaceManager._init_project_persistence] SQLite initialized at: {db_path}")
@@ -90,23 +95,35 @@ class WorkspaceManager:
         """
         
         self.project_id = project_id
-        self.project_root = self.workspace_root / self.project_id
-        self.worktree["root"] = self.project_root / f"{self.project_id}_root"
-        self.stable_worktree = self.worktree["root"]
+        self.project_root = (self.workspace_root / self.project_id).resolve()
+        
+        candidate_root = self.project_root / f"{self.project_id}_root"
+        if candidate_root.is_dir():
+            self.stable_worktree = candidate_root
+        elif (self.project_root / "root").is_dir():
+            self.stable_worktree = self.project_root / "root"
+        elif (self.project_root / ".git").exists():
+            self.stable_worktree = self.project_root
+        else:
+            root_dirs = [d for d in self.project_root.iterdir() if d.is_dir() and d.name.endswith("_root")] if self.project_root.exists() else []
+            self.stable_worktree = root_dirs[0] if root_dirs else candidate_root
+        self.worktree["root"] = self.stable_worktree
         
         # Initialize persistence for the loaded project
         self._init_project_persistence()
 
         # Recover modules from DB
-        modules_records = self.db.get_project_modules()
-        self.project_root = self.workspace_root / self.project_id
+        modules_records = self.db.get_project_modules() if self.db else []
         if modules_records:
             self.project_modules = [m["module_name"] for m in modules_records]
             for module in self.project_modules:
                 circuit_name = self.db.get_project_setting(f"{module}.circuit_name")
                 if circuit_name:
                     self.circuit_name[module] = circuit_name
-                self.worktree[module] = self.project_root / f"{self.project_id}_{module}"
+                expected_worktree = self.project_root / f"{self.project_id}_{module}"
+                if not expected_worktree.exists() and (self.project_root / module).is_dir():
+                    expected_worktree = self.project_root / module
+                self.worktree[module] = expected_worktree
             logger.info(f"[WorkspaceManager.load_project] Recovered state from SQLite. Modules: {self.project_modules}")
 
         logger.info(f"[WorkspaceManager.load_project] Project loaded: {self.project_id} at {self.project_root}")
@@ -236,14 +253,25 @@ class WorkspaceManager:
             logger.warning("[WorkspaceManager.setup_worktrees] Git not initialized. Cannot setup worktrees.")
             return
 
+        # Run 'git worktree repair' on existing subdirectories in self.project_root to repair any relocated/copied worktrees
+        if self.project_root.exists():
+            existing_subdirs = [str(d.resolve()) for d in self.project_root.iterdir() if d.is_dir()]
+            if existing_subdirs:
+                try:
+                    self.git.git._run_git(["worktree", "repair", *existing_subdirs], quiet=True)
+                except Exception as e:
+                    logger.debug(f"[WorkspaceManager.setup_worktrees] git worktree repair: {e}")
+
         existing_worktrees = self.git.git.list_worktrees()
         # Create a map of resolved paths to worktree info for quick lookup
         existing_paths = {Path(wt['path']).resolve(): wt for wt in existing_worktrees}
         
         for module in self.project_modules:
             expected_path = (self.project_root / f"{self.project_id}_{module}").resolve()
+            if not expected_path.exists() and (self.project_root / module).is_dir():
+                expected_path = (self.project_root / module).resolve()
             
-            if expected_path in existing_paths:
+            if expected_path in existing_paths or (expected_path.exists() and (expected_path / ".git").exists()):
                 logger.info(f"[WorkspaceManager.setup_worktrees] Worktree for module '{module}' already exists at {expected_path}. Reusing.")
                 self.worktree[module] = expected_path
             else:
