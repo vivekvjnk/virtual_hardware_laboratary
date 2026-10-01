@@ -184,6 +184,9 @@ cleanup() {
       fi
     done
   fi
+  pkill -9 -f "bin/aosm" 2>/dev/null || true
+  pkill -9 -f "wsIndex.js" 2>/dev/null || true
+  pkill -9 -f "terminal_server.py" 2>/dev/null || true
 
   echo -e "${GREEN}[VHL] All VHL services stopped cleanly.${NC}"
   exit "$exit_code"
@@ -201,6 +204,9 @@ if command -v lsof >/dev/null 2>&1; then
     fi
   done
 fi
+pkill -9 -f "bin/aosm" 2>/dev/null || true
+pkill -9 -f "wsIndex.js" 2>/dev/null || true
+pkill -9 -f "terminal_server.py" 2>/dev/null || true
 
 # Port check helper
 wait_for_port() {
