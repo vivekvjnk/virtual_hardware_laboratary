@@ -104,3 +104,23 @@ The VAP engine enforces deterministic circuit correctness:
 1. **Isolated Execution**: Runs `tsci eval` on generated `.tsx` code inside an isolated process.
 2. **Deterministic Checks**: Validates pin connectivity, component overlap, footprint existence, and DRC rules.
 3. **Outcome Generation**: Emits `VAP_COMPLETE` and `VAP_DECISION` (`ACCEPT`, `REJECT`, `UNDECIDED`) over the relay to notify agents and frontend.
+
+---
+
+## Test Suites & Verification
+
+`vhl-runtime` uses **Vitest** for unit and end-to-end integration tests:
+
+```bash
+# Run all Vitest suites
+pnpm test
+
+# Run E2E Project Load and Validation tests
+pnpm test run tests/e2e/project_load.test.ts
+```
+
+### Key Test Invariants
+- **VHL Project Structural Validation**: Tests in `tests/e2e/project_load.test.ts` verify `isValidVhlProject()` across standard multi-worktree VHL projects, standalone repositories (`.git` + circuit markers), generic empty folders, and random file directories.
+- **REST Endpoints Verified**: Validates `GET /api/dashboard` (filtering/tagging), `POST /api/load-project` (404 on missing, 400 on generic, 200 on valid), and `POST /api/get-modules`.
+- **Backend Coordination Error Handling**: Verifies that when a backend `ERROR` event occurs during project loading, `VHLRuntime` transitions `backend_status` to `error` and leaves `runtime_status` in `uninitialized`.
+
