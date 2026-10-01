@@ -438,32 +438,43 @@ class AOSM:
                 logger.error("[AOSM._handle_startup] LOAD_PROJECT received but no project_id provided")
                 return
 
-            self.project_id = project_id
-            logger.info(f"[AOSM._handle_startup] Loading existing project: {project_id}")
-            project_root = self.workspace_manager.load_project(project_id)
-            
-            # Setup worktrees if they don't exist
-            self.workspace_manager.setup_worktrees()
-            
-            self.project_root_info = self.workspace_manager.get_workspace_info()
-            self.project_semantic_db = self.workspace_manager.db
+            try:
+                self.project_id = project_id
+                logger.info(f"[AOSM._handle_startup] Loading existing project: {project_id}")
+                project_root = self.workspace_manager.load_project(project_id)
+                
+                # Setup worktrees if they don't exist
+                self.workspace_manager.setup_worktrees()
+                
+                self.project_root_info = self.workspace_manager.get_workspace_info()
+                self.project_semantic_db = self.workspace_manager.db
 
-            # Send back PROJECT_LOADED event to the runtime
-            await self.web_socket_client.emit_event(BaseEvent(
-                type=EventType.PROJECT_LOADED,
-                source=EventSource.VHL_AGENT_BACKEND,
-                payload={
-                    "project_id": project_id,
-                    "project_root": str(project_root),
-                    "workspace_info": self.project_root_info
-                }
-            ))
-            
-            # Re-register agents
-            await self.register_agents(workspace_manager=self.workspace_manager)
-            
-            # Transition to IDLE state
-            await self.transition_to(AOSMState.IDLE, f"Project {project_id} loaded successfully")
+                # Send back PROJECT_LOADED event to the runtime
+                await self.web_socket_client.emit_event(BaseEvent(
+                    type=EventType.PROJECT_LOADED,
+                    source=EventSource.VHL_AGENT_BACKEND,
+                    payload={
+                        "project_id": project_id,
+                        "project_root": str(project_root),
+                        "workspace_info": self.project_root_info
+                    }
+                ))
+                
+                # Re-register agents
+                await self.register_agents(workspace_manager=self.workspace_manager)
+                
+                # Transition to IDLE state
+                await self.transition_to(AOSMState.IDLE, f"Project {project_id} loaded successfully")
+            except Exception as e:
+                logger.error(f"[AOSM._handle_startup] Failed to load project {project_id}: {e}", exc_info=True)
+                await self.web_socket_client.emit_event(BaseEvent(
+                    type=EventType.ERROR,
+                    source=EventSource.VHL_AGENT_BACKEND,
+                    payload={
+                        "message": str(e),
+                        "error_type": "PROJECT_LOAD_FAILED"
+                    }
+                ))
             
         elif event.type == EventType.LIST_PROJECTS:
             logger.info("[AOSM._handle_startup] Listing projects...")
