@@ -12,9 +12,90 @@ import cors from 'cors';
 import multer from 'multer';
 import { WebSocket } from 'ws';
 import { LocalFileSystemProvider } from '../editor/localFilesystem.js';
-import { getProjectRootDir, getProjectDir, projectContext } from './projectContext.js';
+import { getProjectRootDir, getProjectDir, projectContext, getProjectState } from './projectContext.js';
 import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
+
+export async function isValidVhlProject(
+    projectPath: string,
+    projectId: string
+): Promise<{ valid: boolean; reason?: string }> {
+    try {
+        const stats = await fs.stat(projectPath);
+        if (!stats.isDirectory()) {
+            return { valid: false, reason: "Path is not a directory" };
+        }
+    } catch {
+        return { valid: false, reason: "Directory does not exist" };
+    }
+
+    // a) Standard Multi-Worktree VHL project: contains '.vhl/state.db' OR a '<projectId>_root' directory
+    const stateDbPath = path.join(projectPath, ".vhl", "state.db");
+    if (existsSync(stateDbPath)) {
+        return { valid: true };
+    }
+
+    const projectRootDir = path.join(projectPath, `${projectId}_root`);
+    try {
+        const rootStat = await fs.stat(projectRootDir);
+        if (rootStat.isDirectory()) {
+            return { valid: true };
+        }
+    } catch {
+        // Not a multi-worktree root dir
+    }
+
+    // b) Standalone/Direct VHL project (e.g. bms-project): contains '.git' AND ('index.circuit.tsx' OR 'tscircuit.config.json' OR module subdirectories with 'Workspace' / '.scud' / '.tsx')
+    const gitDir = path.join(projectPath, ".git");
+    if (existsSync(gitDir)) {
+        if (existsSync(path.join(projectPath, "index.circuit.tsx"))) {
+            return { valid: true };
+        }
+        if (existsSync(path.join(projectPath, "tscircuit.config.json"))) {
+            return { valid: true };
+        }
+
+        try {
+            const entries = await fs.readdir(projectPath, { withFileTypes: true });
+
+            // Direct circuit or SCUD file in standalone project
+            const hasDirectVhlFiles = entries.some(
+                e => e.isFile() && (e.name.endsWith(".tsx") || e.name.endsWith(".scud") || e.name.endsWith(".scud.json"))
+            );
+            if (hasDirectVhlFiles) {
+                return { valid: true };
+            }
+
+            // Check module subdirectories
+            for (const entry of entries) {
+                if (entry.isDirectory() && entry.name !== ".git") {
+                    const subDirPath = path.join(projectPath, entry.name);
+                    if (existsSync(path.join(subDirPath, "Workspace"))) {
+                        return { valid: true };
+                    }
+                    try {
+                        const subEntries = await fs.readdir(subDirPath);
+                        const hasModuleVhlFile = subEntries.some(
+                            file => file.endsWith(".tsx") || file.endsWith(".scud") || file.endsWith(".scud.json")
+                        );
+                        if (hasModuleVhlFile) {
+                            return { valid: true };
+                        }
+                    } catch {
+                        // ignore unreadable subdirectory
+                    }
+                }
+            }
+        } catch {
+            // ignore error reading dir
+        }
+    }
+
+    return {
+        valid: false,
+        reason: "Directory lacks required VHL structure (.vhl/state.db, project_root directory, or .git repository with circuit files)"
+    };
+}
 
 export class VHLWebUI {
     private devServerProcess: ChildProcess | null = null;
@@ -31,15 +112,32 @@ export class VHLWebUI {
 
     private readonly GATEWAY_PORT = parseInt(process.env.VHL_WEBUI_PORT || "3020");
     private readonly TSC_DEV_PORT = 3021;
-    private readonly API_PORT = 3022; // New API port for vhl-webui
+    private readonly API_PORT: number;
+    private actualApiPort: number = 0;
+    private relayReconnectTimer: NodeJS.Timeout | null = null;
+    private isStopped: boolean = false;
+    public readonly isReady: Promise<void>;
+    private readyResolver!: () => void;
 
     constructor(
         private workspaceDir: string,
-        // private sender: RuntimeSender
+        customApiPort?: number
     ) {
+        this.isReady = new Promise<void>((resolve) => {
+            this.readyResolver = resolve;
+        });
+        this.API_PORT = customApiPort !== undefined ? customApiPort : parseInt(process.env.VHL_API_PORT || "3022");
         this.fileSystemProvider = new LocalFileSystemProvider(this.workspaceDir);
         this.setupAPIServer();
         this.connectToRelay();
+    }
+
+    public getApiPort(): number {
+        return this.actualApiPort || this.API_PORT;
+    }
+
+    public async isValidVhlProject(projectPath: string, projectId: string): Promise<{ valid: boolean; reason?: string }> {
+        return isValidVhlProject(projectPath, projectId);
     }
 
     private async getProjectModules(project_id: string): Promise<string[]> {
@@ -326,13 +424,29 @@ export class VHLWebUI {
                         modules: 0, // Could be updated by reading their state.db
                         lastOpened: 'Recently',
                         progress: 0,
-                        status: 'Available'
+                        status: 'Available',
+                        isValid: true
                     }));
 
-
-                // For each project, try to get more info from its state.db
+                // For each project, validate and try to get more info from its state.db
                 for (const project of projects) {
-                    const dbPath = path.join(this.workspaceDir, project.id, '.vhl', 'state.db');
+                    const projectPath = path.join(this.workspaceDir, project.id);
+                    const validation = await isValidVhlProject(projectPath, project.id);
+                    project.isValid = validation.valid;
+                    if (!validation.valid) {
+                        project.status = 'Invalid';
+                        continue;
+                    }
+
+                    project.status = 'Available';
+                    let dbPath = path.join(projectPath, '.vhl', 'state.db');
+                    if (!existsSync(dbPath)) {
+                        const nestedDb = path.join(projectPath, `${project.id}_root`, '.vhl', 'state.db');
+                        if (existsSync(nestedDb)) {
+                            dbPath = nestedDb;
+                        }
+                    }
+
                     try {
                         const db = await open({
                             filename: dbPath,
@@ -350,7 +464,7 @@ export class VHLWebUI {
                         if (synthesisStatus && synthesisStatus.setting_value === 'true') {
                             project.progress = 100;
                             project.status = 'Complete';
-                        } else {
+                        } else if (modules.length > 0) {
                             project.status = 'In Progress';
                         }
                         await db.close();
@@ -431,7 +545,7 @@ export class VHLWebUI {
 
 
         app.get('/api/project-state', async (req, res) => {
-            const state = { ...projectContext };
+            const state = { ...getProjectState() };
             
             // If project is loaded, try to fetch recent artifacts from DB
             if (state.project_id && state.project_root_dir) {
@@ -502,10 +616,26 @@ export class VHLWebUI {
             res.status(200).send({ status: 'Project creation initiated', zip_path: filePath });
         });
 
-        app.post('/api/load-project', (req, res) => {
+        app.post('/api/load-project', async (req, res) => {
             const { project_id } = req.body;
+            if (!project_id) {
+                return res.status(400).send({ error: "Missing project_id in request body" });
+            }
             console.log(`[VHLWebUI] Loading project ${project_id}`);
             
+            const projectPath = path.isAbsolute(project_id) ? project_id : path.join(this.workspaceDir, project_id);
+            if (!existsSync(projectPath)) {
+                return res.status(404).send({ error: `Project directory not found: ${project_id}` });
+            }
+
+            const validation = await isValidVhlProject(projectPath, path.basename(project_id));
+            if (!validation.valid) {
+                return res.status(400).send({ 
+                    error: "Directory is not a valid VHL User Project", 
+                    reason: validation.reason 
+                });
+            }
+
             this.relaySocket?.send(JSON.stringify({ 
                 type: 'LOAD_PROJECT', 
                 source: 'vhl_webui', 
@@ -543,16 +673,36 @@ export class VHLWebUI {
         });
 
         this.apiServer = app.listen(this.API_PORT, () => {
-            console.log(`[VHLWebUI] API server listening on ${this.API_PORT}`);
+            const addr = this.apiServer?.address();
+            if (addr && typeof addr !== 'string') {
+                this.actualApiPort = addr.port;
+            } else {
+                this.actualApiPort = this.API_PORT;
+            }
+            console.log(`[VHLWebUI] API server listening on ${this.actualApiPort}`);
+            this.readyResolver();
         });
     }
 
     private connectToRelay() {
-        if (this.relaySocket) return;
+        if (this.relaySocket || this.isStopped) return;
         this.relaySocket = new WebSocket('ws://localhost:1080/ws-agent');
         this.relaySocket.on('open', () => {
             console.log('Connected to relay');
             this.relaySocket?.send(JSON.stringify({ type: 'IDENTIFY', payload: { role: 'ui' } }));
+        });
+        this.relaySocket.on('error', (err) => {
+            if (!this.isStopped) {
+                console.error('[VHLWebUI] Relay socket error:', err.message);
+            }
+        });
+        this.relaySocket.on('close', () => {
+            if (this.isStopped) return;
+            console.log('[VHLWebUI] Relay socket closed, retrying in 3s...');
+            this.relayReconnectTimer = setTimeout(() => {
+                this.relaySocket = null;
+                this.connectToRelay();
+            }, 3000);
         });
         this.relaySocket.on('message', (data) => {
             console.log('Received from relay:', data.toString());
@@ -842,6 +992,11 @@ export class VHLWebUI {
     }
 
     public async stop() {
+        this.isStopped = true;
+        if (this.relayReconnectTimer) {
+            clearTimeout(this.relayReconnectTimer);
+            this.relayReconnectTimer = null;
+        }
         if (this.devServerProcess) {
             this.devServerProcess.kill();
             this.devServerProcess = null;
@@ -849,6 +1004,16 @@ export class VHLWebUI {
         if (this.gatewayServer) {
             this.gatewayServer.close();
             this.gatewayServer = null;
+        }
+        if (this.apiServer) {
+            await new Promise<void>((resolve) => {
+                this.apiServer!.close(() => resolve());
+            });
+            this.apiServer = null;
+        }
+        if (this.relaySocket) {
+            this.relaySocket.terminate();
+            this.relaySocket = null;
         }
     }
 }

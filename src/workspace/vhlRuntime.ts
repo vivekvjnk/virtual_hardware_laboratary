@@ -137,7 +137,7 @@ export class VHLRuntime implements RuntimeSender {
         setGlobalProjectState(this.projectState);
     }
 
-    private async handleMessage(msg: WebSocketMessage) {
+    public async handleMessage(msg: WebSocketMessage) {
         console.log(`[VHLRuntime] Received event: ${msg.type}`);
 
         switch (msg.type) {
@@ -254,6 +254,17 @@ export class VHLRuntime implements RuntimeSender {
             case "CLOSE_PROJECT":
                 await this.closeProject();
                 break;
+            case "ERROR": {
+                const payload = (msg as any).payload || {};
+                if (payload.error_type === "PROJECT_LOAD_FAILED") {
+                    console.error("[VHLRuntime] Project load failed:", payload.message);
+                    this.setProjectState({
+                        backend_status: "error",
+                        runtime_status: "uninitialized"
+                    });
+                }
+                break;
+            }
             default:
                 break;
         }

@@ -12,8 +12,8 @@ export interface ProjectState {
     workspace_dir: string | null;    // Keep for backward compatibility or refactor
     worktrees: Record<string, string>;
     artifacts: any[];
-    backend_status: "initialized" | "uninitialized" | "initializing";
-    runtime_status: "initialized" | "uninitialized" | "initializing";
+    backend_status: "initialized" | "uninitialized" | "initializing" | "error";
+    runtime_status: "initialized" | "uninitialized" | "initializing" | "error";
     is_synthesizable: boolean;
     is_synthesis_completed: boolean;
 }
