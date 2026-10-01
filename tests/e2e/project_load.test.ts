@@ -14,6 +14,8 @@ describe('End-to-End User Project Load and Structural Validation', () => {
     let baseUrl: string;
 
     const VALID_PROJECT_ID = 'valid_vhl_project';
+    const NESTED_ROOT_PROJECT_ID = 'nested_root_project';
+    const CUSTOM_ROOT_PROJECT_ID = 'custom_root_project';
     const STANDALONE_PROJECT_ID = 'valid_standalone_project';
     const GENERIC_FOLDER_ID = 'generic_folder';
     const RANDOM_FOLDER_ID = 'random_folder';
@@ -60,7 +62,35 @@ describe('End-to-End User Project Load and Structural Validation', () => {
         `);
         await db.close();
 
-        // 2. Fixture: Standalone/Direct VHL project (.git + index.circuit.tsx)
+        // 2. Fixture: Multi-worktree project with ${project_id}_root/.vhl/state.db
+        const nestedProjectPath = path.join(tempWorkspace, NESTED_ROOT_PROJECT_ID);
+        const nestedRootVhlDir = path.join(nestedProjectPath, `${NESTED_ROOT_PROJECT_ID}_root`, '.vhl');
+        await fs.mkdir(nestedRootVhlDir, { recursive: true });
+        const nestedDb = await open({
+            filename: path.join(nestedRootVhlDir, 'state.db'),
+            driver: sqlite3.Database
+        });
+        await nestedDb.exec(`
+            CREATE TABLE project_modules (module_name TEXT PRIMARY KEY);
+            INSERT INTO project_modules (module_name) VALUES ('sub_sensor');
+        `);
+        await nestedDb.close();
+
+        // 3. Fixture: Project with custom *_root/.vhl/state.db
+        const customProjectPath = path.join(tempWorkspace, CUSTOM_ROOT_PROJECT_ID);
+        const customRootVhlDir = path.join(customProjectPath, 'custom_circuit_root', '.vhl');
+        await fs.mkdir(customRootVhlDir, { recursive: true });
+        const customDb = await open({
+            filename: path.join(customRootVhlDir, 'state.db'),
+            driver: sqlite3.Database
+        });
+        await customDb.exec(`
+            CREATE TABLE project_modules (module_name TEXT PRIMARY KEY);
+            INSERT INTO project_modules (module_name) VALUES ('telemetry_module');
+        `);
+        await customDb.close();
+
+        // 4. Fixture: Standalone/Direct VHL project (.git + index.circuit.tsx)
         const standalonePath = path.join(tempWorkspace, STANDALONE_PROJECT_ID);
         await fs.mkdir(path.join(standalonePath, '.git'), { recursive: true });
         await fs.writeFile(
@@ -267,6 +297,30 @@ describe('End-to-End User Project Load and Structural Validation', () => {
             expect(res.status).toBe(200);
             const data = await res.json();
             expect(data.modules).toEqual(['power_stage', 'mcu_control']);
+        });
+
+        it('retrieves modules from <projectId>_root/.vhl/state.db via POST /api/get-modules', async () => {
+            const res = await fetch(`${baseUrl}/api/get-modules`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ project_id: NESTED_ROOT_PROJECT_ID })
+            });
+
+            expect(res.status).toBe(200);
+            const data = await res.json();
+            expect(data.modules).toEqual(['sub_sensor']);
+        });
+
+        it('retrieves modules from any *_root/.vhl/state.db via POST /api/get-modules', async () => {
+            const res = await fetch(`${baseUrl}/api/get-modules`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ project_id: CUSTOM_ROOT_PROJECT_ID })
+            });
+
+            expect(res.status).toBe(200);
+            const data = await res.json();
+            expect(data.modules).toEqual(['telemetry_module']);
         });
 
         it('returns empty module list for non-existent project', async () => {

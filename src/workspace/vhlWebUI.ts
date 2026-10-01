@@ -141,46 +141,71 @@ export class VHLWebUI {
     }
 
     private async getProjectModules(project_id: string): Promise<string[]> {
-        let projectRootDir = (project_id === projectContext.project_id) ? getProjectRootDir() : null;
-        
-        if (!projectRootDir && project_id) {
-            // Attempt to infer project root if not set in state or if requested project_id is different
-            const inferredRoot = path.join(this.workspaceDir, project_id, `${project_id}_root`);
-            try {
-                const stats = await fs.stat(inferredRoot);
-                if (stats.isDirectory()) {
-                    projectRootDir = inferredRoot;
-                    console.log(`[VHLWebUI] Inferred project root for ${project_id}: ${projectRootDir}`);
-                }
-            } catch (e) {
-                // Try one more: maybe it is the project_id itself (legacy or alternative structure)
-                const altRoot = path.join(this.workspaceDir, project_id);
-                try {
-                    const stats = await fs.stat(altRoot);
-                    if (stats.isDirectory()) {
-                        // Check if it has .vhl/state.db
-                        if (await fs.stat(path.join(altRoot, '.vhl', 'state.db')).catch(() => null)) {
-                            projectRootDir = altRoot;
-                        }
-                    }
-                } catch (e2) {}
+        if (!project_id) {
+            return [];
+        }
+
+        const projectDir = path.isAbsolute(project_id) ? project_id : path.join(this.workspaceDir, project_id);
+        let dbPath: string | null = null;
+
+        // a) Check path.join(this.workspaceDir, project_id, '.vhl', 'state.db')
+        const directDb = path.join(projectDir, '.vhl', 'state.db');
+        if (existsSync(directDb)) {
+            dbPath = directDb;
+        }
+
+        // b) Check path.join(this.workspaceDir, project_id, `${project_id}_root`, '.vhl', 'state.db')
+        if (!dbPath) {
+            const namedRootDb = path.join(projectDir, `${path.basename(project_id)}_root`, '.vhl', 'state.db');
+            if (existsSync(namedRootDb)) {
+                dbPath = namedRootDb;
             }
         }
-        
-        if (!projectRootDir) {
-            console.warn(`[VHLWebUI] Project directory not found for ${project_id} in ${this.workspaceDir}`);
-            return []; // Return empty instead of throwing to avoid crashing the UI
+
+        // c) Any '*_root/.vhl/state.db' subfolder
+        if (!dbPath) {
+            try {
+                const entries = await fs.readdir(projectDir, { withFileTypes: true });
+                for (const entry of entries) {
+                    if (entry.isDirectory() && entry.name.endsWith('_root')) {
+                        const candidateDb = path.join(projectDir, entry.name, '.vhl', 'state.db');
+                        if (existsSync(candidateDb)) {
+                            dbPath = candidateDb;
+                            break;
+                        }
+                    }
+                }
+            } catch (e) {
+                // Ignore directory read error
+            }
         }
-        const dbPath = path.join(projectRootDir, '.vhl', 'state.db');
-        console.log(`[VHLWebUI] projectDir: ${projectRootDir}`);
+
+        // Fallback: Check if set in projectContext
+        if (!dbPath && project_id === projectContext.project_id) {
+            const ctxRootDir = getProjectRootDir();
+            if (ctxRootDir && existsSync(path.join(ctxRootDir, '.vhl', 'state.db'))) {
+                dbPath = path.join(ctxRootDir, '.vhl', 'state.db');
+            }
+        }
+
+        if (!dbPath) {
+            console.warn(`[VHLWebUI] state.db not found for project ${project_id} in ${projectDir}`);
+            return [];
+        }
+
         console.log(`[VHLWebUI] Searching for database at: ${dbPath}`);
-        const db = await open({
-            filename: dbPath,
-            driver: sqlite3.Database
-        });
-        const modules: { module_name: string }[] = await db.all('SELECT module_name FROM project_modules');
-        await db.close();
-        return modules.map((m: { module_name: string }) => m.module_name);
+        try {
+            const db = await open({
+                filename: dbPath,
+                driver: sqlite3.Database
+            });
+            const modules: { module_name: string }[] = await db.all('SELECT module_name FROM project_modules');
+            await db.close();
+            return modules.map((m: { module_name: string }) => m.module_name);
+        } catch (err: any) {
+            console.error(`[VHLWebUI] Error reading modules from ${dbPath}:`, err);
+            return [];
+        }
     }
     
     private async getCircuitJson(project_id: string, module_name: string): Promise<any> {
