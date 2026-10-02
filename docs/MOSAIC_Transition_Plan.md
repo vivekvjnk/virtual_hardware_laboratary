@@ -107,28 +107,33 @@ We will execute this architectural migration deliberately, step by step, using s
 
 ---
 
-### Phase 1: Native Substrate Consolidation (`vhl-runtime`)
+### Phase 1: Native Substrate Consolidation (`vhl-runtime-mosaic`) — [STATUS: COMPLETED ✅]
 
-**Objective**: Ensure that `vhl-runtime` is the complete, self-sufficient, deterministic physics engine of the laboratory, handling disk files, Git worktrees, state persistence, and circuit evaluation without any external Python backend.
+**Objective**: Ensure that `vhl-runtime-mosaic` is the complete, self-sufficient, deterministic physics engine of the laboratory, handling disk files, Git worktrees, state persistence, and circuit evaluation without any external Python backend.
 
-#### Deliverables:
-1. **TypeScript Workspace & Git Worktree Manager** (`vhl-runtime/src/workspace/WorkspaceManager.ts`):
-   - Port all worktree management, branch creation, worktree repair, and initialization logic from `vhl_common/workspace_manager/manager.py` into native TypeScript.
-   - Robustly support both multi-worktree VHL project layouts and direct standalone repositories.
-2. **Native SQLite Semantic Ledger (`.vhl/state.db`)**:
-   - Consolidate all database operations (inserting/querying modules, semantic operations, project settings, artifact snapshots) directly inside `vhl-runtime`.
-   - Update `POST /api/create-project`, `POST /api/load-project`, and `POST /api/projects/:projectId/modules` to execute synchronously on disk and in SQLite rather than relaying events to `vhl-agent-backend`.
-3. **Direct VAP Evaluation REST/Tool Endpoint**:
-   - Implement `POST /api/vap/evaluate` in `vhl-runtime`:
-     - Accepts module name or TSX code directly.
-     - Runs `tsci eval` in an isolated process.
-     - Returns structured JSON results (`status: ACCEPT | REJECT`, DRC violations, missing footprints, pin overlaps).
-4. **Testing**:
-   - Extend the Vitest E2E suite (`vhl-runtime/tests/e2e/`) to verify native project creation, module creation, worktree setup, and VAP evaluation without backend reliance.
+#### Implemented Deliverables:
+1. **TypeScript Workspace & Git Worktree Manager** (`src/workspace/vhlWorkspaceManager.ts`):
+   - Implemented native `VHLWorkspaceManager` class porting all Git worktree, branch management, and SQLite operations.
+   - Robustly supports multi-worktree VHL project layouts (`<project_id>_root`, `<project_id>_<module>`) and standalone Git repositories.
+   - Automated Git worktree repair across project directories.
+2. **Native SQLite Semantic Ledger Integration**:
+   - `POST /api/load-project`: Directly executes native `loadProject()` and `setupWorktrees()`, synchronously initializing context and project state.
+   - `POST /api/create-project`: Directly initializes Git repository, `.vhl/state.db` schema, and initial commit.
+   - `POST /api/projects/:projectId/modules`: Directly stages files, writes `AGENTS.md`, updates `project_modules`, and creates module worktrees.
+   - Backward-compatible WebSocket relay events maintained for dual-mode operation.
+3. **Synchronous VAP Evaluation Endpoint**:
+   - Implemented `POST /api/vap/evaluate` in `vhlWebUI.ts`:
+     - Evaluates circuits directly via `evaluateCircuit` (`tsci build` / `tsci eval`).
+     - Returns `{ decision, logs, eval_status, timedOut, metadata, success }`.
+4. **Vitest E2E Test Suite**:
+   - Created `tests/e2e/native_substrate.test.ts` (6 tests) and scoped `vitest.config.ts`.
+   - Verified 100% pass across all 26 Vitest tests (`tests/e2e/native_substrate.test.ts` + `tests/e2e/project_load.test.ts`).
+   - Verified full backward compatibility loading real `/Users/vivek/Virtual_Labs/bms-project_e0505ca9` (all 7 modules and 8 worktrees attached).
 
-**Definition of Done (DoD)**:
-- `vhl-runtime` can independently create projects, create modules, manage worktrees, record semantic operations, and run VAP evaluations with `vhl-agent-backend` shut down.
-- All existing Vitest E2E tests pass.
+**Commits**:
+- `b3d28d8` `feat(workspace): implement native TypeScript VHLWorkspaceManager`
+- `7905af5` `feat(runtime): integrate native workspace manager and synchronous VAP evaluation into webui`
+- `fe7ed5f` `test(e2e): add native substrate integration test suite and scope vitest config`
 
 ---
 
