@@ -422,11 +422,23 @@ export class VHLWorkspaceManager {
         }
 
         // Initialize SQLite .vhl/state.db
-        const dbDir = path.join(this.stable_worktree, ".vhl");
-        await fs.mkdir(dbDir, { recursive: true });
-        const dbPath = path.join(dbDir, "state.db");
+        const projDbDir = path.join(this.project_root, ".vhl");
+        await fs.mkdir(projDbDir, { recursive: true });
+        const stableDbDir = path.join(this.stable_worktree, ".vhl");
+        await fs.mkdir(stableDbDir, { recursive: true });
+        
+        const dbPath = path.join(projDbDir, "state.db");
         const db = await this.getDatabase(dbPath);
         await this.initSchema(db);
+
+        const stableDbPath = path.join(stableDbDir, "state.db");
+        if (!existsSync(stableDbPath)) {
+            try {
+                await fs.link(dbPath, stableDbPath);
+            } catch {
+                await fs.copyFile(dbPath, stableDbPath);
+            }
+        }
 
         this.worktrees = { root: this.stable_worktree };
         this.project_modules = [];

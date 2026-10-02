@@ -268,7 +268,7 @@ describe('End-to-End User Project Load and Structural Validation', () => {
 
             expect(res.status).toBe(200);
             const data = await res.json();
-            expect(data.status).toBe('Project load initiated');
+            expect(data.status).toMatch(/Project load(ed successfully| initiated)/);
             expect(data.project_id).toBe(VALID_PROJECT_ID);
         });
 
@@ -281,7 +281,7 @@ describe('End-to-End User Project Load and Structural Validation', () => {
 
             expect(res.status).toBe(200);
             const data = await res.json();
-            expect(data.status).toBe('Project load initiated');
+            expect(data.status).toMatch(/Project load(ed successfully| initiated)/);
             expect(data.project_id).toBe(STANDALONE_PROJECT_ID);
         });
     });

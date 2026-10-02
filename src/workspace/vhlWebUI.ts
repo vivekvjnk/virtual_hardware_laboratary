@@ -12,9 +12,11 @@ import cors from 'cors';
 import multer from 'multer';
 import { WebSocket } from 'ws';
 import { LocalFileSystemProvider } from '../editor/localFilesystem.js';
-import { getProjectRootDir, getProjectDir, projectContext, getProjectState } from './projectContext.js';
+import { getProjectRootDir, getProjectDir, projectContext, getProjectState, setProjectState } from './projectContext.js';
 import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
+import { VHLWorkspaceManager } from './vhlWorkspaceManager.js';
+import { evaluateCircuit } from '../vap/evaluator.js';
 
 export async function isValidVhlProject(
     projectPath: string,
@@ -109,6 +111,7 @@ export class VHLWebUI {
 
     private relaySocket: WebSocket | null = null;
     private agentMessages: Map<string, any[]> = new Map();
+    private workspaceManager: VHLWorkspaceManager;
 
     private readonly GATEWAY_PORT = parseInt(process.env.VHL_WEBUI_PORT || "3020");
     private readonly TSC_DEV_PORT = 3021;
@@ -127,6 +130,7 @@ export class VHLWebUI {
             this.readyResolver = resolve;
         });
         this.API_PORT = customApiPort !== undefined ? customApiPort : parseInt(process.env.VHL_API_PORT || "3022");
+        this.workspaceManager = new VHLWorkspaceManager(this.workspaceDir);
         this.fileSystemProvider = new LocalFileSystemProvider(this.workspaceDir);
         this.setupAPIServer();
         this.connectToRelay();
@@ -310,7 +314,7 @@ export class VHLWebUI {
         });
 
         app.post('/api/projects/:projectId/modules', upload.array('files'), async (req, res) => {
-            const { projectId } = req.params;
+            const projectId = (Array.isArray(req.params.projectId) ? req.params.projectId[0] : req.params.projectId) as string;
             const { name, description, resource_descriptions } = req.body;
             const uploadedFiles = req.files as Express.Multer.File[];
 
@@ -361,6 +365,21 @@ export class VHLWebUI {
 
                 console.log(`[VHLWebUI] Module creation artefacts saved to ${tempDir}`);
 
+                // Native Substrate module creation
+                const targetProjId = Array.isArray(projectId) ? projectId[0] : String(projectId);
+                const moduleWorktree = await this.workspaceManager.addModule(targetProjId, String(name), String(description), tempDir);
+
+                // Update projectContext worktrees if project matches
+                const currentCtx = getProjectState();
+                if (currentCtx.project_id === targetProjId) {
+                    const info = await this.workspaceManager.getWorkspaceInfo(targetProjId);
+                    setProjectState({
+                        ...currentCtx,
+                        worktrees: info.worktrees
+                    });
+                    this.broadcastProjectState();
+                }
+
                 // Emit CREATE_MODULE event to backend
                 this.relaySocket?.send(JSON.stringify({ 
                     type: 'CREATE_MODULE', 
@@ -376,7 +395,7 @@ export class VHLWebUI {
                 res.status(200).send({
                     success: true,
                     moduleId: name, 
-                    worktreePath: tempDir, 
+                    worktreePath: moduleWorktree, 
                     message: 'Module creation initiated'
                 });
 
@@ -623,22 +642,52 @@ export class VHLWebUI {
             res.status(200).send({ status: 'Workflow 1 triggered' });
         });
 
-        app.post('/api/create-project', upload.single('file'), (req, res) => {
+        app.post('/api/create-project', upload.single('file'), async (req, res) => {
             const { project_name } = req.body;
             const filePath = req.file ? req.file.path : null;
             
+            if (!project_name) {
+                return res.status(400).send({ error: 'Missing project_name in request body' });
+            }
+
             console.log(`[VHLWebUI] Creating project ${project_name}, zip at ${filePath}`);
-            
-            this.relaySocket?.send(JSON.stringify({ 
-                type: 'CREATE_PROJECT', 
-                source: 'vhl_webui', 
-                payload: { 
-                    project_name, 
-                    zip_path: filePath, // Pass the actual path
-                    zip_blob_id: filePath
-                } 
-            }));
-            res.status(200).send({ status: 'Project creation initiated', zip_path: filePath });
+            try {
+                const projectRoot = await this.workspaceManager.createProject(project_name, filePath || undefined);
+                const info = await this.workspaceManager.getWorkspaceInfo(project_name);
+
+                setProjectState({
+                    ...projectContext,
+                    project_id: project_name,
+                    project_name: project_name,
+                    project_root: projectRoot,
+                    project_root_dir: projectRoot,
+                    worktrees: info.worktrees,
+                    backend_status: 'initialized',
+                    runtime_status: 'initialized'
+                });
+
+                this.broadcastProjectState();
+
+                this.relaySocket?.send(JSON.stringify({ 
+                    type: 'CREATE_PROJECT', 
+                    source: 'vhl_webui', 
+                    payload: { 
+                        project_name, 
+                        zip_path: filePath,
+                        zip_blob_id: filePath
+                    } 
+                }));
+
+                res.status(200).send({
+                    status: 'Project created successfully',
+                    project_id: project_name,
+                    project_root: projectRoot,
+                    zip_path: filePath
+                });
+            } catch (err: any) {
+                console.error(`[VHLWebUI] Error creating project ${project_name}:`, err);
+                res.status(500).send({ error: `Failed to create project: ${err.message}` });
+            }
         });
 
         app.post('/api/load-project', async (req, res) => {
@@ -648,12 +697,19 @@ export class VHLWebUI {
             }
             console.log(`[VHLWebUI] Loading project ${project_id}`);
             
-            const projectPath = path.isAbsolute(project_id) ? project_id : path.join(this.workspaceDir, project_id);
+            let projectPath = path.isAbsolute(project_id) ? project_id : path.join(this.workspaceDir, project_id);
+            if (!existsSync(projectPath) && !path.isAbsolute(project_id)) {
+                const alt1 = path.resolve(this.workspaceDir, '..', project_id);
+                const alt2 = path.resolve(this.workspaceDir, '../..', project_id);
+                if (existsSync(alt1)) projectPath = alt1;
+                else if (existsSync(alt2)) projectPath = alt2;
+            }
+
             if (!existsSync(projectPath)) {
                 return res.status(404).send({ error: `Project directory not found: ${project_id}` });
             }
 
-            const validation = await isValidVhlProject(projectPath, path.basename(project_id));
+            const validation = await isValidVhlProject(projectPath, path.basename(projectPath));
             if (!validation.valid) {
                 return res.status(400).send({ 
                     error: "Directory is not a valid VHL User Project", 
@@ -661,14 +717,121 @@ export class VHLWebUI {
                 });
             }
 
-            this.relaySocket?.send(JSON.stringify({ 
-                type: 'LOAD_PROJECT', 
-                source: 'vhl_webui', 
-                payload: { 
-                    project_id
-                } 
-            }));
-            res.status(200).send({ status: 'Project load initiated', project_id });
+            try {
+                const projectRoot = await this.workspaceManager.loadProject(project_id);
+                const worktrees = await this.workspaceManager.setupWorktrees(project_id);
+                const info = await this.workspaceManager.getWorkspaceInfo(project_id);
+
+                setProjectState({
+                    ...projectContext,
+                    project_id,
+                    project_name: project_id,
+                    project_root: projectRoot,
+                    project_root_dir: projectRoot,
+                    worktrees,
+                    backend_status: 'initialized',
+                    runtime_status: 'initialized'
+                });
+
+                this.broadcastProjectState();
+
+                this.relaySocket?.send(JSON.stringify({ 
+                    type: 'LOAD_PROJECT', 
+                    source: 'vhl_webui', 
+                    payload: { 
+                        project_id
+                    } 
+                }));
+
+                res.status(200).send({
+                    status: 'Project loaded successfully',
+                    project_id,
+                    project_root: projectRoot,
+                    workspace_info: info
+                });
+            } catch (err: any) {
+                console.error(`[VHLWebUI] Error loading project ${project_id}:`, err);
+                res.status(500).send({ error: `Failed to load project: ${err.message}` });
+            }
+        });
+
+        app.post('/api/vap/evaluate', async (req, res) => {
+            try {
+                const { project_id, module_name, circuit_name, file_path, timeout_ms } = req.body;
+                let evalDir: string = "";
+                let targetCircuitName: string = "";
+
+                if (file_path) {
+                    const resolvedPath = path.isAbsolute(file_path) ? file_path : path.resolve(this.workspaceDir, file_path);
+                    if (!existsSync(resolvedPath)) {
+                        return res.status(404).send({ error: `Circuit file not found: ${file_path}` });
+                    }
+                    evalDir = path.dirname(resolvedPath);
+                    targetCircuitName = path.basename(resolvedPath);
+                } else if (module_name || circuit_name) {
+                    const targetProj = project_id || getProjectState().project_id;
+                    const worktrees = getProjectState().worktrees || {};
+                    const wtPath = module_name ? worktrees[module_name] : (worktrees['root'] || getProjectState().project_root_dir);
+
+                    const candidateName = circuit_name || (module_name ? `${module_name}.tsx` : 'index.circuit.tsx');
+                    const cleanCircuitName = candidateName.endsWith('.tsx') ? candidateName : `${candidateName}.tsx`;
+
+                    let candidatePaths: string[] = [];
+                    if (wtPath) {
+                        candidatePaths.push(
+                            path.join(wtPath, module_name || '', 'Workspace', cleanCircuitName),
+                            path.join(wtPath, 'Workspace', cleanCircuitName),
+                            path.join(wtPath, module_name || '', cleanCircuitName),
+                            path.join(wtPath, cleanCircuitName)
+                        );
+                    }
+                    if (targetProj) {
+                        const projDir = path.isAbsolute(targetProj) ? targetProj : path.join(this.workspaceDir, targetProj);
+                        candidatePaths.push(
+                            path.join(projDir, `${targetProj}_${module_name}`, module_name || '', 'Workspace', cleanCircuitName),
+                            path.join(projDir, module_name || '', 'Workspace', cleanCircuitName),
+                            path.join(projDir, cleanCircuitName)
+                        );
+                    }
+
+                    const foundPath = candidatePaths.find(p => existsSync(p));
+                    if (foundPath) {
+                        evalDir = path.dirname(foundPath);
+                        targetCircuitName = path.basename(foundPath);
+                    } else if (wtPath && existsSync(wtPath)) {
+                        evalDir = module_name && existsSync(path.join(wtPath, module_name, 'Workspace'))
+                            ? path.join(wtPath, module_name, 'Workspace')
+                            : wtPath;
+                        targetCircuitName = cleanCircuitName;
+                    } else {
+                        return res.status(404).send({
+                            error: `Could not resolve circuit file '${cleanCircuitName}' for module '${module_name}'`
+                        });
+                    }
+                } else {
+                    return res.status(400).send({
+                        error: "Missing required parameters: provide either file_path or (module_name/circuit_name)"
+                    });
+                }
+
+                const resultsDir = path.join(evalDir, 'eval_results');
+                await fs.mkdir(resultsDir, { recursive: true });
+
+                const timeout = timeout_ms ? Number(timeout_ms) : 300000;
+                const result = await evaluateCircuit(targetCircuitName, resultsDir, evalDir, timeout);
+
+                res.status(200).send({
+                    decision: result.decision,
+                    logs: result.logs,
+                    eval_status: result.eval_status,
+                    timedOut: result.timedOut,
+                    metadata: result.metadata,
+                    success: result.decision === 'ACCEPT'
+                });
+            } catch (err: any) {
+                console.error('[VHLWebUI] Error during circuit evaluation:', err);
+                res.status(500).send({ error: `Evaluation error: ${err.message}` });
+            }
         });
 
 
@@ -707,6 +870,19 @@ export class VHLWebUI {
             console.log(`[VHLWebUI] API server listening on ${this.actualApiPort}`);
             this.readyResolver();
         });
+    }
+
+    private broadcastProjectState() {
+        if (this.relaySocket && this.relaySocket.readyState === WebSocket.OPEN) {
+            this.relaySocket.send(JSON.stringify({
+                id: randomUUID(),
+                type: 'PROJECT_STATE',
+                artifact_id: null,
+                timestamp: new Date().toISOString(),
+                source: 'vhl_webui',
+                payload: getProjectState()
+            }));
+        }
     }
 
     private connectToRelay() {
