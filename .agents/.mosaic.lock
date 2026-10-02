@@ -1,0 +1,9 @@
+{
+  "pid": 75163,
+  "workspace_path": "/Users/vivek/Virtual_Labs/virtual_hardware_laboratory",
+  "host": "0.0.0.0",
+  "port": 8000,
+  "server_url": "http://127.0.0.1:8000",
+  "started_at": "2026-10-02T18:03:41.757033+00:00",
+  "command": "/Library/Frameworks/Python.framework/Versions/3.14/bin/mosaic host --workspace . --agent all"
+}
