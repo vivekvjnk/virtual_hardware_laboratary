@@ -230,7 +230,39 @@ To prevent context bloat and ensure fast orientation, agents should operate on t
 
 ---
 
-## 7. Agent Navigation & Task Routing Cheat Sheet
+## 7. Architecture Evolution & Transition Invariants (MOSAIC Hypervisor Migration)
+
+VHL is actively executing an architectural migration to retire the legacy `vhl-agent-backend` module and elevate **MOSAIC HF** as the universal Agent Hypervisor running directly over `vhl-runtime`. 
+See [`docs/MOSAIC_Transition_Plan.md`](docs/MOSAIC_Transition_Plan.md) for the full 4-phase execution blueprint.
+
+### The 7 Mandatory Transition Invariants
+All agents, orchestrators, and contributors must strictly enforce the following invariants during the migration:
+
+1. **User Project Backward Compatibility & Structural Integrity (`bms-project_e0505ca9`)**:
+   - The ~70% completed user project `/Users/vivek/Virtual_Labs/bms-project_e0505ca9` must remain 100% functional without any file transformations, manual migrations, or schema mutations.
+   - The SQLite database schema (`.vhl/state.db`) and Git worktree layout (`<project>_root`, `<project>_<module>`, `.circuit.tsx`, `Workspace/`) remain the authoritative filesystem model.
+2. **Frozen Legacy Baseline & Zero-Mutation Policy on `vhl-agent-backend`**:
+   - The `module/agent_backend` branch is frozen. Zero code modifications will be committed to `vhl-agent-backend` during this migration.
+   - Tagged baseline: `vhl-runtime-v0.1.0-pre-mosaic` and `vhl-agent-backend-v0.1.0-frozen`.
+   - The legacy 3-module system remains fully runnable at any point on demand.
+3. **Zero-Breaking-Change REST API Surface for `vhl-webui`**:
+   - All existing Express REST and RPC endpoints (`/api/dashboard`, `/api/load-project`, `/api/project-state`, `/api/get-modules`, `/circuit`, `/vhl-editor/rpc`) maintain exact contract parity.
+   - `vhl-runtime` absorbs workspace management and serves these requests synchronously without breaking the frontend cockpit.
+4. **Deterministic Substrate Isolation (No Stochastic State in Runtime)**:
+   - `vhl-runtime` manages only deterministic execution: child processes, Git worktree operations, SQLite ledgers, `tsci eval` evaluations, and Express APIs.
+   - Zero cognitive or stochastic prompt states reside in runtime code. All agent states belong exclusively to the hypervisor in `.agents/sessions/` and `.agents/tasks/`.
+5. **Bounded Autonomous Self-Healing & HIL Escalation**:
+   - Automated self-healing loops between agents (e.g. ANA calling Librarian on missing footprints) are capped at **a maximum of 3 automated iterations** before escalating to Human-in-the-Loop (HIL).
+6. **Strict Context Window Protection via A2A Protocol**:
+   - Inter-agent collaboration strictly uses MOSAIC's asynchronous `a2a_peer_call` engine.
+   - Causal task traces are isolated under `.agents/tasks/<agent>_<task_id>/`. Agents exchange only structured payloads (SCUDs, BOMs, VAP error logs) without conversation history pollution.
+7. **Test-First Gatekeeping on Real and Synthetic Projects**:
+   - No phase is declared complete without automated Vitest verification against both synthetic test fixtures and the real `bms-project_e0505ca9` layout.
+   - Phase 1 must verify native workspace loading and VAP evaluation with `vhl-agent-backend` completely shut down.
+
+---
+
+## 8. Agent Navigation & Task Routing Cheat Sheet
 
 When assigned a task, use this matrix to quickly navigate to the appropriate file tree and documentation:
 
