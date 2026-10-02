@@ -124,3 +124,25 @@ pnpm test run tests/e2e/project_load.test.ts
 - **REST Endpoints Verified**: Validates `GET /api/dashboard` (filtering/tagging), `POST /api/load-project` (404 on missing, 400 on generic, 200 on valid), and `POST /api/get-modules`.
 - **Backend Coordination Error Handling**: Verifies that when a backend `ERROR` event occurs during project loading, `VHLRuntime` transitions `backend_status` to `error` and leaves `runtime_status` in `uninitialized`.
 
+---
+
+## Architecture Evolution & Transition Invariants (MOSAIC Migration)
+
+During the migration to retire `vhl-agent-backend` and host agents directly on `MOSAIC HF`, all changes in `vhl-runtime` must strictly uphold the following invariants (see [`docs/MOSAIC_Transition_Plan.md`](../docs/MOSAIC_Transition_Plan.md)):
+
+1. **User Project Backward Compatibility (`bms-project_e0505ca9`)**:
+   - The SQLite schema (`.vhl/state.db`) and worktree file conventions (`<project>_root`, `<project>_<module>`, `.circuit.tsx`, `Workspace/`) must be preserved with zero manual migration.
+2. **Frozen Legacy Baseline**:
+   - `vhl-agent-backend` is frozen. Current working baseline is tagged `vhl-runtime-v0.1.0-pre-mosaic` and `vhl-agent-backend-v0.1.0-frozen`.
+3. **Zero Breaking Changes on REST APIs**:
+   - All Express endpoints (`/api/dashboard`, `/api/load-project`, `/api/project-state`, `/api/get-modules`, `/circuit`, `/vhl-editor/rpc`) must maintain exact contract parity for `vhl-webui`.
+4. **Deterministic Substrate Isolation**:
+   - `vhl-runtime` manages only deterministic execution (processes, Git worktrees, SQLite ledgers, `tsci eval`). Zero cognitive or stochastic prompt states reside in runtime code.
+5. **Bounded Autonomous Self-Healing & HIL Escalation**:
+   - Self-healing improvisation loops between agents (e.g. ANA $\leftrightarrow$ Librarian) are hard-capped at **a maximum of 3 iterations** before escalating to Human-in-the-Loop.
+6. **Strict Context Window Protection**:
+   - Peer communications use asynchronous `a2a_peer_call` with isolated causal logs under `.agents/tasks/`, preventing conversation history bloat.
+7. **Test-First Gatekeeping on Real and Synthetic Projects**:
+   - Every migration step must pass automated Vitest tests verifying both synthetic mock projects and the real `bms-project_e0505ca9` layout.
+
+
