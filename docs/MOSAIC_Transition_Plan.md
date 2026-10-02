@@ -137,25 +137,26 @@ We will execute this architectural migration deliberately, step by step, using s
 
 ---
 
-### Phase 2: Declarative Agent Cards & Engineering Capability Packages
+### Phase 2: Declarative Agent Cards & Engineering Capability Packages — [STATUS: COMPLETED ✅]
 
-**Objective**: Formulate the identities and domain tools of VHL’s specialized circuit engineering agents as declarative MOSAIC artifacts.
+**Objective**: Formulate the identities and domain tools of VHL’s specialized circuit engineering agents as declarative MOSAIC artifacts under `vhl-runtime-mosaic/.agents/`.
 
-#### Deliverables:
+#### Implemented Deliverables:
 1. **Declarative Agent Cards** (`.agents/well_known/*.json`):
-   - **`archy.json`**: Multimodal visual circuit architect. System prompt encodes SCUD 5-section taxonomy, component categorization, and explicit uncertainty recording in Section 4.
-   - **`librarian.json`**: Component and footprint librarian. System prompt encodes footprint search, JLCPCB library discovery, and parametric verification.
-   - **`ana.json`**: Generative circuit designer. System prompt encodes `tscircuit` TSX construction rules, component instantiation, and iterative VAP error rectification.
-   - **`layout_engineer.json`**: PCB physical layout specialist. Encodes board sizing calculations, critical component placement, and Cypress autorouter tuning.
+   - **`archy.json`**: Multimodal visual circuit architect and coordinator. Ingests boundary documents, references, and schematic images; outputs SCUD adhering to the 5-section format and explicit Section 5 uncertainty logging.
+   - **`librarian.json`**: Component and footprint librarian. Resolves component specifications from SCUD, discovers JLCPCB/EasyEDA footprints, and populates module `imports/`.
+   - **`ana.json`**: Generative circuit designer. Synthesizes `tscircuit` TSX code from SCUD and imported components; evaluates with `vhl-circuit-evaluator`; iteratively rectifies errors to achieve `ACCEPT`.
+   - **`layout_engineer.json`**: PCB physical layout specialist. Manages board dimension estimation, critical component placement, and Cypress autorouter tuning.
+   - **Validation**: 100% verified against MOSAIC's `card_validator.py` with zero errors.
 2. **Engineering Capability Packages (ECPs)** (`.agents/skills/`):
-   - **`vhl-scud-extractor`**: Vision analysis scripts and reference schemas for generating `circuit_design.scud`.
-   - **`vhl-component-resolver`**: Client tools connecting to `vhl-runtime`'s Terminal MCP server (:8082) and registries to search footprints and write into `imports/`.
-   - **`vhl-circuit-evaluator`**: Client tool calling `POST /api/vap/evaluate` on `vhl-runtime` (:3022) to inspect ERC/DRC findings.
-   - **`vhl-workspace-ops`**: Tooling to commit Git worktrees and update `.vhl/state.db`.
+   - **`vhl-circuit-evaluator`**: Tool `tools/vhl_evaluate_circuit` calling `POST /api/vap/evaluate` with full DRC/ERC diagnostic reporting and binary `ACCEPT`/`REJECT` exit codes.
+   - **`vhl-component-resolver`**: Tool `tools/vhl_resolve_component` querying library registries and synthesizing standard JLCPCB footprints (`SOIC-8`, `SOT-23`, `0805`, `0603`, `LQFP-32`).
+   - **`vhl-workspace-ops`**: Tool `tools/vhl_record_operation` performing atomic Git commits and recording operations in `.vhl/state.db`.
+   - **`a2a-peer-dialing`**: Standalone `a2a_peer_call` executable enabling autonomous peer delegation between Archy, Librarian, ANA, and Layout Engineer.
 
-**Definition of Done (DoD)**:
-- All agent cards pass MOSAIC `card_validator.py`.
-- Each ECP adheres to the standardized specification: `SKILL.md` (reasoning, operational knowledge, verification checklist) + `tools/` (executables) + `references/` (deep technical manuals).
+**Commits**:
+- `5ed7aa8` `feat(skills): author VHL Engineering Capability Packages (ECPs) and CLI tools`
+- `32057d4` `feat(agents): author and validate declarative VHL agent cards (Archy, Librarian, ANA, Layout Engineer)`
 
 ---
 
