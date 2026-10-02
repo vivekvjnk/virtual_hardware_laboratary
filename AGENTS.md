@@ -30,7 +30,7 @@ virtual_hardware_laboratory/              # Root bare git repository workspace
 │   ├── src/                              # React frontend, circuit canvas, editor, agent chat
 │   └── docs/                             # WebUI technical specs and changelogs
 │
-├── vhl-runtime/                          # [Worktree: branch `module/runtime`]
+├── vhl-runtime/                          # [Worktree: branch `module/runtime`] (Frozen baseline)
 │   ├── AGENTS.md                         # Module-level agent orientation guide
 │   ├── README.md                         # Runtime architecture & operational runbooks
 │   ├── package.json                      # Express REST API, tscircuit toolchain, MCP servers
@@ -38,7 +38,13 @@ virtual_hardware_laboratory/              # Root bare git repository workspace
 │   ├── src/                              # WebSocket relay (1080), Express API (3022), VAP engine, MCP
 │   └── docs/                             # Architecture diagrams, component guidelines, deployment docs
 │
-└── vhl-agent-backend/                    # [Worktree: branch `module/agent_backend`]
+├── vhl-runtime-mosaic/                   # [Worktree: branch `feature/mosaic-runtime-migration`] (Active Migration Worktree)
+│   ├── AGENTS.md                         # Runtime agent orientation guide
+│   ├── package.json                      # Express REST API, tscircuit toolchain, MCP servers
+│   ├── src/                              # Native substrate: Express API (:3022), VAP engine, TypeScript WorkspaceManager
+│   └── tests/e2e/                        # Vitest E2E integration test suites
+│
+└── vhl-agent-backend/                    # [Worktree: branch `module/agent_backend`] (Frozen baseline)
     ├── AGENTS.md                         # Module-level agent orientation guide
     ├── README.md                         # Backend overview & URP architecture
     ├── pyproject.toml                    # Python project configuration (uv, FastAPI, Pydantic)
