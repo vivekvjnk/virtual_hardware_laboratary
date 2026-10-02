@@ -214,11 +214,40 @@ We will execute this architectural migration deliberately, step by step, using s
 
 ---
 
-## 3. Risk Mitigation & Invariants
+## 3. Transition Invariants & Guardrails
 
-1. **Strict Non-Destructive Progression**:
-   - `vhl-agent-backend` will remain active and intact throughout Phases 1, 2, and 3. It will only be removed in Phase 4 once the MOSAIC-driven workflow has met all Definitions of Done in production testing.
-2. **Isolated Test Verification**:
-   - Every phase must pass deterministic Vitest and regression test suites before proceeding to the next phase.
-3. **Context Window Protection Invariant**:
-   - Autonomous A2A peer delegations will strictly use `a2a_peer_call` to maintain task execution logging in `.agents/tasks/`, preventing raw conversation history pollution across peer agents.
+The following 7 core invariants govern this entire migration:
+
+1. **User Project Backward Compatibility & Structural Integrity (`bms-project_e0505ca9`)**:
+   - The ~70% completed user project `/Users/vivek/Virtual_Labs/bms-project_e0505ca9` must remain 100% functional without any file transformations, manual migrations, or schema mutations.
+   - The SQLite database schema (`.vhl/state.db`)—including `project_modules`, `semantic_operations`, `project_settings`, and `artifact_snapshots`—must be preserved exactly.
+   - The Git worktree layout (`<project_id>_root`, `<project_id>_<module>`), circuit files (`.circuit.tsx`), SCUD documents (`.scud`), and `Workspace/` directory structures remain the authoritative filesystem model.
+
+2. **Frozen Legacy Baseline & Zero-Mutation Policy on `vhl-agent-backend`**:
+   - The `module/agent_backend` branch is frozen. Zero code modifications will be committed to `vhl-agent-backend` during this migration.
+   - Tagged baseline: `vhl-runtime-v0.1.0-pre-mosaic` and `vhl-agent-backend-v0.1.0-frozen`.
+   - The legacy 3-module system remains fully runnable at any point on demand.
+
+3. **Zero-Breaking-Change REST API Surface for `vhl-webui`**:
+   - All existing REST and RPC endpoints (`GET /api/dashboard`, `POST /api/load-project`, `GET /api/project-state`, `POST /api/get-modules`, `GET .../circuit`, `POST /api/vhl-editor/rpc`) maintain their contracts.
+   - `vhl-runtime` absorbs workspace management and serves these requests synchronously without breaking the frontend cockpit.
+
+4. **Deterministic Substrate Isolation (No Stochastic State in Runtime)**:
+   - `vhl-runtime` manages only deterministic execution: child processes, Git worktree operations, SQLite ledgers, `tsci eval` evaluations, and Express APIs.
+   - No LLM calls, prompts, stochastic reasoning, or agent session histories reside inside `vhl-runtime`. All cognitive states belong exclusively to the hypervisor in `.agents/sessions/` and `.agents/tasks/`.
+
+5. **Bounded Autonomous Self-Healing & HIL Escalation**:
+   - Automated self-healing loops between agents (e.g. ANA calling Librarian on missing footprints) are capped at a **maximum of 3 automated iterations**.
+   - If unverified after 3 iterations, the workflow halts and triggers Human-in-the-Loop (HIL) escalation to prevent infinite token/spend loops.
+
+6. **Strict Context Window Protection via A2A Protocol**:
+   - Inter-agent collaboration strictly uses MOSAIC's asynchronous `a2a_peer_call` engine.
+   - Causal task traces are isolated under `.agents/tasks/<agent>_<task_id>/`. Agents exchange only structured payloads (SCUDs, BOMs, VAP error logs) without conversation history pollution.
+
+7. **Test-First Gatekeeping on Real and Synthetic Projects**:
+   - No phase is declared complete without automated Vitest verification against both synthetic test fixtures and the real `bms-project_e0505ca9` layout.
+   - Phase 1 must verify native workspace loading and VAP evaluation with `vhl-agent-backend` completely shut down.
+
+---
+
+## 4. Risk Mitigation & Invariants
