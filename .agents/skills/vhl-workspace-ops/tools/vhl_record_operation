@@ -1,0 +1,169 @@
+#!/usr/bin/env node
+
+import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { existsSync } from "node:fs";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+function printUsage() {
+    console.log(`
+Usage: vhl_record_operation [options]
+
+Required Options:
+  --project, -p <id>       Project identifier or folder path
+  --module, -m <name>      Module name (or 'root' for root worktree)
+  --op, -o <name>          Semantic operation name (e.g. SYNTHESIZE, ADD_MODULE, UPDATE_CIRCUIT)
+  --author, -a <name>      Author identifier (e.g. Archy, Librarian, User)
+  --status, -s <status>    Operation status (e.g. SUCCESS, FAILED, IN_PROGRESS)
+  --message, --msg <text>  Git commit message
+
+Optional Options:
+  --payload <json>         JSON string payload associated with this operation
+  --workspace <dir>        Workspace root directory (default: VHL_WORKSPACE_DIR or current directory)
+  --json                   Output raw JSON result
+  --help, -h               Show this help message
+
+Example:
+  vhl_record_operation --project bms_alpha --module power_module --op UPDATE_CIRCUIT --author Archy --status SUCCESS --message "feat: connect 3.3V LDO regulator"
+`);
+}
+
+function parseArgs() {
+    const args = process.argv.slice(2);
+    const parsed = {
+        project: null,
+        module: null,
+        op: null,
+        author: null,
+        status: null,
+        message: null,
+        payload: {},
+        workspace: process.env.VHL_WORKSPACE_DIR || process.cwd(),
+        json: false
+    };
+
+    for (let i = 0; i < args.length; i++) {
+        const arg = args[i];
+        if (arg === "--help" || arg === "-h") {
+            printUsage();
+            process.exit(0);
+        } else if (arg === "--project" || arg === "-p") {
+            parsed.project = args[++i];
+        } else if (arg === "--module" || arg === "-m") {
+            parsed.module = args[++i];
+        } else if (arg === "--op" || arg === "-o") {
+            parsed.op = args[++i];
+        } else if (arg === "--author" || arg === "-a") {
+            parsed.author = args[++i];
+        } else if (arg === "--status" || arg === "-s") {
+            parsed.status = args[++i];
+        } else if (arg === "--message" || arg === "--msg") {
+            parsed.message = args[++i];
+        } else if (arg === "--payload") {
+            try {
+                parsed.payload = JSON.parse(args[++i]);
+            } catch {
+                parsed.payload = { raw: args[i] };
+            }
+        } else if (arg === "--workspace") {
+            parsed.workspace = args[++i];
+        } else if (arg === "--json") {
+            parsed.json = true;
+        }
+    }
+
+    return parsed;
+}
+
+async function main() {
+    const opts = parseArgs();
+
+    const missing = [];
+    if (!opts.project) missing.push("--project");
+    if (!opts.module) missing.push("--module");
+    if (!opts.op) missing.push("--op");
+    if (!opts.author) missing.push("--author");
+    if (!opts.status) missing.push("--status");
+    if (!opts.message) missing.push("--message");
+
+    if (missing.length > 0) {
+        console.error(`Error: Missing required argument(s): ${missing.join(", ")}`);
+        printUsage();
+        process.exit(1);
+    }
+
+    // Locate compiled VHLWorkspaceManager in dist
+    const runtimeRoot = resolve(__dirname, "../../../..");
+    const distManagerPath = resolve(runtimeRoot, "dist/workspace/vhlWorkspaceManager.js");
+
+    let VHLWorkspaceManager;
+    if (existsSync(distManagerPath)) {
+        const mod = await import(distManagerPath);
+        VHLWorkspaceManager = mod.VHLWorkspaceManager;
+    } else {
+        // Fallback: try dynamic tsx loader or require
+        try {
+            const mod = await import(resolve(runtimeRoot, "src/workspace/vhlWorkspaceManager.ts"));
+            VHLWorkspaceManager = mod.VHLWorkspaceManager;
+        } catch (e) {
+            console.error(`Error: Could not locate VHLWorkspaceManager compiled artifact at ${distManagerPath}`);
+            console.error("Run 'pnpm run build' in vhl-runtime-mosaic first.");
+            process.exit(2);
+        }
+    }
+
+    const mgr = new VHLWorkspaceManager(opts.workspace);
+    await mgr.loadProject(opts.project);
+    await mgr.setupWorktrees(opts.project);
+
+    const snapshotId = await mgr.recordOperation(
+        opts.project,
+        opts.module,
+        opts.op,
+        opts.author,
+        opts.status,
+        opts.payload,
+        opts.message
+    );
+
+    const info = await mgr.getWorkspaceInfo(opts.project);
+    const latestSnapshot = info.artifacts?.[0];
+
+    if (opts.json) {
+        console.log(JSON.stringify({
+            success: true,
+            snapshot_id: snapshotId,
+            commit_hash: latestSnapshot?.git_commit_hash,
+            op_name: opts.op,
+            module_name: opts.module,
+            author: opts.author,
+            status: opts.status,
+            timestamp: new Date().toISOString()
+        }, null, 2));
+        process.exit(0);
+    }
+
+    console.log("=================================================");
+    console.log("       VHL SEMANTIC OPERATION RECORDED           ");
+    console.log("=================================================");
+    console.log(`Snapshot ID:  #${snapshotId}`);
+    if (latestSnapshot?.git_commit_hash) {
+        console.log(`Commit Hash:  ${latestSnapshot.git_commit_hash}`);
+    }
+    console.log(`Project:      ${opts.project}`);
+    console.log(`Module:       ${opts.module}`);
+    console.log(`Operation:    ${opts.op}`);
+    console.log(`Author:       ${opts.author}`);
+    console.log(`Status:       ${opts.status}`);
+    console.log(`Commit Msg:   ${opts.message}`);
+    console.log("=================================================");
+
+    await mgr.closeProject();
+}
+
+main().catch(err => {
+    console.error("Operation Recording Error:", err.message);
+    process.exit(1);
+});

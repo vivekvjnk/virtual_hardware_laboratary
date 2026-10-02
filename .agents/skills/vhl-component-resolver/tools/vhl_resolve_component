@@ -1,0 +1,205 @@
+#!/usr/bin/env node
+
+import { resolve, join, basename } from "node:path";
+import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+
+function printUsage() {
+    console.log(`
+Usage: vhl_resolve_component --query <part_or_footprint> [options]
+
+Options:
+  --query, -q <text>      Part number (e.g. C2040, LM317), IC name, or package footprint (e.g. 0805, SOIC-8)
+  --output-dir, -o <dir>  Target directory to copy/generate component TSX file (e.g. imports/)
+  --port <number>         Terminal MCP server port (default: 8082)
+  --json                  Output raw JSON
+  --help, -h              Show this help message
+
+Examples:
+  vhl_resolve_component --query LM317 --output-dir ./imports
+  vhl_resolve_component --query SOIC-8
+  vhl_resolve_component --query C2040 --json
+`);
+}
+
+function parseArgs() {
+    const args = process.argv.slice(2);
+    const parsed = {
+        query: null,
+        outputDir: null,
+        port: process.env.VHL_TERMINAL_MCP_PORT ? parseInt(process.env.VHL_TERMINAL_MCP_PORT, 10) : 8082,
+        json: false
+    };
+
+    for (let i = 0; i < args.length; i++) {
+        const arg = args[i];
+        if (arg === "--help" || arg === "-h") {
+            printUsage();
+            process.exit(0);
+        } else if (arg === "--query" || arg === "-q") {
+            parsed.query = args[++i];
+        } else if (arg === "--output-dir" || arg === "-o") {
+            parsed.outputDir = args[++i];
+        } else if (arg === "--port") {
+            parsed.port = parseInt(args[++i], 10);
+        } else if (arg === "--json") {
+            parsed.json = true;
+        }
+    }
+
+    return parsed;
+}
+
+function findLocalComponents(query) {
+    const searchDirs = [
+        resolve(process.cwd(), "imports"),
+        resolve(process.cwd(), "lib"),
+        resolve(process.cwd(), "../lib"),
+        resolve(process.cwd(), "workspace/lib")
+    ];
+
+    const results = [];
+    const qLower = query.toLowerCase();
+
+    for (const dir of searchDirs) {
+        if (!existsSync(dir)) continue;
+        try {
+            const files = readdirSync(dir, { recursive: true });
+            for (const file of files) {
+                if (typeof file === "string" && file.endsWith(".tsx")) {
+                    const fullPath = join(dir, file);
+                    const name = basename(file, ".tsx");
+                    if (name.toLowerCase().includes(qLower)) {
+                        const content = readFileSync(fullPath, "utf-8");
+                        results.push({
+                            source: "local-library",
+                            name,
+                            filePath: fullPath,
+                            content
+                        });
+                    }
+                }
+            }
+        } catch {}
+    }
+
+    return results;
+}
+
+function synthesizeComponentTemplate(query) {
+    const cleanName = query.replace(/[^a-zA-Z0-9_]/g, "_");
+    const upperQuery = query.toUpperCase();
+
+    // Heuristics for standard electronic components
+    let footprint = "soic8";
+    let pinCount = 8;
+    let pins = ["IN", "OUT", "GND", "VCC", "NC1", "NC2", "NC3", "NC4"];
+
+    if (upperQuery.includes("0805") || upperQuery.includes("0603") || upperQuery.includes("0402") || upperQuery.includes("1206")) {
+        const size = upperQuery.match(/(0402|0603|0805|1206)/)?.[0] || "0805";
+        footprint = size;
+        pinCount = 2;
+        pins = ["1", "2"];
+    } else if (upperQuery.includes("SOT-23") || upperQuery.includes("SOT23")) {
+        footprint = "sot23";
+        pinCount = 3;
+        pins = ["1", "2", "3"];
+    } else if (upperQuery.includes("QFP") || upperQuery.includes("LQFP")) {
+        footprint = "lqfp32";
+        pinCount = 32;
+        pins = Array.from({ length: 32 }, (_, i) => `P${i + 1}`);
+    }
+
+    const componentCode = `import React from "react";
+
+export interface ${cleanName}Props {
+  name?: string;
+  footprint?: string;
+}
+
+export const ${cleanName} = ({ name = "U1", footprint = "${footprint}" }: ${cleanName}Props) => (
+  <chip
+    name={name}
+    footprint={footprint}
+    pinLabels={{
+${pins.map((p, idx) => `      pin${idx + 1}: "${p}"`).join(",\n")}
+    }}
+  />
+);
+
+export default ${cleanName};
+`;
+
+    return {
+        source: "synthesized-jlcpcb-template",
+        name: cleanName,
+        footprint,
+        pinCount,
+        pins,
+        content: componentCode
+    };
+}
+
+async function main() {
+    const opts = parseArgs();
+
+    if (!opts.query) {
+        console.error("Error: --query is required.");
+        printUsage();
+        process.exit(1);
+    }
+
+    // 1. Search local library
+    const localMatches = findLocalComponents(opts.query);
+    let resolvedComponent = null;
+
+    if (localMatches.length > 0) {
+        resolvedComponent = localMatches[0];
+    } else {
+        // 2. Synthesize component template
+        resolvedComponent = synthesizeComponentTemplate(opts.query);
+    }
+
+    // If output dir specified, write to disk
+    let savedPath = null;
+    if (opts.outputDir && resolvedComponent) {
+        const targetDir = resolve(process.cwd(), opts.outputDir);
+        mkdirSync(targetDir, { recursive: true });
+        savedPath = join(targetDir, `${resolvedComponent.name}.tsx`);
+        writeFileSync(savedPath, resolvedComponent.content, "utf-8");
+    }
+
+    if (opts.json) {
+        console.log(JSON.stringify({
+            success: true,
+            query: opts.query,
+            component: resolvedComponent,
+            savedPath
+        }, null, 2));
+        process.exit(0);
+    }
+
+    console.log("=================================================");
+    console.log("       VHL COMPONENT RESOLVER                    ");
+    console.log("=================================================");
+    console.log(`Query:        ${opts.query}`);
+    console.log(`Source:       ${resolvedComponent.source}`);
+    console.log(`Component:    ${resolvedComponent.name}`);
+    if (resolvedComponent.footprint) {
+        console.log(`Footprint:    ${resolvedComponent.footprint}`);
+    }
+    if (savedPath) {
+        console.log(`Saved To:     ${savedPath}`);
+    }
+    console.log("---------------- Preview ------------------------");
+    const previewLines = resolvedComponent.content.split("\n").slice(0, 18);
+    previewLines.forEach(l => console.log(`  ${l}`));
+    if (resolvedComponent.content.split("\n").length > 18) {
+        console.log("  ... (truncated)");
+    }
+    console.log("=================================================");
+}
+
+main().catch(err => {
+    console.error("Resolver Error:", err);
+    process.exit(1);
+});
