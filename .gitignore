@@ -2,9 +2,8 @@ dist/
 node_modules/
 tests/*.js
 .object_store/
-docs/
+workspace/
 eval_results/
-workspace/index.tsx
 **__pycache__**
 incremental_log.log
 package.json
