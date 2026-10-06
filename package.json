@@ -5,18 +5,13 @@
   "type": "module",
   "description": "Virtual Hardware Laboratory (VHL) – TypeScript-based MCP server for tscircuit-driven hardware design",
   "scripts": {
-    "dev": "tsx src/index.ts",
+    "dev": "tsx src/workspace/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js",
-    "start:vap": "tsx src/vap/vapIndex.ts",
-    "start:ws": "tsx src/server/wsIndex.ts",
+    "start": "node dist/workspace/index.js",
     "start:workspace": "tsx src/workspace/index.ts",
-    "start:ana": "tsx src/mcp/ana/index.ts",
     "start:ui_snapshot": "tsx src/mcp/ui_snapshot/index.ts",
     "test": "vitest",
-    "test:jest": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand",
-    "clean": "rm -rf dist",
-    "setup:python": "bash scripts/setup-host-python.sh"
+    "clean": "rm -rf dist"
   },
   "pnpm": {
     "allowedBuildScripts": [
