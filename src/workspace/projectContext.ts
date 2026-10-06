@@ -1,6 +1,5 @@
 import path from "path";
-import fs from "fs";
-import { WORKSPACE_DIR, LOCAL_LIBRARY_DIR, ACTIVE_PROJECT_STATE_FILE } from "../config/paths.js";
+import { WORKSPACE_DIR, LOCAL_LIBRARY_DIR } from "../config/paths.js";
 
 export interface ProjectState {
     project_id: string | null;
@@ -36,28 +35,9 @@ export const projectContext:ProjectState = {
 
 export function setProjectState(state: ProjectState) {
     Object.assign(projectContext, state);
-    try {
-        const stateDir = path.dirname(ACTIVE_PROJECT_STATE_FILE);
-        if (!fs.existsSync(stateDir)) {
-            fs.mkdirSync(stateDir, { recursive: true });
-        }
-        fs.writeFileSync(ACTIVE_PROJECT_STATE_FILE, JSON.stringify(state));
-    } catch (err) {
-        console.error("[projectContext] Failed to save active project state:", err);
-    }
 }
 
 export function getProjectState(): ProjectState {
-    try {
-        if (fs.existsSync(ACTIVE_PROJECT_STATE_FILE)) {
-            const data = JSON.parse(fs.readFileSync(ACTIVE_PROJECT_STATE_FILE, "utf-8"));
-            Object.assign(projectContext, data);
-            return projectContext;
-        }
-    } catch (err) {
-        console.error("[projectContext] Failed to load active project state:", err);
-    }
-
     return projectContext;
 }
 

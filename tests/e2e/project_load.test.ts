@@ -5,7 +5,6 @@ import * as os from 'os';
 import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
 import { VHLWebUI, isValidVhlProject } from '../../src/workspace/vhlWebUI.js';
-import { VHLRuntime } from '../../src/workspace/vhlRuntime.js';
 import { setProjectState, getProjectState, projectContext } from '../../src/workspace/projectContext.js';
 
 describe('End-to-End User Project Load and Structural Validation', () => {
@@ -361,33 +360,29 @@ describe('End-to-End User Project Load and Structural Validation', () => {
         });
     });
 
-    describe('5. Error Handling: PROJECT_LOAD_FAILED in VHLRuntime', () => {
-        it('transitions backend_status to error and runtime_status to uninitialized on PROJECT_LOAD_FAILED error', async () => {
-            const runtime = new VHLRuntime('ws://localhost:1080/ws-agent', tempWorkspace);
-
-            // Set state to initializing as if load was initiated
-            runtime.setProjectState({
-                project_id: 'failed_project',
-                backend_status: 'initializing',
-                runtime_status: 'initializing'
+    describe('5. Error Handling and Resilience', () => {
+        it('handles non-existent project load cleanly with 404 status and error message', async () => {
+            const res = await fetch(`${baseUrl}/api/load-project`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ project_id: 'non_existent_project_err' })
             });
 
-            // Simulate ERROR event received from backend
-            await runtime.handleMessage({
-                id: 'err-1',
-                type: 'ERROR',
-                artifact_id: null,
-                timestamp: new Date().toISOString(),
-                source: 'vhl_agent_backend',
-                payload: {
-                    error_type: 'PROJECT_LOAD_FAILED',
-                    message: 'Worktree setup failed: branch already exists'
-                }
-            } as any);
+            expect(res.status).toBe(404);
+            const data = await res.json();
+            expect(data.error).toContain('not found');
+        });
 
-            const state = getProjectState();
-            expect(state.backend_status).toBe('error');
-            expect(state.runtime_status).toBe('uninitialized');
+        it('handles invalid project payload with 400 Bad Request', async () => {
+            const res = await fetch(`${baseUrl}/api/load-project`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
+            });
+
+            expect(res.status).toBe(400);
+            const data = await res.json();
+            expect(data.error).toContain('Missing project_id');
         });
     });
 });

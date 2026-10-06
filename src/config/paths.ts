@@ -84,16 +84,3 @@ export const EVAL_RESULTS_DIR = path.join(PROJECT_ROOT, "eval_results");
  * This is easily configurable via environment variable.
  */
 export const WORKSPACE_DIR = process.env.VHL_WORKSPACE_DIR || path.join(PROJECT_ROOT, "workspace");
-
-/**
- * Evaluation root.
- * 
- * Used for hardlink-based COW workspaces during evaluation.
- */
-export const EVAL_ROOT = path.join(PROJECT_ROOT, ".vhl_eval");
-
-/**
- * State file for the currently active project.
- * Used to share active project state across processes.
- */
-export const ACTIVE_PROJECT_STATE_FILE = path.join(TEMP_DIR, "active_project.json");

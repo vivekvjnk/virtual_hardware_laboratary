@@ -9,10 +9,11 @@
  */
 
 import { spawn } from "child_process";
-import { Decision } from "./state.js";
 import * as fs from "fs/promises";
 import * as path from "path";
 import { prepareMetadata } from "./metadata.js";
+
+export type Decision = "ACCEPT" | "REJECT";
 
 export interface EvaluationResult {
     decision: Decision;

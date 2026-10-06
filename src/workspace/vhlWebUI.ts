@@ -6,11 +6,9 @@ import * as fs from "fs/promises";
 import { existsSync } from "fs";
 import * as crypto from "crypto";
 import { randomUUID } from "crypto";
-import { RuntimeSender } from "./types.js";
 import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
-import { WebSocket } from 'ws';
 import { LocalFileSystemProvider } from '../editor/localFilesystem.js';
 import { getProjectRootDir, getProjectDir, projectContext, getProjectState, setProjectState } from './projectContext.js';
 import sqlite3 from 'sqlite3';
@@ -108,16 +106,12 @@ export class VHLWebUI {
     private isGatewayStarted: boolean = false;
     private apiServer: http.Server | null = null;
     private fileSystemProvider: LocalFileSystemProvider;
-
-    private relaySocket: WebSocket | null = null;
-    private agentMessages: Map<string, any[]> = new Map();
     private workspaceManager: VHLWorkspaceManager;
 
     private readonly GATEWAY_PORT = parseInt(process.env.VHL_WEBUI_PORT || "3020");
     private readonly TSC_DEV_PORT = 3021;
     private readonly API_PORT: number;
     private actualApiPort: number = 0;
-    private relayReconnectTimer: NodeJS.Timeout | null = null;
     private isStopped: boolean = false;
     public readonly isReady: Promise<void>;
     private readyResolver!: () => void;
@@ -133,7 +127,6 @@ export class VHLWebUI {
         this.workspaceManager = new VHLWorkspaceManager(this.workspaceDir);
         this.fileSystemProvider = new LocalFileSystemProvider(this.workspaceDir);
         this.setupAPIServer();
-        this.connectToRelay();
     }
 
     public getApiPort(): number {
@@ -245,60 +238,17 @@ export class VHLWebUI {
         });
         const upload = multer({ storage });
         app.post('/api/identify', (req, res) => {
-            const { role } = req.body;
-            this.connectToRelay();
-            this.relaySocket?.send(JSON.stringify({ 
-                type: 'IDENTIFY', 
-                source: 'vhl_runtime',
-                payload: { role } 
-            }));
             res.status(200).send({ status: 'Identifying' });
         });
 
         app.post('/api/upload-file', upload.single('file'), async (req, res) => {
-            const { module_name, agent_name, message } = req.body;
             if (!req.file) {
                 return res.status(400).send({ error: 'No file uploaded' });
             }
-            
-            // In a real implementation, we would move this to a project-specific directory
-            // For now, we return the path to the file in the .zip_temp folder
-            const filePath = req.file.path;
-            
-            // Emit FILE_ADDED event
-            this.relaySocket?.send(JSON.stringify({ 
-                type: 'FILE_ADDED', 
-                source: 'vhl_runtime',
-                payload: { 
-                    file_path: filePath, 
-                    file_name: req.file.originalname,
-                    module_name,
-                    agent_name,
-                    message
-                } 
-            }));
-            
-            // Store the message for chat history if agent_name and module_name are provided
-            if (agent_name && module_name) {
-                const agentId = `${module_name}.${agent_name}`;
-                const gateMessage = {
-                    type: 'HUMAN_RESPONSE',
-                    payload: { text: `[File: ${req.file.originalname}] ${message || ""}` },
-                    sender: 'HIL',
-                    receiver: agentId,
-                    timestamp: new Date().toISOString(),
-                    id: randomUUID()
-                };
-                const messages = this.agentMessages.get(agentId) || [];
-                messages.push(gateMessage);
-                this.agentMessages.set(agentId, messages);
-            }
-            
-            res.status(200).send({ path: filePath });
+            res.status(200).send({ path: req.file.path });
         });
 
         app.post('/api/heartbeat', (req, res) => {
-            this.relaySocket?.send(JSON.stringify({ type: 'HEARTBEAT' }));
             res.status(200).send({ status: 'Heartbeat sent' });
         });
 
@@ -377,20 +327,7 @@ export class VHLWebUI {
                         ...currentCtx,
                         worktrees: info.worktrees
                     });
-                    this.broadcastProjectState();
                 }
-
-                // Emit CREATE_MODULE event to backend
-                this.relaySocket?.send(JSON.stringify({ 
-                    type: 'CREATE_MODULE', 
-                    source: 'vhl_webui', 
-                    payload: { 
-                        module_name: name,
-                        description,
-                        temp_dir: tempDir,
-                        project_id: projectId
-                    } 
-                }));
 
                 res.status(200).send({
                     success: true,
@@ -541,49 +478,10 @@ export class VHLWebUI {
         });
 
         app.get('/api/agents/:agentId/messages', (req, res) => {
-            const { agentId } = req.params;
-            const messages = this.agentMessages.get(agentId) || [];
-            res.status(200).send({ messages });
+            res.status(200).send({ messages: [] });
         });
 
         app.post('/api/agents/:agentId/send', (req, res) => {
-            const { agentId } = req.params;
-            const { text, file_path } = req.body;
-            
-            let final_text = text;
-            if (file_path) {
-                final_text = `*User uploaded file: ${file_path}*\n\n${text}`;
-            }
-
-            this.connectToRelay();
-            
-            const gateMessage = {
-                type: 'HUMAN_RESPONSE',
-                payload: { text: final_text },
-                sender: 'HIL',
-                receiver: agentId,
-                timestamp: new Date().toISOString(),
-                id: randomUUID()
-            };
-
-            const event = {
-                type: 'MESSAGE_TO_AGENT',
-                source: 'vhl_webui',
-                payload: {
-                    target_agent: agentId,
-                    message: text // AOSM expects message_data = payload.get("message")
-                },
-                timestamp: new Date().toISOString(),
-                id: randomUUID()
-            };
-
-            this.relaySocket?.send(JSON.stringify(event));
-            
-            // Store our own message too
-            const messages = this.agentMessages.get(agentId) || [];
-            messages.push(gateMessage);
-            this.agentMessages.set(agentId, messages);
-
             res.status(200).send({ status: 'Message sent' });
         });
 
@@ -626,19 +524,6 @@ export class VHLWebUI {
 
 
         app.post('/api/trigger-workflow', (req, res) => {
-            const { module_name } = req.body;
-            this.relaySocket?.send(JSON.stringify({ 
-                id: randomUUID(),
-                type: 'REFERENCE_UPLOADED',
-                artifact_id: null,
-                timestamp: new Date().toISOString(),
-                source: 'vhl_webui', 
-                payload: { 
-                    reference_id: module_name,
-                    reference_type: "image",
-                    filename: "stub"
-                } 
-            }));
             res.status(200).send({ status: 'Workflow 1 triggered' });
         });
 
@@ -665,18 +550,6 @@ export class VHLWebUI {
                     backend_status: 'initialized',
                     runtime_status: 'initialized'
                 });
-
-                this.broadcastProjectState();
-
-                this.relaySocket?.send(JSON.stringify({ 
-                    type: 'CREATE_PROJECT', 
-                    source: 'vhl_webui', 
-                    payload: { 
-                        project_name, 
-                        zip_path: filePath,
-                        zip_blob_id: filePath
-                    } 
-                }));
 
                 res.status(200).send({
                     status: 'Project created successfully',
@@ -732,16 +605,6 @@ export class VHLWebUI {
                     backend_status: 'initialized',
                     runtime_status: 'initialized'
                 });
-
-                this.broadcastProjectState();
-
-                this.relaySocket?.send(JSON.stringify({ 
-                    type: 'LOAD_PROJECT', 
-                    source: 'vhl_webui', 
-                    payload: { 
-                        project_id
-                    } 
-                }));
 
                 res.status(200).send({
                     status: 'Project loaded successfully',
@@ -872,89 +735,6 @@ export class VHLWebUI {
         });
     }
 
-    private broadcastProjectState() {
-        if (this.relaySocket && this.relaySocket.readyState === WebSocket.OPEN) {
-            this.relaySocket.send(JSON.stringify({
-                id: randomUUID(),
-                type: 'PROJECT_STATE',
-                artifact_id: null,
-                timestamp: new Date().toISOString(),
-                source: 'vhl_webui',
-                payload: getProjectState()
-            }));
-        }
-    }
-
-    private connectToRelay() {
-        if (this.relaySocket || this.isStopped) return;
-        this.relaySocket = new WebSocket('ws://localhost:1080/ws-agent');
-        this.relaySocket.on('open', () => {
-            console.log('Connected to relay');
-            this.relaySocket?.send(JSON.stringify({ type: 'IDENTIFY', payload: { role: 'ui' } }));
-        });
-        this.relaySocket.on('error', (err) => {
-            if (!this.isStopped) {
-                console.error('[VHLWebUI] Relay socket error:', err.message);
-            }
-        });
-        this.relaySocket.on('close', () => {
-            if (this.isStopped) return;
-            console.log('[VHLWebUI] Relay socket closed, retrying in 3s...');
-            this.relayReconnectTimer = setTimeout(() => {
-                this.relaySocket = null;
-                this.connectToRelay();
-            }, 3000);
-        });
-        this.relaySocket.on('message', (data) => {
-            console.log('Received from relay:', data.toString());
-            try {
-                const msg = JSON.parse(data.toString());
-                
-                // Handle MESSAGE_FROM_AGENT from AOSM
-                if (msg.type === 'MESSAGE_FROM_AGENT' && msg.payload) {
-                    const gateMsg = msg.payload;
-                    if (gateMsg.receiver === 'HIL' && gateMsg.sender) {
-                        const agentId = gateMsg.sender;
-                        const messages = this.agentMessages.get(agentId) || [];
-                        const msgId = gateMsg.id || gateMsg.message_id || msg.id;
-                        if (!messages.find(m => (m.id || m.message_id) === msgId)) {
-                            const p = gateMsg?.payload;
-                            if (p && typeof p === 'object' && p.payload === null && p.outcome && p.category) {
-                                messages.push({
-                                    ...p,
-                                    text: `Task failed: ${p.outcome} (${p.category})`
-                                });
-                            } else {
-                                messages.push(p);
-                            }
-                            this.agentMessages.set(agentId, messages);
-                        }
-                    }
-                }
-                // Legacy/Direct GATE message handling
-                else if (msg.receiver === 'HIL' && msg.sender) {
-                    const agentId = msg.sender;
-                    const messages = this.agentMessages.get(agentId) || [];
-                    const msgId = msg.id || msg.message_id;
-                    if (!messages.find(m => (m.id || m.message_id) === msgId)) {
-                        messages.push(msg);
-                        this.agentMessages.set(agentId, messages);
-                    }
-                }
-            } catch (err) {
-                console.error('Error parsing relay message:', err);
-            }
-        });
-        this.relaySocket.on('close', () => {
-            console.log('Relay socket closed');
-            this.relaySocket = null;
-        });
-        this.relaySocket.on('error', (err) => {
-            console.error('Relay socket error:', err);
-            this.relaySocket = null;
-        });
-    }
-
     private setupGatewayServer() {
         if (this.isGatewayStarted) return;
         this.isGatewayStarted = true;
@@ -977,22 +757,7 @@ export class VHLWebUI {
         });
 
         this.gatewayServer.on('upgrade', (req, socket, head) => {
-            if (req.url && req.url.startsWith('/ws-agent')) {
-                console.log(`[Gateway Proxy] Upgrading WebSocket for /ws-agent`);
-                const agentProxy = httpProxy.createProxyServer({
-                    target: 'ws://127.0.0.1:1080',
-                    ws: true,
-                });
-                
-                agentProxy.on('error', (err, req, socket) => {
-                    console.error('[Gateway Proxy] WebSocket error:', err.message);
-                    socket.destroy();
-                });
-                
-                agentProxy.ws(req, socket, head);
-            } else {
-                proxy.ws(req, socket, head);
-            }
+            proxy.ws(req, socket, head);
         });
 
         this.gatewayServer.listen(this.GATEWAY_PORT, '0.0.0.0', () => {
@@ -1194,10 +959,6 @@ export class VHLWebUI {
 
     public async stop() {
         this.isStopped = true;
-        if (this.relayReconnectTimer) {
-            clearTimeout(this.relayReconnectTimer);
-            this.relayReconnectTimer = null;
-        }
         if (this.devServerProcess) {
             this.devServerProcess.kill();
             this.devServerProcess = null;
@@ -1211,10 +972,6 @@ export class VHLWebUI {
                 this.apiServer!.close(() => resolve());
             });
             this.apiServer = null;
-        }
-        if (this.relaySocket) {
-            this.relaySocket.terminate();
-            this.relaySocket = null;
         }
     }
 }
