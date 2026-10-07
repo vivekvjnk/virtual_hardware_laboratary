@@ -42,11 +42,11 @@ Do not use this skill to inspect peer session JSONL files or to replace a peer's
 
 | Subcommand | Purpose | Key Parameters |
 |---|---|---|
-| `send` | Dispatches task to a peer (**async by default**) | `--peer <name> --message "<text>" [--sync] [--timeout <sec>]` |
-| `status` | Checks task execution status or peer runtime metrics (auto-prunes callback queue) | `--task-id <id>` or `--peer <name> [--no-ack]` |
-| `wait` | Polls/waits for an async task to settle (auto-prunes callback queue) | `--task-id <id> [--timeout <sec>] [--interval <sec>] [--no-ack]` |
-| `cancel` | Aborts a running task on a remote peer | `--task-id <id>` |
-| `log` | Reads bounded trailing execution log lines from `.agents/tasks/` | `--task-id <id> [--tail <N>]` |
+| `send` | Dispatches task to a peer (**async by default**) | `--peer <name> --message "<text>" [--cluster <name>] [--sync] [--timeout <sec>]` |
+| `status` | Checks task execution status or peer runtime metrics (auto-prunes callback queue) | `--task-id <id>` or `--peer <name> [--cluster <name>] [--no-ack]` |
+| `wait` | Polls/waits for an async task to settle (auto-prunes callback queue) | `--task-id <id> [--cluster <name>] [--timeout <sec>] [--interval <sec>] [--no-ack]` |
+| `cancel` | Aborts a running task on a remote peer | `--task-id <id> [--cluster <name>]` |
+| `log` | Reads bounded trailing execution log lines from `.agents/tasks/` | `--task-id <id> [--cluster <name>] [--tail <N>]` |
 
 ### Resolving the Tool Path
 - **From skill directory:** `./tools/a2a_peer_call <subcommand> ...`
@@ -142,6 +142,17 @@ If you need to verify intermediate tool commands executed by the peer:
 ```bash
 .agents/skills/a2a-peer-dialing/tools/a2a_peer_call log --task-id c0697450-fbc3-4c6e-92ba-bd29e3885577 --tail 30
 ```
+
+### Pattern 4: Federated Multi-Cluster Delegation (Cross-Worktree Peer Dialing)
+In multi-cluster VHL setups where each module worktree operates an autonomous MOSAIC instance (ports 8000..8050), pass `--cluster <cluster_id>` to delegate across clusters:
+```bash
+# Dial Archy in sibling cluster 'communication-bridge'
+.agents/skills/a2a-peer-dialing/tools/a2a_peer_call send \
+  --cluster communication-bridge \
+  --peer archy \
+  --message "Confirm UART TX/RX pin polarity connecting to BQ79616 digital isolator U2"
+```
+The tool automatically discovers the target cluster's HTTP endpoint from `.agents/cluster_roster.json` and routes the A2A envelope directly.
 
 ## Verification
 
