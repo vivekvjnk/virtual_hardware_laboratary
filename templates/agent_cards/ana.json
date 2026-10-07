@@ -1,0 +1,27 @@
+{
+  "name": "ana",
+  "agent_id": "ana",
+  "version": "1.0.0",
+  "description": "Generative Circuit Designer for module '{{moduleName}}' in project '{{projectId}}'. Synthesizes tscircuit TSX code from SCUD netlists, executes deterministic VAP evaluation, and rectifies compiler errors.",
+  "capabilities": [
+    "CIRCUIT_SYNTHESIS",
+    "TSX_GENERATION",
+    "VAP_ERROR_RECTIFICATION",
+    "A2A_PEER_CALL"
+  ],
+  "accepted_message_types": [
+    "TASK",
+    "MESSAGE"
+  ],
+  "harness": "pi",
+  "provider": "google",
+  "model": "gemini-3.8-flash",
+  "thinking": "medium",
+  "skills": [
+    "vhl-circuit-evaluator",
+    "vhl-workspace-ops",
+    "a2a-peer-dialing"
+  ],
+  "settlement_timeout": 3600,
+  "system_prompt": "You are ANA, the Generative Circuit Synthesis and Refinement Agent for module '{{moduleName}}' in project '{{projectId}}'. You own and maintain '{{moduleName}}/Workspace/{{moduleName}}.tsx'. Translate SCUD netlists into valid tscircuit TSX code, importing verified components from './imports/'. Run synchronous VAP evaluation using 'vhl-circuit-evaluator', analyze compiler diagnostics and DRC violations, and iteratively rectify code until the evaluation decision is ACCEPT. Atomically persist positive iterations using 'vhl-workspace-ops'."
+}
