@@ -4,6 +4,8 @@ import { existsSync, statSync, readdirSync } from "node:fs";
 import path from "node:path";
 import sqlite3 from "sqlite3";
 import { open, Database } from "sqlite";
+import { PROJECT_ROOT } from "../config/paths.js";
+import { scaffoldModuleCluster, scaffoldRootCluster } from "./clusterScaffolding.js";
 
 export interface WorkspaceInfo {
     project_id: string | null;
@@ -386,6 +388,34 @@ export class VHLWorkspaceManager {
                     }
                 }
             }
+
+            // Provision .agents/ cluster in module worktree
+            const targetWt = this.worktrees[mod];
+            if (targetWt && existsSync(targetWt)) {
+                try {
+                    await scaffoldModuleCluster(
+                        targetWt,
+                        mod,
+                        this.actualProjectId || projectId,
+                        PROJECT_ROOT
+                    );
+                } catch (err: any) {
+                    console.warn(`[VHLWorkspaceManager] Cluster scaffolding note for ${mod}:`, err.message);
+                }
+            }
+        }
+
+        // Provision root worktree assembly cluster
+        if (this.stable_worktree && existsSync(this.stable_worktree)) {
+            try {
+                await scaffoldRootCluster(
+                    this.stable_worktree,
+                    this.actualProjectId || projectId,
+                    PROJECT_ROOT
+                );
+            } catch (err: any) {
+                console.warn("[VHLWorkspaceManager] Root cluster scaffolding note:", err.message);
+            }
         }
 
         return this.worktrees;
@@ -454,6 +484,17 @@ export class VHLWorkspaceManager {
             { source: zipPath ? "zip_bootstrap" : "empty_bootstrap" },
             "INITIALIZE: Project Bootstrap"
         );
+
+        // Provision root worktree assembly cluster
+        try {
+            await scaffoldRootCluster(
+                this.stable_worktree,
+                this.actualProjectId || projectId,
+                PROJECT_ROOT
+            );
+        } catch (err: any) {
+            console.warn("[VHLWorkspaceManager] Root cluster scaffolding note on create:", err.message);
+        }
 
         return this.stable_worktree;
     }
@@ -606,6 +647,20 @@ export class VHLWorkspaceManager {
 
         this.worktrees[moduleName] = moduleWorktreePath;
         this.project_modules.push(moduleName);
+
+        // Provision .agents/ cluster in newly added module worktree
+        if (existsSync(moduleWorktreePath)) {
+            try {
+                await scaffoldModuleCluster(
+                    moduleWorktreePath,
+                    moduleName,
+                    this.actualProjectId || projectId,
+                    PROJECT_ROOT
+                );
+            } catch (err: any) {
+                console.warn(`[VHLWorkspaceManager] Cluster scaffolding note for ${moduleName}:`, err.message);
+            }
+        }
 
         return moduleWorktreePath;
     }

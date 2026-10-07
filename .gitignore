@@ -2,7 +2,7 @@ dist/
 node_modules/
 tests/*.js
 .object_store/
-workspace/
+/workspace/
 eval_results/
 **__pycache__**
 incremental_log.log
