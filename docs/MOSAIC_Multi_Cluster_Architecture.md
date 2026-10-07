@@ -81,7 +81,7 @@ Every module worktree (e.g., `bms-project_e0505ca9_bms-monitor-module/`) hosts a
 │   │   ├── archy.json           # Module-specific prompt & capabilities
 │   │   ├── librarian.json
 │   │   └── ana.json
-│   ├── skills/                  # Symlinks to canonical VHL skills
+│   ├── skills/                  # Standalone ECP skill directories (manually updated / registry)
 │   │   ├── a2a-peer-dialing -> <runtime>/skills/a2a-peer-dialing
 │   │   ├── vhl-circuit-evaluator -> <runtime>/skills/vhl-circuit-evaluator
 │   │   ├── vhl-component-resolver -> <runtime>/skills/vhl-component-resolver
@@ -201,7 +201,7 @@ Rather than requiring developers to manually spawn 8 background terminal process
 2. **Lifecycle Management**:
    - **On `POST /api/load-project`**:
      * Detects project modules and worktree paths via `VHLWorkspaceManager`.
-     * Scaffolds `.agents/` and symlinks canonical ECP skills if not present.
+     * Scaffolds `.agents/` and provisions canonical ECP skills if not present.
      * Writes updated `cluster_roster.json` into each worktree.
      * Spawns the Root Cluster and active Module Clusters via `mosaic host`.
    - **On `POST /api/close-project` or Server Shutdown**:
@@ -230,8 +230,7 @@ vhl-runtime-mosaic/.agents/skills/
 ```
 
 During worktree initialization:
-- `ClusterSupervisor` creates symlinks from `<worktree>/.agents/skills/<skill>` pointing to the canonical skills in `vhl-runtime-mosaic/.agents/skills/`.
-- Updates to tool implementations or skill guidelines instantly propagate to all active clusters without file duplication.
+- `ClusterSupervisor` provisions standalone skill directories in `<worktree>/.agents/skills/<skill>` from canonical skills in `vhl-runtime-mosaic/.agents/skills/`. ECPs remain independent directories for manual updates or future registry distribution without symlinks.
 
 ---
 

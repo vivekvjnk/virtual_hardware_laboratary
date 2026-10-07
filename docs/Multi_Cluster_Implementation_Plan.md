@@ -31,7 +31,7 @@ This document specifies the concrete implementation steps, components, and verif
 ├────────────────────────────────────────────────────────────────────────────────────────┤
 │  STEP 1: Worktree Cluster Scaffolding & Canonical Skill Distribution                   │
 │  • Implement src/workspace/clusterScaffolding.ts                                       │
-│  • Provision .agents/ in module worktrees with symlinks to canonical ECP skills        │
+│  • Provision .agents/ in module worktrees with standalone canonical ECP skills         │
 │  • Generate module-scoped cards: archy.json, librarian.json, ana.json                  │
 ├────────────────────────────────────────────────────────────────────────────────────────┤
 │  STEP 2: Root Assembly Cluster Scaffolding & Namespaced Triads                         │
@@ -65,7 +65,7 @@ This document specifies the concrete implementation steps, components, and verif
 1. **Implement `src/workspace/clusterScaffolding.ts`**:
    - `scaffoldModuleCluster(worktreePath: string, moduleName: string, projectId: string)`:
      * Creates `<worktreePath>/.agents/` structure: `well_known/`, `skills/`, `workflows/`, `sessions/`, `tasks/`.
-     * **Symlinks Canonical Skills**: Links skills from `vhl-runtime-mosaic/.agents/skills/` into `<worktreePath>/.agents/skills/`:
+     * **Provisions Canonical Skills**: Copies standalone skill directories from `vhl-runtime-mosaic/.agents/skills/` into `<worktreePath>/.agents/skills/`:
        - `a2a-peer-dialing`
        - `vhl-circuit-evaluator`
        - `vhl-component-resolver`
@@ -79,7 +79,7 @@ This document specifies the concrete implementation steps, components, and verif
    - In `setupWorktrees(projectId)`: Automatically invoke `scaffoldModuleCluster` for every discovered or created module worktree.
 
 **Definition of Done (DoD)**:
-- Calling `setupWorktrees()` on a project results in every module worktree possessing a valid `.agents/` folder with passing `card_validator.py` checks and working ECP tool symlinks.
+- Calling `setupWorktrees()` on a project results in every module worktree possessing a valid `.agents/` folder with passing `card_validator.py` checks and working standalone ECP tool directories.
 
 ---
 
@@ -90,7 +90,7 @@ This document specifies the concrete implementation steps, components, and verif
 #### Key Tasks:
 1. **Implement `scaffoldRootCluster(rootWorktreePath: string, projectId: string, assemblies: string[])`**:
    - Discovers or receives the list of assemblies (e.g., `control-circuit`, `power-circuit`, `index.circuit`).
-   - Symlinks canonical ECP skills into `rootWorktreePath/.agents/skills/`.
+   - Provisions canonical ECP skills into `rootWorktreePath/.agents/skills/` as standalone directories.
    - Generates namespaced Agent Cards under `rootWorktreePath/.agents/well_known/`:
      * `<assembly_prefix>_archy.json`: Lead assembly architect. Ingests `system-boundary.md`, communicates with module Archies via A2A, and oversees top-level TSX wiring.
      * `<assembly_prefix>_ana.json`: Assembly TSX code generator and interconnect router.
@@ -174,7 +174,7 @@ This document specifies the concrete implementation steps, components, and verif
 #### Key Tasks:
 1. **Create `tests/e2e/multi_cluster.test.ts`**:
    - Test Scenarios:
-     1. Scaffolding verification: verifies `.agents/` structure and symlinks in synthetic module worktrees.
+     1. Scaffolding verification: verifies `.agents/` structure and standalone skills in synthetic module worktrees.
      2. Cluster Supervisor: verifies multi-port allocation and clean process startup/teardown.
      3. Roster Generation: verifies `cluster_roster.json` is correctly populated with URLs and roles.
      4. Real Project Verification: tests loading `/Users/vivek/Virtual_Labs/bms-project_e0505ca9`, asserting that the root cluster and all 7 module clusters are correctly recognized and assigned ports `8000..8007`.
