@@ -15,6 +15,7 @@ import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
 import { VHLWorkspaceManager } from './vhlWorkspaceManager.js';
 import { evaluateCircuit } from '../vap/evaluator.js';
+import { ClusterSupervisor } from './clusterSupervisor.js';
 
 export async function isValidVhlProject(
     projectPath: string,
@@ -107,6 +108,7 @@ export class VHLWebUI {
     private apiServer: http.Server | null = null;
     private fileSystemProvider: LocalFileSystemProvider;
     private workspaceManager: VHLWorkspaceManager;
+    private clusterSupervisor: ClusterSupervisor;
 
     private readonly GATEWAY_PORT = parseInt(process.env.VHL_WEBUI_PORT || "3020");
     private readonly TSC_DEV_PORT = 3021;
@@ -125,6 +127,7 @@ export class VHLWebUI {
         });
         this.API_PORT = customApiPort !== undefined ? customApiPort : parseInt(process.env.VHL_API_PORT || "3022");
         this.workspaceManager = new VHLWorkspaceManager(this.workspaceDir);
+        this.clusterSupervisor = new ClusterSupervisor();
         this.fileSystemProvider = new LocalFileSystemProvider(this.workspaceDir);
         this.setupAPIServer();
     }
@@ -595,6 +598,8 @@ export class VHLWebUI {
                 const worktrees = await this.workspaceManager.setupWorktrees(project_id);
                 const info = await this.workspaceManager.getWorkspaceInfo(project_id);
 
+                await this.clusterSupervisor.generateClusterRoster(project_id, projectRoot, worktrees);
+
                 setProjectState({
                     ...projectContext,
                     project_id,
@@ -697,6 +702,37 @@ export class VHLWebUI {
             }
         });
 
+
+        app.get('/api/clusters', (req, res) => {
+            res.status(200).send({ clusters: this.clusterSupervisor.getClusters() });
+        });
+
+        app.post('/api/clusters/:id/start', async (req, res) => {
+            const clusterId = (Array.isArray(req.params.id) ? req.params.id[0] : req.params.id) as string;
+            const currentWorktrees = getProjectState().worktrees || {};
+            const worktreePath = currentWorktrees[clusterId] || (clusterId === 'root' ? getProjectState().project_root_dir : null);
+
+            if (!worktreePath) {
+                return res.status(404).send({ error: `Cluster worktree not found for '${clusterId}'` });
+            }
+
+            try {
+                const instance = await this.clusterSupervisor.startCluster(clusterId, worktreePath);
+                res.status(200).send({ status: 'Cluster started', cluster: instance });
+            } catch (err: any) {
+                res.status(500).send({ error: `Failed to start cluster: ${err.message}` });
+            }
+        });
+
+        app.post('/api/clusters/:id/stop', async (req, res) => {
+            const clusterId = (Array.isArray(req.params.id) ? req.params.id[0] : req.params.id) as string;
+            try {
+                await this.clusterSupervisor.stopCluster(clusterId);
+                res.status(200).send({ status: 'Cluster stopped', clusterId });
+            } catch (err: any) {
+                res.status(500).send({ error: `Failed to stop cluster: ${err.message}` });
+            }
+        });
 
         app.post('/api/vhl-editor/rpc', async (req, res) => {
             const { action, params } = req.body;
@@ -959,6 +995,9 @@ export class VHLWebUI {
 
     public async stop() {
         this.isStopped = true;
+        if (this.clusterSupervisor) {
+            await this.clusterSupervisor.stopAllClusters().catch(() => {});
+        }
         if (this.devServerProcess) {
             this.devServerProcess.kill();
             this.devServerProcess = null;
