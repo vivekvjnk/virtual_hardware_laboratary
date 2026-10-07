@@ -183,12 +183,7 @@ export class VHLWorkspaceManager {
         if (this.project_root && existsSync(path.join(this.project_root, ".vhl", "state.db"))) {
             return path.join(this.project_root, ".vhl", "state.db");
         }
-        if (this.stable_worktree && existsSync(path.join(this.stable_worktree, ".vhl", "state.db"))) {
-            return path.join(this.stable_worktree, ".vhl", "state.db");
-        }
-        return this.stable_worktree
-            ? path.join(this.stable_worktree, ".vhl", "state.db")
-            : path.join(this.project_root || this.workspaceRoot, ".vhl", "state.db");
+        return path.join(this.project_root || this.workspaceRoot, ".vhl", "state.db");
     }
 
     /**
@@ -196,76 +191,24 @@ export class VHLWorkspaceManager {
      * Resolves project root and stable worktree, loads modules and settings from SQLite.
      */
     async loadProject(projectId: string): Promise<string> {
-        let projectRoot = path.isAbsolute(projectId) ? path.resolve(projectId) : path.resolve(this.workspaceRoot, projectId);
-
-        // Fallback search if directory does not exist directly under workspaceRoot
-        if (!existsSync(projectRoot) && !path.isAbsolute(projectId)) {
-            const alt1 = path.resolve(this.workspaceRoot, "..", projectId);
-            const alt2 = path.resolve(this.workspaceRoot, "../..", projectId);
-            if (existsSync(alt1)) projectRoot = alt1;
-            else if (existsSync(alt2)) projectRoot = alt2;
+        const projectRoot = path.isAbsolute(projectId) ? path.resolve(projectId) : path.resolve(this.workspaceRoot, projectId);
+        if (!existsSync(projectRoot)) {
+            throw new Error(`Project directory not found: ${projectRoot}`);
         }
 
         this.project_root = projectRoot;
         this.actualProjectId = path.basename(projectRoot);
         this.project_id = this.actualProjectId;
 
-        // Detect stable_worktree flexibly:
-        const candidate = path.join(this.project_root, `${this.actualProjectId}_root`);
-        if (existsSync(candidate) && statSync(candidate).isDirectory()) {
-            this.stable_worktree = candidate;
-        } else if (existsSync(path.join(this.project_root, "root")) && statSync(path.join(this.project_root, "root")).isDirectory()) {
-            this.stable_worktree = path.join(this.project_root, "root");
-        } else if (existsSync(path.join(this.project_root, ".git"))) {
-            this.stable_worktree = this.project_root;
-        } else {
-            let foundRoot: string | null = null;
-            if (existsSync(this.project_root)) {
-                try {
-                    const entries = readdirSync(this.project_root, { withFileTypes: true });
-                    const rootEntry = entries.find(e => e.isDirectory() && e.name.endsWith("_root"));
-                    if (rootEntry) {
-                        foundRoot = path.join(this.project_root, rootEntry.name);
-                    }
-                } catch {}
-            }
-            this.stable_worktree = foundRoot || candidate;
-        }
-
+        this.stable_worktree = path.join(this.project_root, `${this.actualProjectId}_root`);
         this.worktrees = {};
         this.worktrees["root"] = this.stable_worktree;
 
-        // Discover state.db location
-        let dbPath: string | null = null;
-        const projectDb = path.join(this.project_root, ".vhl", "state.db");
-        const stableDb = path.join(this.stable_worktree, ".vhl", "state.db");
-        const candidateDb = path.join(candidate, ".vhl", "state.db");
-
-        if (existsSync(projectDb)) {
-            dbPath = projectDb;
-        } else if (existsSync(stableDb)) {
-            dbPath = stableDb;
-        } else if (existsSync(candidateDb)) {
-            dbPath = candidateDb;
-        } else if (existsSync(this.project_root)) {
-            try {
-                const entries = readdirSync(this.project_root, { withFileTypes: true });
-                for (const entry of entries) {
-                    if (entry.isDirectory() && entry.name.endsWith("_root")) {
-                        const d = path.join(this.project_root, entry.name, ".vhl", "state.db");
-                        if (existsSync(d)) {
-                            dbPath = d;
-                            break;
-                        }
-                    }
-                }
-            } catch {}
-        }
-
+        const dbPath = path.join(this.project_root, ".vhl", "state.db");
         this.project_modules = [];
         this.circuit_name = {};
 
-        if (dbPath && existsSync(dbPath)) {
+        if (existsSync(dbPath)) {
             try {
                 const db = await this.getDatabase(dbPath);
                 const tableCheck = await db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='project_modules'");
@@ -313,16 +256,13 @@ export class VHLWorkspaceManager {
             return this.worktrees;
         }
 
-        const gitDir = path.join(this.stable_worktree, ".git");
-        const projectGitDir = path.join(this.project_root, ".git");
-        const hasGit = existsSync(gitDir) || existsSync(projectGitDir);
-
+        const hasGit = existsSync(path.join(this.project_root, ".git"));
         if (!hasGit) {
             // No git repo (e.g. initial fixture before git init), return discovered directory worktrees
             return this.worktrees;
         }
 
-        const gitCwd = existsSync(gitDir) ? this.stable_worktree : this.project_root;
+        const gitCwd = this.project_root;
 
         // Run 'git worktree repair' on project_root subdirectories
         try {

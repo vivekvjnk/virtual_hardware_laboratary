@@ -573,13 +573,7 @@ export class VHLWebUI {
             }
             console.log(`[VHLWebUI] Loading project ${project_id}`);
             
-            let projectPath = path.isAbsolute(project_id) ? project_id : path.join(this.workspaceDir, project_id);
-            if (!existsSync(projectPath) && !path.isAbsolute(project_id)) {
-                const alt1 = path.resolve(this.workspaceDir, '..', project_id);
-                const alt2 = path.resolve(this.workspaceDir, '../..', project_id);
-                if (existsSync(alt1)) projectPath = alt1;
-                else if (existsSync(alt2)) projectPath = alt2;
-            }
+            const projectPath = path.isAbsolute(project_id) ? project_id : path.join(this.workspaceDir, project_id);
 
             if (!existsSync(projectPath)) {
                 return res.status(404).send({ error: `Project directory not found: ${project_id}` });
