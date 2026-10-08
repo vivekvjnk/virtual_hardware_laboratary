@@ -593,6 +593,7 @@ export class VHLWebUI {
                 const info = await this.workspaceManager.getWorkspaceInfo(project_id);
 
                 await this.clusterSupervisor.generateClusterRoster(project_id, projectRoot, worktrees);
+                const startedClusters = await this.clusterSupervisor.startAllClusters();
 
                 setProjectState({
                     ...projectContext,
@@ -609,7 +610,8 @@ export class VHLWebUI {
                     status: 'Project loaded successfully',
                     project_id,
                     project_root: projectRoot,
-                    workspace_info: info
+                    workspace_info: info,
+                    startedClusters
                 });
             } catch (err: any) {
                 console.error(`[VHLWebUI] Error loading project ${project_id}:`, err);
@@ -699,6 +701,15 @@ export class VHLWebUI {
 
         app.get('/api/clusters', (req, res) => {
             res.status(200).send({ clusters: this.clusterSupervisor.getClusters() });
+        });
+
+        app.post('/api/clusters/start-all', async (req, res) => {
+            try {
+                const clusters = await this.clusterSupervisor.startAllClusters();
+                res.status(200).send({ status: 'All clusters started', clusters });
+            } catch (err: any) {
+                res.status(500).send({ error: `Failed to start all clusters: ${err.message}` });
+            }
         });
 
         app.post('/api/clusters/:id/start', async (req, res) => {

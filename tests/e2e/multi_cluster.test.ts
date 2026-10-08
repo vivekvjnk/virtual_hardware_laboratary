@@ -161,16 +161,16 @@ print("CARDS_OK")
             });
 
             // Verify port allocation
-            expect(roster.clusters.root.port).toBe(8000);
-            expect(roster.clusters.root.url).toBe('http://127.0.0.1:8000');
+            expect(roster.clusters.root.port).toBeGreaterThanOrEqual(8000);
+            expect(roster.clusters.root.url).toBe(`http://127.0.0.1:${roster.clusters.root.port}`);
             expect(roster.clusters.root.type).toBe('assembly');
 
-            expect(roster.clusters.mod_sensor.port).toBe(8001);
-            expect(roster.clusters.mod_sensor.url).toBe('http://127.0.0.1:8001');
+            expect(roster.clusters.mod_sensor.port).toBeGreaterThan(roster.clusters.root.port);
+            expect(roster.clusters.mod_sensor.url).toBe(`http://127.0.0.1:${roster.clusters.mod_sensor.port}`);
             expect(roster.clusters.mod_sensor.type).toBe('module');
 
-            expect(roster.clusters.mod_telemetry.port).toBe(8002);
-            expect(roster.clusters.mod_telemetry.url).toBe('http://127.0.0.1:8002');
+            expect(roster.clusters.mod_telemetry.port).toBeGreaterThan(roster.clusters.mod_sensor.port);
+            expect(roster.clusters.mod_telemetry.url).toBe(`http://127.0.0.1:${roster.clusters.mod_telemetry.port}`);
             expect(roster.clusters.mod_telemetry.type).toBe('module');
 
             // Verify cluster_roster.json is written into all worktrees
@@ -179,9 +179,9 @@ print("CARDS_OK")
                 expect(existsSync(rosterFile)).toBe(true);
                 const content = JSON.parse(await fs.readFile(rosterFile, 'utf-8'));
                 expect(content.project_id).toBe(PROJECT_NAME);
-                expect(content.clusters.root.port).toBe(8000);
-                expect(content.clusters.mod_sensor.port).toBe(8001);
-                expect(content.clusters.mod_telemetry.port).toBe(8002);
+                expect(content.clusters.root.port).toBe(roster.clusters.root.port);
+                expect(content.clusters.mod_sensor.port).toBe(roster.clusters.mod_sensor.port);
+                expect(content.clusters.mod_telemetry.port).toBe(roster.clusters.mod_telemetry.port);
             }
         });
     });
@@ -219,6 +219,7 @@ print("CARDS_OK")
             expect(loadRes.status).toBe(200);
             const loadData = await loadRes.json();
             expect(loadData.status).toBe('Project loaded successfully');
+            expect(loadData.startedClusters).toBeDefined();
 
             // GET /api/clusters
             const clusterRes = await fetch(`${baseUrl}/api/clusters`);
@@ -228,14 +229,24 @@ print("CARDS_OK")
 
             const clusterMap = new Map(clusterData.clusters.map((c: any) => [c.clusterId, c]));
             expect(clusterMap.has('root')).toBe(true);
-            expect(clusterMap.get('root').port).toBe(8000);
-            expect(clusterMap.get('root').url).toBe('http://127.0.0.1:8000');
+            expect(clusterMap.get('root').port).toBeGreaterThanOrEqual(8000);
+            expect(clusterMap.get('root').url).toBe(`http://127.0.0.1:${clusterMap.get('root').port}`);
 
             expect(clusterMap.has('mod_sensor')).toBe(true);
-            expect(clusterMap.get('mod_sensor').port).toBe(8001);
+            expect(clusterMap.get('mod_sensor').port).toBeGreaterThan(clusterMap.get('root').port);
 
             expect(clusterMap.has('mod_telemetry')).toBe(true);
-            expect(clusterMap.get('mod_telemetry').port).toBe(8002);
+            expect(clusterMap.get('mod_telemetry').port).toBeGreaterThan(clusterMap.get('mod_sensor').port);
+        });
+
+        it('supports on-demand booting of all clusters via POST /api/clusters/start-all', async () => {
+            const startAllRes = await fetch(`${baseUrl}/api/clusters/start-all`, {
+                method: 'POST'
+            });
+            expect(startAllRes.status).toBe(200);
+            const startAllData = await startAllRes.json();
+            expect(startAllData.status).toBe('All clusters started');
+            expect(Array.isArray(startAllData.clusters)).toBe(true);
         });
     });
 
@@ -293,11 +304,12 @@ print("CARDS_OK")
             const supervisor = new ClusterSupervisor();
             const roster = await supervisor.generateClusterRoster('bms-project_e0505ca9', projectRoot, worktrees);
 
-            // Invariant: Root port is 8000
-            expect(roster.clusters.root.port).toBe(8000);
+            // Invariant: Root port is >= 8000 and URL matches
+            expect(roster.clusters.root.port).toBeGreaterThanOrEqual(8000);
+            expect(roster.clusters.root.url).toBe(`http://127.0.0.1:${roster.clusters.root.port}`);
             expect(roster.clusters.root.type).toBe('assembly');
 
-            // Invariant: All 7 modules are allocated ports in range 8001..8007
+            // Invariant: All 7 modules are allocated unique ports
             const expectedModules = [
                 'bms-monitor-module',
                 'communication-bridge',
@@ -308,13 +320,17 @@ print("CARDS_OK")
                 'switching_circuit'
             ];
 
+            const ports = new Set<number>();
+            ports.add(roster.clusters.root.port);
             for (const mod of expectedModules) {
                 expect(roster.clusters[mod]).toBeDefined();
-                expect(roster.clusters[mod].port).toBeGreaterThanOrEqual(8001);
-                expect(roster.clusters[mod].port).toBeLessThanOrEqual(8007);
+                expect(roster.clusters[mod].port).toBeGreaterThan(roster.clusters.root.port);
+                expect(roster.clusters[mod].url).toBe(`http://127.0.0.1:${roster.clusters[mod].port}`);
                 expect(roster.clusters[mod].type).toBe('module');
                 expect(roster.clusters[mod].lead).toBe('archy');
+                ports.add(roster.clusters[mod].port);
             }
+            expect(ports.size).toBe(8);
 
             // Invariant: Root worktree has assembly triads for control_circuit and power_circuit
             const rootAgentsDir = path.join(BMS_PROJECT_PATH, 'bms-project_e0505ca9_root', '.agents', 'well_known');

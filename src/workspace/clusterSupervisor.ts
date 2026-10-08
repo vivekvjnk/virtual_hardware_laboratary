@@ -83,30 +83,6 @@ export class ClusterSupervisor {
     }
 
     /**
-     * Dynamically allocates an available port for a cluster
-     */
-    public allocatePort(clusterId: string): number {
-        if (clusterId === "root") {
-            this.portAllocations.set("root", this.ROOT_PORT);
-            return this.ROOT_PORT;
-        }
-
-        if (this.portAllocations.has(clusterId)) {
-            return this.portAllocations.get(clusterId)!;
-        }
-
-        const allocatedPorts = new Set(this.portAllocations.values());
-        for (let port = this.MODULE_PORT_START; port <= this.MODULE_PORT_END; port++) {
-            if (!allocatedPorts.has(port)) {
-                this.portAllocations.set(clusterId, port);
-                return port;
-            }
-        }
-
-        throw new Error(`Exceeded maximum cluster port allocation range (${this.MODULE_PORT_START}..${this.MODULE_PORT_END})`);
-    }
-
-    /**
      * Probes if a port is actively accepting connections
      */
     private probePort(port: number, timeoutMs = 250): Promise<boolean> {
@@ -142,6 +118,83 @@ export class ClusterSupervisor {
     }
 
     /**
+     * Checks if a port is available to be bound
+     */
+    public async isPortAvailable(port: number): Promise<boolean> {
+        // 1. Probe if any server responds on TCP
+        const inUse = await this.probePort(port, 150);
+        if (inUse) return false;
+
+        // 2. Check if we can bind a server to the port
+        return new Promise<boolean>((resolve) => {
+            const server = net.createServer();
+            server.once("error", () => {
+                resolve(false);
+            });
+            server.once("listening", () => {
+                server.close(() => resolve(true));
+            });
+            server.listen(port, "127.0.0.1");
+        });
+    }
+
+    /**
+     * Dynamically allocates an available port for a cluster, avoiding host port conflicts
+     */
+    public async allocatePort(clusterId: string): Promise<number> {
+        if (this.portAllocations.has(clusterId)) {
+            const existingPort = this.portAllocations.get(clusterId)!;
+            const instance = this.clusters.get(clusterId);
+            // If already running on this port, keep it
+            if (instance && instance.status === "running") {
+                return existingPort;
+            }
+            // If port is still available on host, keep it
+            if (await this.isPortAvailable(existingPort)) {
+                return existingPort;
+            }
+        }
+
+        const currentlyAllocated = new Set(this.portAllocations.values());
+
+        // Check if root port 8000 is available on the host
+        const isRoot8000Available = await this.isPortAvailable(this.ROOT_PORT);
+
+        // If port 8000 is occupied (e.g. by orchestrator or another server),
+        // shift root to 8100 and modules to 8101..8150 (or next free block)
+        const effectiveRootStart = isRoot8000Available ? 8000 : 8100;
+        const moduleRangeStart = isRoot8000Available ? 8001 : 8101;
+        const moduleRangeEnd = isRoot8000Available ? 8050 : 8150;
+
+        if (clusterId === "root") {
+            let portCandidate = effectiveRootStart;
+            while (currentlyAllocated.has(portCandidate) || !(await this.isPortAvailable(portCandidate))) {
+                portCandidate++;
+            }
+            this.portAllocations.set("root", portCandidate);
+            return portCandidate;
+        }
+
+        // Module clusters
+        for (let port = moduleRangeStart; port <= moduleRangeEnd; port++) {
+            if (!currentlyAllocated.has(port) && (await this.isPortAvailable(port))) {
+                this.portAllocations.set(clusterId, port);
+                return port;
+            }
+        }
+
+        // Secondary fallback search if range exhausted
+        for (let port = 8200; port <= 8300; port++) {
+            if (!currentlyAllocated.has(port) && (await this.isPortAvailable(port))) {
+                this.portAllocations.set(clusterId, port);
+                return port;
+            }
+        }
+
+        throw new Error(`Exceeded maximum cluster port allocation range for cluster '${clusterId}'`);
+    }
+
+    /**
      * Generates and writes cluster_roster.json across all active worktrees
      */
     public async generateClusterRoster(
@@ -155,10 +208,14 @@ export class ClusterSupervisor {
             clusters: {}
         };
 
-        // 1. Build roster map
-        for (const [clusterId, wtPath] of Object.entries(worktrees)) {
+        // Ensure 'root' is processed first so it gets the base root port
+        const entries = Object.entries(worktrees);
+        entries.sort(([a], [b]) => (a === "root" ? -1 : b === "root" ? 1 : a.localeCompare(b)));
+
+        // 1. Build roster map with dynamically allocated non-conflicting ports
+        for (const [clusterId, wtPath] of entries) {
             const isRoot = clusterId === "root";
-            const port = this.allocatePort(clusterId);
+            const port = await this.allocatePort(clusterId);
             const url = `http://127.0.0.1:${port}`;
 
             roster.clusters[clusterId] = {
@@ -215,7 +272,7 @@ export class ClusterSupervisor {
         worktreePath: string,
         port?: number
     ): Promise<ClusterInstance> {
-        const allocatedPort = port || this.allocatePort(clusterId);
+        const allocatedPort = port || (await this.allocatePort(clusterId));
         const url = `http://127.0.0.1:${allocatedPort}`;
         const isRoot = clusterId === "root";
 
@@ -255,7 +312,8 @@ export class ClusterSupervisor {
             "host",
             "--workspace", worktreePath,
             "--port", String(allocatedPort),
-            "--strict-port"
+            "--strict-port",
+            "--no-reload"
         ];
 
         console.log(`[ClusterSupervisor] Spawning cluster '${clusterId}' on port ${allocatedPort} via: ${mosaicBin} ${args.join(" ")}`);
@@ -301,7 +359,7 @@ export class ClusterSupervisor {
                     throw new Error(`Process terminated prematurely: ${stderrBuffer.slice(-200)}`);
                 }
 
-                const listening = await this.probePort(allocatedPort, 200);
+                const listening = await this.probePort(allocatedPort, 150);
                 if (listening) {
                     isReady = true;
                     break;
@@ -326,6 +384,29 @@ export class ClusterSupervisor {
         }
 
         return instance;
+    }
+
+    /**
+     * Starts all registered clusters concurrently
+     */
+    public async startAllClusters(): Promise<ClusterInstance[]> {
+        console.log(`[ClusterSupervisor] Starting all ${this.clusters.size} clusters...`);
+        const clusterIds = Array.from(this.clusters.keys());
+
+        const promises = clusterIds.map(async (id) => {
+            const instance = this.clusters.get(id)!;
+            try {
+                return await this.startCluster(id, instance.worktreePath, instance.port);
+            } catch (err: any) {
+                console.error(`[ClusterSupervisor] Error starting cluster '${id}':`, err.message);
+                instance.status = "error";
+                instance.error = err.message;
+                return instance;
+            }
+        });
+
+        const results = await Promise.all(promises);
+        return results;
     }
 
     /**
