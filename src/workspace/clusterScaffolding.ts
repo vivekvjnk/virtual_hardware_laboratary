@@ -43,7 +43,35 @@ export async function scaffoldModuleCluster(
     await fs.mkdir(sessionsDir, { recursive: true });
     await fs.mkdir(tasksDir, { recursive: true });
 
-    // 2. Provision canonical skills into module worktree as standalone directories (no symlinks)
+    // 2. Provision ground-up module ECPs from templates/ecp into module worktree
+    const moduleEcps = [
+        "module-synthesis-workflow",
+        "module-cluster-orchestrator",
+        "schematic-asset-analyst",
+        "vhl-workspace-ops"
+    ];
+
+    const ecpTemplatesDir = path.join(runtimeRoot, "templates", "ecp");
+    for (const ecp of moduleEcps) {
+        const sourceEcpPath = path.join(ecpTemplatesDir, ecp);
+        const targetEcpPath = path.join(skillsDir, ecp);
+
+        if (existsSync(sourceEcpPath)) {
+            try {
+                const stat = await fs.lstat(targetEcpPath).catch(() => null);
+                if (stat && stat.isSymbolicLink()) {
+                    await fs.unlink(targetEcpPath);
+                }
+                if (!existsSync(targetEcpPath)) {
+                    await fs.cp(sourceEcpPath, targetEcpPath, { recursive: true });
+                }
+            } catch (err: any) {
+                console.warn(`[clusterScaffolding] Warning provisioning ECP '${ecp}' to ${targetEcpPath}:`, err.message);
+            }
+        }
+    }
+
+    // Provision canonical skills into module worktree as standalone directories (no symlinks)
     const canonicalSkills = [
         "a2a-peer-dialing",
         "vhl-circuit-evaluator",
