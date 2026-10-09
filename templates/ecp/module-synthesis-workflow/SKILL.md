@@ -49,10 +49,9 @@ The `module-synthesis-workflow` capability package establishes the authoritative
   4. `4. Netlist Connectivity & Signal Flow`: Detailed netlist mapping internal ASIC pins to external module boundary ports.
   5. `5. Uncertainties, Assumptions & Confidence`: Explicit technical uncertainties (No Silent Inference rule).
 - **Definition of Done (DoD - Gate 1)**:
-  1. `<module_name>.scud` exists on disk under `<module_name>/Workspace/<module_name>.scud`.
+  1. `<module_name>.scud` exists on disk under `<module_name>/<module_name>.scud` (or module root).
   2. All 5 mandatory sections are completely populated in exact order.
   3. No unverified assumptions exist without explicit notation in Section 5.
-  4. The temporary status signal `IN_PROGRESS` is removed once initial synthesis is complete.
 
 ---
 

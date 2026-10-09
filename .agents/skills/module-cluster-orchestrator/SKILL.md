@@ -111,8 +111,8 @@ Archy MUST escalate to the Human Agent under two strict conditions:
 
 ### Escalation Format
 When escalating:
-1. Append the literal string `IN_PROGRESS` to the end of `<module_name>.scud`.
+1. Ensure current findings and assumptions are reflected in Section 5 of `<module_name>.scud`.
 2. Format a concise technical brief to the human peer:
-   - **Root Cause**: Specific error lines from VAP logs.
+   - **Root Cause**: Specific error lines from VAP logs or conflicting specs.
    - **Failed Rectification History**: Summary of what Librarian and ANA attempted across the 3 iterations.
    - **Specific Decision Required**: Present clear, actionable engineering choices (e.g., Option A: override pin mapping; Option B: replace component with alternate part).
