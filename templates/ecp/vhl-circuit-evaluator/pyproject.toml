@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vhl-circuit-evaluator"
+version = "1.0.0"
+description = "Deterministic circuit evaluation and diagnostic taxonomy engine for tscircuit"
+authors = [{ name = "MOSAIC-Team" }]
+license = { text = "Apache-2.0" }
+readme = "SKILL.md"
+requires-python = ">=3.9"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]

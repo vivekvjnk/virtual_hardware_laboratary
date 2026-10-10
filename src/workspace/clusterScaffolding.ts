@@ -50,6 +50,8 @@ export async function scaffoldModuleCluster(
         "schematic-asset-analyst",
         "component-procurement-workflow",
         "tsci-component-resolver",
+        "tscircuit-circuit-designer",
+        "vhl-circuit-evaluator",
         "vhl-workspace-ops"
     ];
 

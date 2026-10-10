@@ -1,109 +1,119 @@
 ---
 name: vhl-circuit-evaluator
-description: Synchronously evaluates and validates tscircuit hardware designs using the VAP evaluation engine. Detects compilation errors, DRC violations, missing footprints, pin overlaps, and floating nets. Use whenever authoring, updating, or reviewing circuit TSX components before promotion to stable branches.
+description: Standalone circuit evaluation and diagnostic taxonomy engine for tscircuit designs. Absorbs legacy VAP into a deterministic local tool. Executes tsci build, classifies diagnostics (syntax, pin mismatch, unrouted ports, footprint errors), strips ANSI control sequences, and provides configurable non-terminating timeout warnings.
 license: Apache-2.0
 metadata:
   author: MOSAIC-Team
   version: "1.0"
-  category: hardware-evaluation
+  category: circuit-evaluation
   tags:
+    - evaluation
     - vap
-    - tscircuit
-    - circuit-evaluation
     - drc
-    - validation
+    - tscircuit
+    - error-taxonomy
 ---
 
 # VHL Circuit Evaluator
 
 ## Overview
 
-The `vhl-circuit-evaluator` capability package provides deterministic, synchronous evaluation of tscircuit TSX hardware design files. It encapsulates the VHL ANA Process (VAP) evaluation pipeline, executing `tsci build` in an isolated Copy-On-Write (COW) workspace, stripping ANSI control sequences, analyzing compiler diagnostics, and producing an authoritative `ACCEPT` or `REJECT` decision.
-
-## When to use this skill
-
-- Evaluate a newly authored or modified circuit TSX file before committing or merging.
-- Diagnose tscircuit compiler failures, syntax errors, or type incompatibilities.
-- Check Design Rule Check (DRC) violations, such as missing footprints, unconnected pins, or trace clearances.
-- Verify whether all imported submodules or library footprints compile successfully into valid `circuit.json`.
-
-Do not use this skill to resolve missing component footprints; delegate that to `vhl-component-resolver` when evaluation reports missing footprints.
-
-## Inputs / Prerequisites
-
-- An active `vhl-runtime-mosaic` instance running (default API port: `3022` or env `VHL_API_PORT`).
-- Either:
-  1. Direct path to a circuit TSX file via `--file <path>`.
-  2. Module name in an active project via `--module <module_name> [--circuit <circuit_name>] [--project <project_id>]`.
+The `vhl-circuit-evaluator` capability package absorbs the legacy Virtual ANA Process (VAP) into an authoritative, standalone Python package and CLI tool (`tools/circuit_evaluator`). It executes `tsci build` against circuit TSX files, strips all ANSI escape codes, extracts structured diagnostic errors across a regex-based classification taxonomy, and enforces non-terminating timeout warnings giving agents full decision authority.
 
 ---
 
-## Tool Assets & Usage
+## Tool Assets & Execution
 
-| Tool | Purpose | Key Parameters |
+| Tool | Subcommand | Purpose | Key Parameters |
+|---|---|---|---|
+| `tools/circuit_evaluator` | `evaluate` | Evaluates circuit TSX file | `<circuit_path> [--timeout 60] [--kill-on-timeout] [--worktree <path>] [--json]` |
+| `tools/circuit_evaluator` | `status` | Checks background PID / recent logs | `--pid <pid> [--log-file <path>] [--json]` |
+
+### Exit Codes
+- `0`: Evaluation `ACCEPT` (build succeeded, circuit JSON created, zero breaking DRC errors).
+- `1`: Evaluation `REJECT` (compiler error, syntax fault, unrouted port, or footprint mismatch).
+- `3`: `RUNNING_TIMEOUT_WARNING` (process exceeded timeout but is still running; agent decides next step).
+
+---
+
+## Diagnostic Error Taxonomy
+
+When evaluation fails (`REJECT`), the evaluator parses compiler logs into structured categories:
+
+| Error Category | Trigger Scenario | Agent Action |
 |---|---|---|
-| `tools/vhl_evaluate_circuit` | Runs synchronous VAP evaluation | `--file <path>` OR `--module <name> [--circuit <name>] [--project <id>] [--port <port>] [--timeout <ms>] [--json]` |
+| `UNRESOLVED_IMPORT` | `Cannot find module './components/...'` | Re-delegate to Librarian to procure missing component. |
+| `FOOTPRINT_ERROR` | `No footprint specified for component` | Update component definition with standard footprint (e.g. `soic8`). |
+| `UNROUTED_PORT` | `Port pinX on undefined is missing a trace` | Connect dangling net to corresponding netlabel or external port. |
+| `COMPONENT_PIN_MISMATCH` | `Property 'pinX' does not exist` | Re-align pin numbering with component `pinLabels`. |
+| `SYNTAX_ERROR` | Unclosed JSX tag, missing bracket | Fix TSX syntax error in circuit file. |
+| `TYPE_ERROR` | TypeScript type errors (`TS2322`) | Rectify prop types or import definitions. |
+| `BUILD_FAILURE` | Generic compiler failure | Inspect highlighted log tail for unhandled exception. |
 
-### Invocation Examples
+---
 
-1. **Evaluate by direct file path:**
-   ```bash
-   .agents/skills/vhl-circuit-evaluator/tools/vhl_evaluate_circuit --file path/to/index.circuit.tsx
-   ```
+## Invocation Patterns & Examples
 
-2. **Evaluate a module in the active project:**
-   ```bash
-   .agents/skills/vhl-circuit-evaluator/tools/vhl_evaluate_circuit --module power_module
-   ```
+### Pattern 1: Standard Module Circuit Evaluation
+```bash
+.agents/skills/vhl-circuit-evaluator/tools/circuit_evaluator evaluate \
+  bms-monitor-module.tsx \
+  --worktree ./bms-monitor-module/Workspace \
+  --json
+```
+Output:
+```json
+{
+  "decision": "ACCEPT",
+  "status": "Success",
+  "circuit_file": "/path/to/bms-monitor-module.tsx",
+  "elapsed_ms": 1250,
+  "exit_code": 0,
+  "timed_out": false,
+  "diagnostics": [],
+  "metadata": {
+    "circuit_json_created": true,
+    "success_message": true,
+    "error_count": 0
+  },
+  "log_file": "/path/to/eval_results/eval.log"
+}
+```
 
-3. **Evaluate with JSON output for automated scripting:**
-   ```bash
-   .agents/skills/vhl-circuit-evaluator/tools/vhl_evaluate_circuit --file src/circuit.tsx --json
-   ```
+### Pattern 2: Timeout Handling with Non-Terminating Decision Boundary
+If a circuit takes longer than 60s:
+```bash
+.agents/skills/vhl-circuit-evaluator/tools/circuit_evaluator evaluate \
+  large-board.tsx \
+  --timeout 45
+```
+Output:
+```text
+Decision:     REJECT
+Status:       RUNNING_TIMEOUT_WARNING
+PID:          84321
+Log File:     /path/to/eval_results/eval.log
+
+⚠ WARNING: The build exceeded the timeout and is still running in background.
+PID: 84321. You can wait or terminate using 'kill 84321'.
+```
+
+### Pattern 3: Checking Running PID Status
+```bash
+.agents/skills/vhl-circuit-evaluator/tools/circuit_evaluator status \
+  --pid 84321 \
+  --log-file /path/to/eval_results/eval.log
+```
 
 ---
 
 ## Operating Invariants & Strict Boundaries
 
-1. **Deterministic Decision Boundary:**
-   - Decisions are strictly binary: `ACCEPT` or `REJECT`.
-   - Any compiler error, unhandled exception, or DRC violation results in `REJECT`.
-2. **Timeout Invariant:**
-   - Evaluation times out after 300,000ms (5 minutes) by default unless specified with `--timeout <ms>`.
-   - A timeout triggers an immediate process tree SIGKILL cleanup and is classified as `REJECT`.
-3. **No Hidden State / Clean Isolation:**
-   - Evaluation logs are stored under `eval_results/eval.log` within the evaluated directory.
-   - Evaluation never modifies the source circuit file in place.
-
----
-
-## Reasoning Guidance & Decision Flow
-
-When evaluating circuit files:
-
-```text
-[Run Evaluation]
-       │
-       ▼
-[Decision == ACCEPT?]
-   ├── YES ──► Promote circuit or record semantic operation via vhl_record_operation.
-   └── NO (REJECT)
-       │
-       ▼
-[Analyze Log Findings]
-   ├── Missing Footprint (e.g. "No footprint specified for component")
-   │      └──► Invoke `vhl-component-resolver` to acquire/generate footprint.
-   ├── Missing Trace / Unconnected Pin (e.g. "Port pin1 is missing a trace")
-   │      └──► Inspect netlist routing in TSX file and connect dangling nets.
-   ├── Reference Designator Error (e.g. "reference designator should start with R")
-   │      └──► Add explicit name or supplier part reference to JSX component.
-   └── Missing Schematicsheet (e.g. "No <schematicsheet> was found")
-          └──► Wrap schematic primitives inside a `<board>` or `<schematicsheet>`.
-```
-
----
-
-## Verification & Output Interpretation
-
-- **Decision ACCEPT**: Indicates successful compilation, circuit JSON generation, and zero breaking DRC errors. Exit code `0`.
-- **Decision REJECT**: Indicates build errors, syntax failures, or unresolved component references. Exit code `1`. Log highlights will display the exact compiler warnings and error messages.
+1. **Non-Terminating Timeout Protocol**:
+   - By default, when a timeout expires, `circuit_evaluator` **NEVER** issues an unprompted `SIGKILL`.
+   - It returns status `RUNNING_TIMEOUT_WARNING` with the live `pid` and captured partial logs.
+   - The agent retains full authority to extend wait or explicitly pass `--kill-on-timeout`.
+2. **Deterministic Log Sanitization**:
+   - All ANSI control sequences and terminal coloring codes are stripped before logging to `eval_results/eval.log`.
+3. **Structured Diagnostics Guarantee**:
+   - Whenever a build fails, raw compiler strings are converted into categorized `DiagnosticError` records to assist downstream self-healing.
