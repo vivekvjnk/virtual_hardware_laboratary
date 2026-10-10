@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tsci-component-resolver"
+version = "1.0.0"
+description = "Resilient, agent-ready component resolution and verification for tscircuit"
+authors = [{ name = "MOSAIC-Team" }]
+license = { text = "Apache-2.0" }
+readme = "SKILL.md"
+requires-python = ">=3.9"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+markers = [
+    "live: marks tests that invoke real external / live tsci CLI"
+]
