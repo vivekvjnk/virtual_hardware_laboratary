@@ -43,6 +43,17 @@ export async function scaffoldModuleCluster(
     await fs.mkdir(sessionsDir, { recursive: true });
     await fs.mkdir(tasksDir, { recursive: true });
 
+    // Explicitly purge tsci auto-injected skills from .agents/ and .claude/
+    // to maintain strict, deterministic control over VHL ECP skills.
+    const unmanagedTsciSkill = path.join(skillsDir, "tscircuit");
+    if (existsSync(unmanagedTsciSkill)) {
+        await fs.rm(unmanagedTsciSkill, { recursive: true, force: true }).catch(() => null);
+    }
+    const unmanagedClaudeDir = path.join(worktreePath, ".claude");
+    if (existsSync(unmanagedClaudeDir)) {
+        await fs.rm(unmanagedClaudeDir, { recursive: true, force: true }).catch(() => null);
+    }
+
     // 2. Provision ground-up module ECPs from templates/ecp into module worktree
     const moduleEcps = [
         "module-synthesis-workflow",
@@ -212,6 +223,17 @@ export async function scaffoldRootCluster(
     await fs.mkdir(workflowsDir, { recursive: true });
     await fs.mkdir(sessionsDir, { recursive: true });
     await fs.mkdir(tasksDir, { recursive: true });
+
+    // Explicitly purge tsci auto-injected skills from .agents/ and .claude/
+    // to maintain strict, deterministic control over VHL ECP skills.
+    const unmanagedTsciSkill = path.join(skillsDir, "tscircuit");
+    if (existsSync(unmanagedTsciSkill)) {
+        await fs.rm(unmanagedTsciSkill, { recursive: true, force: true }).catch(() => null);
+    }
+    const unmanagedClaudeDir = path.join(rootWorktreePath, ".claude");
+    if (existsSync(unmanagedClaudeDir)) {
+        await fs.rm(unmanagedClaudeDir, { recursive: true, force: true }).catch(() => null);
+    }
 
     // 2. Provision canonical skills from runtimeRoot into root worktree as standalone directories (no symlinks)
     const canonicalSkills = [
