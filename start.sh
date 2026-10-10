@@ -6,6 +6,11 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # Add local node_modules/.bin to PATH
 export PATH="${SCRIPT_DIR}/node_modules/.bin:$PATH"
 
+# Default ECP repository configuration for MOSAIC
+export MOSAIC_ECP_REPO_URL="${MOSAIC_ECP_REPO_URL:-git@github.com:vivekvjnk/ECP_VHL.git}"
+export MOSAIC_ECP_REF="${MOSAIC_ECP_REF:-main}"
+export MOSAIC_ECP_PROVIDER="${MOSAIC_ECP_PROVIDER:-git}"
+
 # Track child PIDs for graceful lifecycle management
 WS_SERVER_PID=""
 SNAPSHOT_PID=""

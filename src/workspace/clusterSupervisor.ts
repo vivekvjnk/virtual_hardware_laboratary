@@ -307,13 +307,20 @@ export class ClusterSupervisor {
         instance.status = "starting";
         instance.error = undefined;
 
+        const ecpRepoUrl = process.env.MOSAIC_ECP_REPO_URL || "git@github.com:vivekvjnk/ECP_VHL.git";
+        const ecpRef = process.env.MOSAIC_ECP_REF || "main";
+        const ecpProvider = process.env.MOSAIC_ECP_PROVIDER || "git";
+
         const mosaicBin = this.findMosaicBinary();
         const args = [
             "host",
             "--workspace", worktreePath,
             "--port", String(allocatedPort),
             "--strict-port",
-            "--no-reload"
+            "--no-reload",
+            "--ecp-repo-url", ecpRepoUrl,
+            "--ecp-provider", ecpProvider,
+            "--ecp-ref", ecpRef
         ];
 
         console.log(`[ClusterSupervisor] Spawning cluster '${clusterId}' on port ${allocatedPort} via: ${mosaicBin} ${args.join(" ")}`);
@@ -325,7 +332,10 @@ export class ClusterSupervisor {
                 detached: true,
                 env: {
                     ...process.env,
-                    PYTHONUNBUFFERED: "1"
+                    PYTHONUNBUFFERED: "1",
+                    MOSAIC_ECP_REPO_URL: ecpRepoUrl,
+                    MOSAIC_ECP_REF: ecpRef,
+                    MOSAIC_ECP_PROVIDER: ecpProvider
                 }
             });
 
