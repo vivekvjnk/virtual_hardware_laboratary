@@ -81,7 +81,7 @@ The `module-synthesis-workflow` capability package establishes the authoritative
 
 ### Stage 4: Verification & Self-Healing Loop
 - **Assigned Peer**: `archy` (Director) coordinating with `ana` and `librarian`
-- **Objective**: Execute synchronous circuit evaluation (using `tools/circuit_evaluator` or `POST /api/vap/evaluate`) and rectify compiler, DRC, or footprint errors.
+- **Objective**: Execute synchronous circuit evaluation (using `tools/circuit_evaluator` or `POST /api/circuit/evaluate`) and rectify compiler, DRC, or footprint errors.
 - **Self-Healing Loop Protocol**:
   - Evaluation returns `ACCEPT` or `REJECT`.
   - If `ACCEPT`: Synthesis is complete! Transition to ledger recording.

@@ -619,7 +619,7 @@ export class VHLWebUI {
             }
         });
 
-        app.post('/api/vap/evaluate', async (req, res) => {
+        app.post(['/api/circuit/evaluate', '/api/vap/evaluate'], async (req, res) => {
             try {
                 const { project_id, module_name, circuit_name, file_path, timeout_ms } = req.body;
                 let evalDir: string = "";
