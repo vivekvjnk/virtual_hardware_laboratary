@@ -1,6 +1,6 @@
 ---
 name: vhl-workspace-ops
-description: Substrate operations tailored for Archy and module clusters. Inspects module resources, tracks Git worktree diffs, manages atomic ledger commits, and queries VAP evaluation results.
+description: Substrate operations tailored for Archy and module clusters. Inspects module resources, tracks Git worktree diffs, manages atomic ledger commits, and queries circuit evaluation results.
 license: Apache-2.0
 metadata:
   author: MOSAIC-Team
@@ -11,7 +11,7 @@ metadata:
     - substrate
     - git
     - semantic-ledger
-    - vap-evaluation
+    - circuit-evaluation
 ---
 
 # VHL Workspace Operations for Module Clusters
@@ -32,8 +32,8 @@ The `vhl-workspace-ops` capability package provides Archy and cluster peers with
 - `INITIALIZE`: Initial project and module scaffolding.
 - `SCUD_SYNTHESIS`: Commitment of completed `<module_name>.scud`.
 - `PROCURE_COMPONENTS`: Completed component imports by Librarian.
-- `UPDATE_CIRCUIT`: TSX schematic edits by ANA.
-- `VAP_DECISION`: Evaluation results (`payload: {"decision": "ACCEPT" | "REJECT"}`).
+- `CIRCUIT_SYNTHESIS`: TSX schematic authoring and refinement by ANA.
+- `CIRCUIT_EVALUATION`: Circuit evaluation results (`payload: {"decision": "ACCEPT" | "REJECT"}`).
 - `MERGE_TO_STABLE`: Promotion of module branch to trunk.
 
 ---
@@ -66,13 +66,13 @@ When a gate is passed (e.g. Stage 1 SCUD synthesis complete):
   --message "feat({{moduleName}}): complete Stage 1 SCUD synthesis"
 ```
 
-### 4. Querying VAP Evaluation
+### 4. Querying Circuit Evaluation
 To verify circuit compilation during Stage 4:
 ```bash
 # Using vhl-circuit-evaluator CLI:
-.agents/skills/vhl-circuit-evaluator/tools/vhl_evaluate_circuit \
-  --file {{moduleName}}/Workspace/{{moduleName}}.tsx \
-  --timeout 120000 \
+.agents/skills/vhl-circuit-evaluator/tools/circuit_evaluator evaluate \
+  {{moduleName}}/Workspace/{{moduleName}}.tsx \
+  --timeout 120 \
   --json
 ```
 Inspect logs under `<module_name>/Workspace/eval_results/eval.log`.

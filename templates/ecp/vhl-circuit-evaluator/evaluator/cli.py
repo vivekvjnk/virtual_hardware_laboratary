@@ -117,7 +117,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # --- evaluate ---
     p_eval = subparsers.add_parser("evaluate", help="Evaluate a circuit TSX file using tsci build")
-    p_eval.add_argument("circuit_path", help="Path to circuit file (e.g. module.tsx or index.circuit.tsx)")
+    p_eval.add_argument("circuit_path", help="Path to circuit file (e.g. <module_name>.tsx or <assembly_name>.tsx)")
     p_eval.add_argument("--timeout", "-t", type=float, default=60.0, help="Execution timeout in seconds (default: 60s)")
     p_eval.add_argument("--kill-on-timeout", action="store_true", default=False, help="Explicitly terminate process if timeout expires")
     p_eval.add_argument("--worktree", "-w", default=None, help="Working directory for build execution")

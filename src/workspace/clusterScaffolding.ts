@@ -150,7 +150,7 @@ export async function scaffoldModuleCluster(
 
 - **Lead Orchestrator (\`archy\`)**: Directs the synthesis lifecycle, translates visual and boundary requirements into \`${moduleName}.scud\`, and coordinates domain workers.
 - **Component Specialist (\`librarian\`)**: Ingests the SCUD component inventory, resolves footprints, and populates \`${moduleName}/Workspace/imports/\`.
-- **Circuit Implementer (\`ana\`)**: Generates \`${moduleName}.tsx\`, runs deterministic VAP evaluation, and rectifies compiler and DRC errors.
+- **Circuit Implementer (\`ana\`)**: Generates \`${moduleName}.tsx\`, runs deterministic circuit evaluation, and rectifies compiler and DRC errors.
 
 ---
 
@@ -172,11 +172,11 @@ export async function scaffoldModuleCluster(
   3. Pin labels and polarities match manufacturer datasheets.
   4. SCUD is updated with the \`Library Mapping\` table.
 
-### Stage 3: TSX Circuit Synthesis & VAP Verification
+### Stage 3: TSX Circuit Synthesis & Verification
 - **Assigned Peer**: \`ana\`
 - **Definition of Done**:
   1. \`${moduleName}.tsx\` exports a valid React component representing the synthesized circuit.
-  2. Synchronous VAP evaluation via \`vhl_evaluate_circuit\` returns decision \`ACCEPT\`.
+  2. Synchronous circuit evaluation via \`circuit_evaluator evaluate ${moduleName}.tsx\` returns decision \`ACCEPT\`.
   3. Zero compilation errors, missing footprints, or DRC violations.
   4. Output circuit JSON is generated under \`dist/\`.
 
@@ -343,7 +343,7 @@ export async function scaffoldRootCluster(
 
 For each top-level assembly (\`<assembly>\`), the root cluster operates a flat triad:
 - **Lead Assembly Architect (\`<assembly>_archy\`)**: Ingests \`system-boundary.md\`, communicates across clusters with module Archies via A2A, and authors \`<assembly>.scud\`.
-- **Assembly Synthesizer (\`<assembly>_ana\`)**: Assembles and wires submodules into top-level TSX board code (\`<assembly>.tsx\`), invoking VAP evaluation.
+- **Assembly Synthesizer (\`<assembly>_ana\`)**: Assembles and wires submodules into top-level TSX board code (\`<assembly>.tsx\`), invoking circuit evaluation.
 - **Physical Layout Specialist (\`<assembly>_layout\`)**: Sets PCB board dimensions, component keepouts, layer stackup, and tunes Cypress autorouter constraints.
 
 ---
@@ -362,7 +362,7 @@ For each top-level assembly (\`<assembly>\`), the root cluster operates a flat t
 - **Definition of Done**:
   1. \`<assembly>.tsx\` instantiates all required module components.
   2. Inter-module signal and power nets routed without dangling nets.
-  3. Synchronous VAP evaluation returns decision \`ACCEPT\`.
+  3. Synchronous circuit evaluation returns decision \`ACCEPT\`.
 
 ### Stage 3: Board Dimensioning, Critical Placement & Cypress Autorouting
 - **Assigned Peer**: \`<assembly>_layout\`

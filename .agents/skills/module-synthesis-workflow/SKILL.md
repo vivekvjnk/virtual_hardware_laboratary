@@ -25,8 +25,8 @@ The `module-synthesis-workflow` capability package establishes the authoritative
 │                      4 SEQUENTIAL STAGE GATES                          │
 ├────────────────────┬────────────────────┬──────────────────────────────┤
 │ Stage 1 (Archy)    │ Stage 2 (Librarian)│ Stage 3 (ANA)   │ Stage 4    │
-│ SCUD Architecture  │ Component          │ Circuit TSX     │ VAP & Heal │
-│ & Synthesis        │ Procurement        │ Synthesis       │ Loop (<=3) │
+│ SCUD Architecture  │ Component          │ Circuit TSX     │ Evaluation │
+│ & Synthesis        │ Procurement        │ Synthesis       │ & Heal (<=3)│
 └────────────────────┴────────────────────┴─────────────────┴────────────┘
 ```
 
@@ -70,10 +70,10 @@ The `module-synthesis-workflow` capability package establishes the authoritative
 ### Stage 3: Circuit TSX Synthesis
 - **Assigned Peer**: `ana` (ANAlog Circuit Designer)
 - **Input Space**: `<module_name>.scud` + verified parts in `components/`
-- **Objective**: Synthesize the declarative tscircuit hardware implementation into `index.circuit.tsx` (or `<module_name>.tsx`).
+- **Objective**: Synthesize the declarative tscircuit hardware implementation strictly into `<module_name>.tsx`.
 - **Definition of Done (DoD - Gate 3)**:
-  1. `index.circuit.tsx` (or `<module_name>.tsx`) exists and exports a valid default circuit component.
-  2. Submodules and components are imported cleanly from `./components/` or `./imports/`.
+  1. `<module_name>.tsx` exists and exports a valid default circuit component.
+  2. Submodules and components are imported cleanly from `./components/`.
   3. Netlist connections strictly reflect SCUD Section 4 connectivity.
   4. All boundary port names correspond exactly to external interface specifications.
 
@@ -81,7 +81,7 @@ The `module-synthesis-workflow` capability package establishes the authoritative
 
 ### Stage 4: Verification & Self-Healing Loop
 - **Assigned Peer**: `archy` (Director) coordinating with `ana` and `librarian`
-- **Objective**: Execute synchronous VAP evaluation (`POST /api/vap/evaluate`) and rectify compiler, DRC, or footprint errors.
+- **Objective**: Execute synchronous circuit evaluation (using `tools/circuit_evaluator` or `POST /api/vap/evaluate`) and rectify compiler, DRC, or footprint errors.
 - **Self-Healing Loop Protocol**:
   - Evaluation returns `ACCEPT` or `REJECT`.
   - If `ACCEPT`: Synthesis is complete! Transition to ledger recording.
@@ -94,6 +94,6 @@ The `module-synthesis-workflow` capability package establishes the authoritative
     4. Re-evaluate.
   - **Exhaustion Escalation**: If the circuit still fails after **3 iterations**, Archy MUST halt automatic looping and escalate to the **Human Agent** with log highlights and specific decision questions.
 - **Definition of Done (DoD - Gate 4)**:
-  1. Synchronous VAP evaluation returns `decision: ACCEPT` with `eval_status: Success`.
+  1. Synchronous circuit evaluation returns `decision: ACCEPT` with `eval_status: Success`.
   2. Compiled `circuit.json` is generated.
-  3. Semantic operation `VAP_DECISION` is committed to Git and recorded in SQLite `.vhl/state.db` using `vhl-workspace-ops`.
+  3. Semantic operation `CIRCUIT_EVALUATION` is committed to Git and recorded in SQLite `.vhl/state.db` using `vhl-workspace-ops`.

@@ -31,7 +31,7 @@ The `tscircuit-circuit-designer` capability package defines the authoritative co
     - `high-voltage-power-supply.tsx`
     - `communication-bridge.tsx`
     - `current-sensing.tsx`
-- Do NOT use generic names like `circuit.tsx` or `index.tsx` inside module workspaces unless configured at the assembly root (`index.circuit.tsx`).
+- All module circuits and top-level assemblies must strictly be named `<module_name>.tsx` or `<assembly_name>.tsx`. Do NOT use generic names like `index.circuit.tsx`, `circuit.tsx`, or `index.tsx`.
 
 ---
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-schematic_tool - Visual schematic analysis, contrast enhancement, and quadrant segmentation.
-Modular CLI designed for high-resolution engineering schematics and PCB visual assets.
+schematic_tool - Visual schematic analysis, contrast enhancement, arbitrary grid segmentation,
+and localized magnification CLI designed for high-resolution engineering schematics.
 """
 
 import argparse
@@ -16,6 +16,27 @@ except ImportError:
     print("Error: PIL/Pillow is required for schematic_tool. Please install pillow.", file=sys.stderr)
     sys.exit(1)
 
+# Resampling compatibility across PIL versions
+RESAMPLE_FILTER = getattr(getattr(Image, "Resampling", Image), "LANCZOS", Image.BICUBIC)
+
+
+def parse_grid(grid_str: str | None, rows: int | None, cols: int | None) -> tuple[int, int]:
+    """Resolves rows and cols from --grid RxC, --rows, --cols (default: 4x4)."""
+    r = rows
+    c = cols
+    if grid_str:
+        parts = grid_str.lower().split("x")
+        if len(parts) == 2:
+            try:
+                r = int(parts[0])
+                c = int(parts[1])
+            except ValueError:
+                pass
+
+    r = r if r and r > 0 else 4
+    c = c if c and c > 0 else 4
+    return r, c
+
 
 def cmd_preprocess(args):
     input_path = Path(args.input).resolve()
@@ -27,7 +48,6 @@ def cmd_preprocess(args):
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     with Image.open(input_path) as img:
-        # Convert to high-contrast grayscale
         gray = img.convert("L")
         contrast_factor = getattr(args, "contrast", 1.5) or 1.5
         enhancer = ImageEnhance.Contrast(gray)
@@ -58,50 +78,59 @@ def cmd_segment(args):
     output_dir.mkdir(parents=True, exist_ok=True)
 
     overlap_ratio = getattr(args, "overlap", 0.15) or 0.15
+    rows, cols = parse_grid(getattr(args, "grid", None), getattr(args, "rows", None), getattr(args, "cols", None))
 
     with Image.open(input_path) as img:
         w, h = img.size
-        ov_x = int(w * overlap_ratio / 2)
-        ov_y = int(h * overlap_ratio / 2)
+        cw = w / cols
+        ch = h / rows
 
-        mid_x = w // 2
-        mid_y = h // 2
-
-        # 4 overlapping quadrants
-        quadrants = [
-            ("segment_0.png", "Q0 (Top-Left)", (0, 0, min(w, mid_x + ov_x), min(h, mid_y + ov_y))),
-            ("segment_1.png", "Q1 (Top-Right)", (max(0, mid_x - ov_x), 0, w, min(h, mid_y + ov_y))),
-            ("segment_2.png", "Q2 (Bottom-Left)", (0, max(0, mid_y - ov_y), min(w, mid_x + ov_x), h)),
-            ("segment_3.png", "Q3 (Bottom-Right)", (max(0, mid_x - ov_x), max(0, mid_y - ov_y), w, h)),
-        ]
+        ov_x = int(cw * overlap_ratio / 2)
+        ov_y = int(ch * overlap_ratio / 2)
 
         saved_segments = []
-        for filename, label, bbox in quadrants:
-            crop_img = img.crop(bbox)
-            crop_path = output_dir / filename
-            crop_img.save(crop_path)
-            saved_segments.append({
-                "file": str(crop_path),
-                "name": filename,
-                "label": label,
-                "bbox": list(bbox),
-                "dimensions": [crop_img.width, crop_img.height]
-            })
+        quadrants_for_drawing = []
+
+        for r in range(rows):
+            for c in range(cols):
+                left = max(0, int(c * cw - (ov_x if c > 0 else 0)))
+                right = min(w, int((c + 1) * cw + (ov_x if c < cols - 1 else 0)))
+                top = max(0, int(r * ch - (ov_y if r > 0 else 0)))
+                bottom = min(h, int((r + 1) * ch + (ov_y if r < rows - 1 else 0)))
+
+                bbox = (left, top, right, bottom)
+                filename = f"segment_{r}_{c}.png"
+                label = f"[{r},{c}]"
+
+                crop_img = img.crop(bbox)
+                crop_path = output_dir / filename
+                crop_img.save(crop_path)
+
+                saved_segments.append({
+                    "file": str(crop_path),
+                    "name": filename,
+                    "grid_coord": [r, c],
+                    "label": label,
+                    "bbox": list(bbox),
+                    "dimensions": [crop_img.width, crop_img.height]
+                })
+                quadrants_for_drawing.append((label, bbox))
 
         # Generate overview with colored bounding boxes
         overview_img = img.convert("RGB")
         draw = ImageDraw.Draw(overview_img)
 
-        colors = ["#FF3333", "#3388FF", "#33CC33", "#FFAA00"]
-        line_width = max(3, int(min(w, h) * 0.003))
+        colors = ["#FF3333", "#3388FF", "#33CC33", "#FFAA00", "#AA33FF", "#00CCCC"]
+        line_width = max(2, int(min(w, h) * 0.002))
 
-        for idx, (filename, label, bbox) in enumerate(quadrants):
+        for idx, (label, bbox) in enumerate(quadrants_for_drawing):
             color = colors[idx % len(colors)]
             draw.rectangle(bbox, outline=color, width=line_width)
-            # Label banner
             bx0, by0, bx1, by1 = bbox
-            draw.rectangle([bx0 + 4, by0 + 4, bx0 + 160, by0 + 36], fill="white", outline=color)
-            draw.text((bx0 + 10, by0 + 10), label, fill=color)
+            tag_w = max(50, int(cw * 0.2))
+            tag_h = max(24, int(ch * 0.1))
+            draw.rectangle([bx0 + 2, by0 + 2, bx0 + tag_w, by0 + tag_h], fill="white", outline=color)
+            draw.text((bx0 + 6, by0 + 4), label, fill=color)
 
         overview_path = output_dir / "segments_overview_with_bboxes.png"
         overview_img.save(overview_path)
@@ -112,21 +141,106 @@ def cmd_segment(args):
         "input_image": str(input_path),
         "output_directory": str(output_dir),
         "overview_image": str(overview_path),
+        "grid": [rows, cols],
+        "total_segments": len(saved_segments),
         "segments": saved_segments
     }
 
     if args.json:
         print(json.dumps(result, indent=2))
     else:
-        print(f"Segmented {input_path.name} into 4 quadrants under: {output_dir}")
+        print(f"Segmented {input_path.name} into {rows}x{cols} grid ({len(saved_segments)} segments) under: {output_dir}")
         print(f"Overview annotated with bounding boxes: {overview_path}")
-        for s in saved_segments:
-            print(f"  - {s['name']}: {s['label']} {s['dimensions'][0]}x{s['dimensions'][1]}")
+        for s in saved_segments[:5]:
+            print(f"  - {s['name']}: {s['label']} bbox={s['bbox']} size={s['dimensions'][0]}x{s['dimensions'][1]}")
+        if len(saved_segments) > 5:
+            print(f"  ... and {len(saved_segments) - 5} more segments.")
+
+
+def cmd_view(args):
+    input_path = Path(args.input).resolve()
+    if not input_path.is_file():
+        print(json.dumps({"error": f"Input image not found: {input_path}"}), file=sys.stderr)
+        sys.exit(1)
+
+    scale_factor = getattr(args, "scale", 2.0) or 2.0
+
+    with Image.open(input_path) as img:
+        w, h = img.size
+        bbox = None
+
+        if args.bbox:
+            parts = [int(p.strip()) for p in args.bbox.split(",")]
+            if len(parts) == 4:
+                bbox = (max(0, parts[0]), max(0, parts[1]), min(w, parts[2]), min(h, parts[3]))
+            else:
+                print(json.dumps({"error": "Invalid bbox format. Expected left,top,right,bottom"}), file=sys.stderr)
+                sys.exit(1)
+        elif args.cell:
+            rows, cols = parse_grid(getattr(args, "grid", None), None, None)
+            cell_parts = [int(p.strip()) for p in args.cell.split(",")]
+            if len(cell_parts) == 2:
+                r, c = cell_parts
+                if r < 0 or r >= rows or c < 0 or c >= cols:
+                    print(json.dumps({"error": f"Cell [{r},{c}] out of grid bounds ({rows}x{cols})"}), file=sys.stderr)
+                    sys.exit(1)
+
+                overlap_ratio = getattr(args, "overlap", 0.15) or 0.15
+                cw = w / cols
+                ch = h / rows
+                ov_x = int(cw * overlap_ratio / 2)
+                ov_y = int(ch * overlap_ratio / 2)
+
+                left = max(0, int(c * cw - (ov_x if c > 0 else 0)))
+                right = min(w, int((c + 1) * cw + (ov_x if c < cols - 1 else 0)))
+                top = max(0, int(r * ch - (ov_y if r > 0 else 0)))
+                bottom = min(h, int((r + 1) * ch + (ov_y if r < rows - 1 else 0)))
+                bbox = (left, top, right, bottom)
+            else:
+                print(json.dumps({"error": "Invalid cell format. Expected row,col e.g. 1,2"}), file=sys.stderr)
+                sys.exit(1)
+        else:
+            print(json.dumps({"error": "Must provide either --cell row,col or --bbox left,top,right,bottom"}), file=sys.stderr)
+            sys.exit(1)
+
+        # Perform crop and magnification
+        crop_img = img.crop(bbox)
+        crop_w, crop_h = crop_img.size
+
+        if scale_factor > 1.0:
+            mag_w = int(crop_w * scale_factor)
+            mag_h = int(crop_h * scale_factor)
+            magnified_img = crop_img.resize((mag_w, mag_h), resample=RESAMPLE_FILTER)
+        else:
+            mag_w, mag_h = crop_w, crop_h
+            magnified_img = crop_img
+
+        output_path = Path(args.output).resolve() if args.output else input_path.parent / f"{input_path.stem}_magnified.png"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        magnified_img.save(output_path)
+
+    result = {
+        "status": "success",
+        "action": "magnify",
+        "input_image": str(input_path),
+        "output_image": str(output_path),
+        "original_dimensions": [w, h],
+        "crop_bbox": list(bbox),
+        "crop_dimensions": [crop_w, crop_h],
+        "scale_factor": scale_factor,
+        "magnified_dimensions": [mag_w, mag_h]
+    }
+
+    if args.json:
+        print(json.dumps(result, indent=2))
+    else:
+        print(f"Magnified region bbox={list(bbox)} ({scale_factor}x scale) saved to: {output_path}")
+        print(f"Original: {w}x{h} px | Crop: {crop_w}x{crop_h} px | Output: {mag_w}x{mag_h} px")
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="schematic_tool: Visual schematic analysis, contrast enhancement, and quadrant slicing CLI.",
+        description="schematic_tool: Visual schematic analysis, contrast enhancement, arbitrary grid segmentation, and magnification CLI.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     subparsers = parser.add_subparsers(dest="subcommand", help="Available subcommands")
@@ -140,12 +254,27 @@ def main():
     p_pre.set_defaults(func=cmd_preprocess)
 
     # --- segment subcommand ---
-    p_seg = subparsers.add_parser("segment", help="Slices image into 4 overlapping quadrants with visual overview")
+    p_seg = subparsers.add_parser("segment", help="Slices image into arbitrary overlapping grid (default: 4x4)")
     p_seg.add_argument("--input", "-i", required=True, help="Path to input schematic image")
     p_seg.add_argument("--output-dir", "-o", default=None, help="Output directory (default: <name>_segments/)")
-    p_seg.add_argument("--overlap", type=float, default=0.15, help="Quadrant overlap ratio (default: 0.15)")
+    p_seg.add_argument("--grid", "-g", default="4x4", help="Grid specification e.g. 4x4, 3x3, 2x4 (default: 4x4)")
+    p_seg.add_argument("--rows", "-r", type=int, default=None, help="Number of grid rows (overrides --grid)")
+    p_seg.add_argument("--cols", "-c", type=int, default=None, help="Number of grid columns (overrides --grid)")
+    p_seg.add_argument("--overlap", type=float, default=0.15, help="Quadrant/cell overlap ratio (default: 0.15)")
     p_seg.add_argument("--json", action="store_true", default=False, help="Output JSON result")
     p_seg.set_defaults(func=cmd_segment)
+
+    # --- view / magnify subcommand ---
+    p_view = subparsers.add_parser("view", aliases=["magnify"], help="Magnify a specific grid cell or bounding box")
+    p_view.add_argument("--input", "-i", required=True, help="Path to input schematic image")
+    p_view.add_argument("--output", "-o", default=None, help="Output magnified image path")
+    p_view.add_argument("--grid", "-g", default="4x4", help="Grid specification e.g. 4x4 (default: 4x4)")
+    p_view.add_argument("--cell", default=None, help="Grid cell coordinate row,col e.g. 0,1 or 2,3")
+    p_view.add_argument("--bbox", default=None, help="Explicit crop bbox: left,top,right,bottom in pixels")
+    p_view.add_argument("--scale", "-s", type=float, default=2.0, help="Magnification scale factor (default: 2.0)")
+    p_view.add_argument("--overlap", type=float, default=0.15, help="Grid overlap ratio (default: 0.15)")
+    p_view.add_argument("--json", action="store_true", default=False, help="Output JSON result")
+    p_view.set_defaults(func=cmd_view)
 
     args = parser.parse_args()
     if not hasattr(args, "func"):

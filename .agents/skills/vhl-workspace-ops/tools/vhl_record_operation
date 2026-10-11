@@ -14,7 +14,7 @@ Usage: vhl_record_operation [options]
 Required Options:
   --project, -p <id>       Project identifier or folder path
   --module, -m <name>      Module name (or 'root' for root worktree)
-  --op, -o <name>          Semantic operation name (e.g. SYNTHESIZE, ADD_MODULE, UPDATE_CIRCUIT)
+  --op, -o <name>          Semantic operation name (e.g. CIRCUIT_SYNTHESIS, CIRCUIT_EVALUATION, ADD_MODULE)
   --author, -a <name>      Author identifier (e.g. Archy, Librarian, User)
   --status, -s <status>    Operation status (e.g. SUCCESS, FAILED, IN_PROGRESS)
   --message, --msg <text>  Git commit message
@@ -26,7 +26,7 @@ Optional Options:
   --help, -h               Show this help message
 
 Example:
-  vhl_record_operation --project bms_alpha --module power_module --op UPDATE_CIRCUIT --author Archy --status SUCCESS --message "feat: connect 3.3V LDO regulator"
+  vhl_record_operation --project bms_alpha --module power_module --op CIRCUIT_SYNTHESIS --author Archy --status SUCCESS --message "feat: connect 3.3V LDO regulator"
 `);
 }
 

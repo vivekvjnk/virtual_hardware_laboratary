@@ -1,6 +1,6 @@
 ---
 name: vhl-circuit-evaluator
-description: Standalone circuit evaluation and diagnostic taxonomy engine for tscircuit designs. Absorbs legacy VAP into a deterministic local tool. Executes tsci build, classifies diagnostics (syntax, pin mismatch, unrouted ports, footprint errors), strips ANSI control sequences, and provides configurable non-terminating timeout warnings.
+description: Standalone circuit evaluation and diagnostic taxonomy engine for tscircuit designs. Executes tsci build, classifies diagnostics (syntax, pin mismatch, unrouted ports, footprint errors), strips ANSI control sequences, and provides configurable non-terminating timeout warnings.
 license: Apache-2.0
 metadata:
   author: MOSAIC-Team
@@ -8,7 +8,7 @@ metadata:
   category: circuit-evaluation
   tags:
     - evaluation
-    - vap
+    - circuit-evaluator
     - drc
     - tscircuit
     - error-taxonomy
@@ -18,7 +18,7 @@ metadata:
 
 ## Overview
 
-The `vhl-circuit-evaluator` capability package absorbs the legacy Virtual ANA Process (VAP) into an authoritative, standalone Python package and CLI tool (`tools/circuit_evaluator`). It executes `tsci build` against circuit TSX files, strips all ANSI escape codes, extracts structured diagnostic errors across a regex-based classification taxonomy, and enforces non-terminating timeout warnings giving agents full decision authority.
+The `vhl-circuit-evaluator` capability package provides an authoritative, standalone Python package and CLI tool (`tools/circuit_evaluator`) for deterministic circuit evaluation. It executes `tsci build` against circuit TSX files (`<module_name>.tsx` or `<assembly_name>.tsx`), strips all ANSI escape codes, extracts structured diagnostic errors across a regex-based classification taxonomy, and enforces non-terminating timeout warnings giving agents full decision authority.
 
 ---
 
