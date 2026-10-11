@@ -235,7 +235,37 @@ export async function scaffoldRootCluster(
         await fs.rm(unmanagedClaudeDir, { recursive: true, force: true }).catch(() => null);
     }
 
-    // 2. Provision canonical skills from runtimeRoot into root worktree as standalone directories (no symlinks)
+    // 2. Provision placement ECPs from templates/ecp into root worktree
+    const placementEcps = [
+        "circuit-json-analysis",
+        "circuitjson-bookshelf-converter",
+        "cypress-pcb-placer",
+        "vhl-circuit-evaluator",
+        "vhl-workspace-ops",
+        "a2a-peer-dialing"
+    ];
+
+    const ecpTemplatesDir = path.join(runtimeRoot, "templates", "ecp");
+    for (const ecp of placementEcps) {
+        const sourceEcpPath = path.join(ecpTemplatesDir, ecp);
+        const targetEcpPath = path.join(skillsDir, ecp);
+
+        if (existsSync(sourceEcpPath)) {
+            try {
+                const stat = await fs.lstat(targetEcpPath).catch(() => null);
+                if (stat && stat.isSymbolicLink()) {
+                    await fs.unlink(targetEcpPath);
+                }
+                if (!existsSync(targetEcpPath)) {
+                    await fs.cp(sourceEcpPath, targetEcpPath, { recursive: true });
+                }
+            } catch (err: any) {
+                console.warn(`[clusterScaffolding] Warning provisioning ECP '${ecp}' to ${targetEcpPath}:`, err.message);
+            }
+        }
+    }
+
+    // Provision canonical skills from runtimeRoot into root worktree as standalone directories (no symlinks)
     const canonicalSkills = [
         "a2a-peer-dialing",
         "vhl-circuit-evaluator",
