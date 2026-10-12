@@ -1,32 +1,34 @@
-# MOSAIC Multi-Cluster Agent Architecture for VHL
+# ABB Agent MESH Multi-Cluster Architecture for VHL
 
-> **Document Version:** 1.0.0  
-> **Date:** 2026-10-06  
+> **Document Version:** 2.0.0  
+> **Date:** 2026-10-11  
 > **Status:** Approved Architectural Specification  
 > **Target Module:** `vhl-runtime-mosaic` (`feature/mosaic-runtime-migration`)  
-> **Authors:** Wise Turtle (WT) & Crazy Orca (CO)
+> **Authors:** Wise Turtle (WT) & Crazy Orca (CO)  
+> **Comprehensive Reference:** [`docs/VHL_Agent_MESH_Architecture.md`](../../docs/VHL_Agent_MESH_Architecture.md)
 
 ---
 
 ## 1. Executive Summary & Architectural Paradigm
 
-The Virtual Hardware Laboratory (VHL) automated circuit design platform utilizes a **Federated Multi-Cluster Multi-Agent Architecture** powered by the **MOSAIC Hosting Framework (MOSAIC HF)**.
+The Virtual Hardware Laboratory (VHL) automated circuit design platform utilizes a **Federated Multi-Cluster Multi-Agent Architecture** powered by the **ABB Agent MESH (formerly MOSAIC)** hypervisor.
 
 Rather than running all agents in a single monolithic container or using a rigid Python state machine (`AOSM`), the system organizes multi-agent execution into **isolated Agent Clusters** corresponding directly to Git worktrees:
 
-```
+```text
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
 │                              VHL RUNTIME EXPRESS (Port 3022)                           │
 │                      Deterministic Platform, Substrate & Cluster Supervisor            │
-│               • Assigns cluster ports: Root (8000), Modules (8001..8050)               │
+│               • Assigns non-colliding ports: Root (8100), Modules (8101..8150)         │
 │               • Generates project-wide cluster_roster.json address book                │
 └───────────────────────────────────────────┬────────────────────────────────────────────┘
                                             │
         ┌───────────────────────────────────┼───────────────────────────────────┐
         ▼                                   ▼                                   ▼
 ┌───────────────────────────────┐ ┌───────────────────────────────┐ ┌───────────────────────────────┐
-│     MODULE CLUSTER 1 (8001)   │ │     MODULE CLUSTER 2 (8002)   │ │     ROOT CLUSTER (Port 8000)  │
+│     MODULE CLUSTER 1 (8101)   │ │     MODULE CLUSTER 2 (8102)   │ │     ROOT CLUSTER (Port 8100)  │
 │  bms-monitor-module/          │ │  communication-bridge/        │ │  bms-project_root/            │
+│  Alias: bms-monitor-module    │ │  Alias: communication-bridge  │ │  Alias: root                  │
 │                               │ │                               │ │                               │
 │  [archy] (Lead Orchestrator)  │ │  [archy] (Lead Orchestrator)  │ │  [control_archy] (Lead)       │
 │     │        ▲                │ │     │        ▲                │ │     ├─► [control_ana]         │
@@ -38,7 +40,7 @@ Rather than running all agents in a single monolithic container or using a rigid
 └───────────────▲───────────────┘ └───────────────▲───────────────┘ └───────────────▲───────────────┘
                 │                                 │                                 │
                 └═══════════════ Federated A2A Archy-to-Archy Bus ══════════════════┘
-                               (Inter-Module Boundary Alignment)
+                               (FQAN: archy@bms-monitor-module)
 ```
 
 ### Core Principles
