@@ -64,13 +64,16 @@ export class ClusterSupervisor {
         }
 
         const candidatePaths = [
+            path.join(os.homedir(), ".local/bin/mosaic"),
+            path.join(os.homedir(), ".local/bin/mesh"),
             "/Library/Frameworks/Python.framework/Versions/3.14/bin/mosaic",
             "/Library/Frameworks/Python.framework/Versions/3.13/bin/mosaic",
             "/Library/Frameworks/Python.framework/Versions/3.12/bin/mosaic",
-            path.join(os.homedir(), ".local/bin/mosaic"),
             path.join(os.homedir(), ".cargo/bin/mosaic"),
             "/opt/homebrew/bin/mosaic",
-            "/usr/local/bin/mosaic"
+            "/opt/homebrew/bin/mesh",
+            "/usr/local/bin/mosaic",
+            "/usr/local/bin/mesh"
         ];
 
         for (const candidate of candidatePaths) {

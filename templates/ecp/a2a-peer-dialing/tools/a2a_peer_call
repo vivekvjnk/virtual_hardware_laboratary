@@ -21,6 +21,7 @@ import json
 import os
 from pathlib import Path
 import sys
+from typing import Any, Dict, List, Optional
 
 # Suppress OpenHands banner on stdout
 os.environ.setdefault("OPENHANDS_SUPPRESS_BANNER", "1")
@@ -37,102 +38,168 @@ except ImportError:
             os.execv(venv_py, [venv_py] + sys.argv)
         probe = os.path.dirname(probe)
 
-# Ensure mosaic is importable if run from source or workspace
+# Ensure mesh or mosaic is importable if run from source or workspace
 cur = os.path.abspath(os.path.dirname(__file__))
 while cur and cur != os.path.dirname(cur):
-    if os.path.isdir(os.path.join(cur, "mosaic")):
-        sys.path.insert(0, cur)
-        break
+    for mod in ("mesh", "mosaic"):
+        if os.path.isdir(os.path.join(cur, mod)):
+            sys.path.insert(0, cur)
+            break
     cur = os.path.dirname(cur)
 
 # Also check cwd and common development locations
 cwd = os.getcwd()
-if os.path.isdir(os.path.join(cwd, "mosaic")) and cwd not in sys.path:
-    sys.path.insert(0, cwd)
+for mod in ("mesh", "mosaic"):
+    if os.path.isdir(os.path.join(cwd, mod)) and cwd not in sys.path:
+        sys.path.insert(0, cwd)
 
-mosaic_root = os.environ.get("MOSAIC_ROOT")
-if mosaic_root and os.path.isdir(os.path.join(mosaic_root, "mosaic")) and mosaic_root not in sys.path:
-    sys.path.insert(0, mosaic_root)
+for env_var in ("MESH_ROOT", "MOSAIC_ROOT"):
+    root_val = os.environ.get(env_var)
+    if root_val:
+        for mod in ("mesh", "mosaic"):
+            if os.path.isdir(os.path.join(root_val, mod)) and root_val not in sys.path:
+                sys.path.insert(0, root_val)
 
-from mosaic.a2a.client import (
-    a2a_send_task,
-    a2a_get_task_status,
-    a2a_get_peer_status,
-    a2a_wait_for_task,
-    a2a_cancel_task,
-    a2a_list_peers,
-    a2a_get_peer_card,
-)
+for dev_path in ("/Users/vivek/Agentics/MESH_Dev", "/Users/vivek/Agentics/MESH_Installed"):
+    if os.path.isdir(dev_path) and dev_path not in sys.path:
+        sys.path.insert(0, dev_path)
+
+try:
+    from mesh.a2a.client import (
+        a2a_send_task,
+        a2a_get_task_status,
+        a2a_get_peer_status,
+        a2a_wait_for_task,
+        a2a_cancel_task,
+        a2a_list_peers,
+        a2a_get_peer_card,
+    )
+except ImportError:
+    from mosaic.a2a.client import (
+        a2a_send_task,
+        a2a_get_task_status,
+        a2a_get_peer_status,
+        a2a_wait_for_task,
+        a2a_cancel_task,
+        a2a_list_peers,
+        a2a_get_peer_card,
+    )
 
 
-def resolve_a2a_url(cli_url: str | None = None, cluster_name: str | None = None) -> str:
-    """Dynamically resolves the A2A host URL for the calling workspace or target cluster."""
-    if cluster_name:
-        roster_candidates = []
-        env_roster = os.getenv("VHL_CLUSTER_ROSTER")
-        if env_roster and os.path.isfile(env_roster):
-            roster_candidates.append(env_roster)
+def parse_peer_destination(peer_raw: Optional[str], cluster_flag: Optional[str] = None) -> tuple[Optional[str], Optional[str]]:
+    """
+    Parses peer and cluster from raw peer string and optional --cluster flag.
+    Supports:
+      - bare: 'dev_agent' -> ('dev_agent', cluster_flag)
+      - at-syntax: 'dev_agent@cluster_alias' -> ('dev_agent', 'cluster_alias')
+      - slash-syntax: 'cluster_alias/dev_agent' -> ('dev_agent', 'cluster_alias')
+    """
+    if not peer_raw:
+        return None, cluster_flag
 
-        curr = os.path.abspath(os.getcwd())
-        while curr and curr != os.path.dirname(curr):
-            roster_candidates.append(os.path.join(curr, ".agents", "cluster_roster.json"))
-            roster_candidates.append(os.path.join(curr, "cluster_roster.json"))
-            curr = os.path.dirname(curr)
+    peer_str = peer_raw.strip()
+    target_cluster = cluster_flag
 
-        found_roster = None
-        for candidate in roster_candidates:
-            if os.path.isfile(candidate):
-                found_roster = candidate
-                break
+    if "@" in peer_str:
+        parts = peer_str.split("@", 1)
+        peer_name = parts[0].strip()
+        target_cluster = target_cluster or parts[1].strip()
+        return peer_name, target_cluster
+    elif "/" in peer_str:
+        parts = peer_str.split("/", 1)
+        target_cluster = target_cluster or parts[0].strip()
+        peer_name = parts[1].strip()
+        return peer_name, target_cluster
 
-        if not found_roster:
-            raise RuntimeError(
-                f"cluster_roster.json not found when resolving cluster '{cluster_name}'. "
-                "Ensure project is loaded in VHL or set VHL_CLUSTER_ROSTER environment variable."
-            )
+    return peer_str, target_cluster
 
-        try:
-            with open(found_roster, "r", encoding="utf-8") as f:
-                roster_data = json.load(f)
-            clusters = roster_data.get("clusters", {})
-            if cluster_name in clusters:
-                cluster_info = clusters[cluster_name]
-                url = cluster_info.get("url")
-                if url:
-                    return url
-            available = ", ".join(sorted(clusters.keys())) if clusters else "None"
-            raise RuntimeError(
-                f"Cluster '{cluster_name}' not found in cluster_roster.json ({found_roster}). "
-                f"Available clusters: [{available}]"
-            )
-        except Exception as e:
-            if isinstance(e, RuntimeError):
-                raise
-            raise RuntimeError(f"Failed parsing cluster_roster.json at {found_roster}: {e}")
 
+def resolve_a2a_url(cli_url: str | None = None, target_cluster: str | None = None) -> str:
+    """
+    Dynamically resolves the A2A host URL for intra-cluster or inter-cluster communication.
+
+    1. If cli_url was explicitly passed (and not default placeholder 8000), use it.
+    2. If target_cluster is specified (inter-cluster dialing):
+       - If direct http:// or https://, use directly.
+       - Resolve against active instances matching cluster_alias or cluster_id.
+       - If host:port format, use http://<host:port>.
+    3. If bare destination (intra-cluster dialing, no target_cluster):
+       - STRICT local-first resolution using caller's own MESH_CLUSTER_URL or local workspace lockfile.
+       - NEVER scan foreign instances in ~/.mosaic/instances/ to prevent cross-cluster leaks!
+    """
     if cli_url and cli_url not in ("http://127.0.0.1:8000", "http://localhost:8000"):
         return cli_url
 
-    # Check environment variables
-    env_url = (
-        os.getenv("A2A_HOST_URL")
-        or os.getenv("MOSAIC_A2A_URL")
-        or os.getenv("MOSAIC_HOST_URL")
-    )
-    if env_url and env_url.strip():
-        return env_url.strip()
+    # --- Scenario 1: Inter-cluster target specified ---
+    if target_cluster and target_cluster.strip():
+        tc = target_cluster.strip()
+        if tc.startswith("http://") or tc.startswith("https://"):
+            return tc
 
-    # Try resolving via WorkspaceLockManager if mosaic core is importable
-    try:
-        from mosaic.core.workspace_lock import WorkspaceLockManager
-        return WorkspaceLockManager.resolve_server_url(default_url=cli_url or "http://127.0.0.1:8000")
-    except Exception:
-        pass
+        # Use WorkspaceLockManager if available
+        try:
+            try:
+                from mesh.core.workspace_lock import WorkspaceLockManager
+            except ImportError:
+                from mosaic.core.workspace_lock import WorkspaceLockManager
+            return WorkspaceLockManager.resolve_server_url(target_cluster=tc)
+        except Exception:
+            pass
 
-    # Filesystem fallback: traverse directory hierarchy for local lock file
+        # Filesystem lookup in ~/.mesh/instances/*.json or ~/.mosaic/instances/*.json
+        for inst_dirname in ("~/.mesh/instances", "~/.mosaic/instances"):
+            inst_dir = os.path.expanduser(inst_dirname)
+            if os.path.isdir(inst_dir):
+                for entry in os.listdir(inst_dir):
+                    if entry.endswith(".json"):
+                        jpath = os.path.join(inst_dir, entry)
+                        try:
+                            with open(jpath, "r", encoding="utf-8") as f:
+                                idata = json.load(f)
+                            pid = idata.get("pid")
+                            calias = idata.get("cluster_alias") or idata.get("alias")
+                            cid = idata.get("cluster_id")
+                            wpath = idata.get("workspace_path")
+                            if pid and (
+                                calias == tc
+                                or (calias and calias.lower() == tc.lower())
+                                or cid == tc
+                                or (cid and cid.lower() == tc.lower())
+                                or (wpath and Path(wpath).name == tc)
+                            ):
+                                try:
+                                    os.kill(int(pid), 0)
+                                    return idata.get("server_url", f"http://127.0.0.1:{idata.get('port', 8000)}")
+                                except Exception:
+                                    pass
+                        except Exception:
+                            pass
+
+        # Check if direct host:port
+        if ":" in tc:
+            parts = tc.split(":", 1)
+            if parts[1].isdigit():
+                return f"http://{tc}"
+
+        raise ValueError(f"Target cluster '{tc}' not found in active MESH instances (~/.mesh/instances/).")
+
+    # --- Scenario 2: Intra-cluster local-first resolution (Strict) ---
+    # 1. Caller's own cluster URL injected by MESH host kernel
+    mesh_ws = os.getenv("MESH_WORKSPACE_PATH")
+    cwd_path = os.path.abspath(os.getcwd())
+    is_current_workspace = not mesh_ws or (cwd_path == mesh_ws or cwd_path.startswith(mesh_ws + os.sep))
+    if is_current_workspace:
+        mesh_url = os.getenv("MESH_CLUSTER_URL")
+        if mesh_url and mesh_url.strip():
+            return mesh_url.strip()
+
+    # 2. Local workspace lockfile or cluster.json in cwd or parent hierarchy
     curr = os.path.abspath(os.getcwd())
     while curr and curr != os.path.dirname(curr):
         for candidate in [
+            os.path.join(curr, ".agents", "cluster.json"),
+            os.path.join(curr, ".agents", ".mesh.lock"),
+            os.path.join(curr, ".mesh.lock"),
             os.path.join(curr, ".agents", ".mosaic.lock"),
             os.path.join(curr, ".mosaic.lock"),
         ]:
@@ -152,37 +219,24 @@ def resolve_a2a_url(cli_url: str | None = None, cluster_name: str | None = None)
                     pass
         curr = os.path.dirname(curr)
 
-    # Check global instances registry (~/.mosaic/instances/*.json)
-    try:
-        home_instances = os.path.expanduser("~/.mosaic/instances")
-        if os.path.isdir(home_instances):
-            cwd_path = os.path.abspath(os.getcwd())
-            for entry in os.listdir(home_instances):
-                if entry.endswith(".json"):
-                    jpath = os.path.join(home_instances, entry)
-                    try:
-                        with open(jpath, "r", encoding="utf-8") as f:
-                            idata = json.load(f)
-                        pid = idata.get("pid")
-                        wpath = idata.get("workspace_path")
-                        if pid and wpath:
-                            try:
-                                os.kill(int(pid), 0)
-                                if cwd_path == wpath or cwd_path.startswith(wpath + os.sep):
-                                    return idata.get("server_url", f"http://127.0.0.1:{idata.get('port', 8000)}")
-                            except Exception:
-                                pass
-                    except Exception:
-                        pass
-    except Exception:
-        pass
+    # 3. Fall back to environment variable A2A_HOST_URL if set
+    env_url = (
+        os.getenv("A2A_HOST_URL")
+        or os.getenv("MESH_A2A_URL")
+        or os.getenv("MESH_HOST_URL")
+        or os.getenv("MOSAIC_A2A_URL")
+        or os.getenv("MOSAIC_HOST_URL")
+    )
+    if env_url and env_url.strip():
+        return env_url.strip()
 
+    # NEVER scan global ~/.mesh/instances/*.json for bare names to avoid cross-cluster crosstalk!
     return cli_url or "http://127.0.0.1:8000"
 
 
 def infer_current_agent_name() -> Optional[str]:
     """Infers the active calling agent's name from environment or session path."""
-    name = os.getenv("MOSAIC_AGENT_NAME")
+    name = os.getenv("MESH_AGENT_NAME") or os.getenv("MOSAIC_AGENT_NAME")
     if name:
         return name
     session_file = os.getenv("PI_SESSION_FILE")
@@ -196,7 +250,7 @@ def infer_current_agent_name() -> Optional[str]:
 
 
 def cmd_list(args):
-    url = resolve_a2a_url(args.url, cluster_name=getattr(args, "cluster", None))
+    url = resolve_a2a_url(args.url, target_cluster=getattr(args, "cluster", None))
     cards = asyncio.run(a2a_list_peers(base_url=url))
     if getattr(args, "detailed", False):
         print(json.dumps(cards, indent=2))
@@ -215,16 +269,17 @@ def cmd_list(args):
 
 
 def cmd_describe(args):
-    if not args.peer:
+    peer_name, target_cluster = parse_peer_destination(args.peer, getattr(args, "cluster", None))
+    if not peer_name:
         print(json.dumps({"error": "Must provide --peer to describe an agent"}, indent=2), file=sys.stderr)
         sys.exit(1)
 
-    url = resolve_a2a_url(args.url, cluster_name=getattr(args, "cluster", None))
-    card = asyncio.run(a2a_get_peer_card(peer_name=args.peer, base_url=url))
+    url = resolve_a2a_url(args.url, target_cluster=target_cluster)
+    card = asyncio.run(a2a_get_peer_card(peer_name=peer_name, base_url=url))
     if not card:
         err_res = {
-            "error": f"Agent '{args.peer}' not found in catalog",
-            "peer": args.peer,
+            "error": f"Agent '{peer_name}' not found in catalog",
+            "peer": peer_name,
             "url": url,
         }
         print(json.dumps(err_res, indent=2), file=sys.stderr)
@@ -234,12 +289,31 @@ def cmd_describe(args):
 
 
 def cmd_send(args):
-    url = resolve_a2a_url(args.url, cluster_name=getattr(args, "cluster", None))
+    peer_name, target_cluster = parse_peer_destination(args.peer, getattr(args, "cluster", None))
+    if not peer_name:
+        print(json.dumps({"error": "Must provide --peer to send task"}, indent=2), file=sys.stderr)
+        sys.exit(1)
+
+    url = resolve_a2a_url(args.url, target_cluster=target_cluster)
     sender = getattr(args, "sender", None) or infer_current_agent_name()
+    if target_cluster and sender and "@" not in sender:
+        caller_cluster = os.getenv("MESH_CLUSTER_ALIAS")
+        if caller_cluster:
+            sender = f"{sender}@{caller_cluster}"
+
+    # Attach simple one-line caller identity to differentiate agent delegation from human user messages
+    caller_id = sender or "a2a_caller"
+    caller_header = f"[A2A Caller: {caller_id}]"
+    raw_message = (args.message or "").strip()
+    if raw_message.startswith("[A2A Caller:") or raw_message.startswith("[A2A Task from Caller:"):
+        outbound_message = args.message
+    else:
+        outbound_message = f"{caller_header}\n{args.message}" if args.message else caller_header
+
     result = asyncio.run(
         a2a_send_task(
-            peer_name=args.peer,
-            message=args.message,
+            peer_name=peer_name,
+            message=outbound_message,
             async_mode=not args.sync,
             base_url=url,
             context_id=args.context_id,
@@ -255,11 +329,12 @@ def cmd_send(args):
 
 
 def cmd_status(args):
-    if not args.task_id and not args.peer:
+    peer_name, target_cluster = parse_peer_destination(args.peer, getattr(args, "cluster", None))
+    if not args.task_id and not peer_name:
         print(json.dumps({"error": "Must provide either --task-id or --peer to check status"}, indent=2), file=sys.stderr)
         sys.exit(1)
 
-    url = resolve_a2a_url(args.url, cluster_name=getattr(args, "cluster", None))
+    url = resolve_a2a_url(args.url, target_cluster=target_cluster)
     sender = getattr(args, "sender", None) or infer_current_agent_name()
     ack = not getattr(args, "no_ack", False)
     result = {}
@@ -267,8 +342,8 @@ def cmd_status(args):
         task_res = asyncio.run(a2a_get_task_status(task_id=args.task_id, base_url=url, caller=sender, acknowledge=ack))
         result.update(task_res)
 
-    if args.peer:
-        peer_res = asyncio.run(a2a_get_peer_status(peer_name=args.peer, base_url=url))
+    if peer_name:
+        peer_res = asyncio.run(a2a_get_peer_status(peer_name=peer_name, base_url=url))
         if args.task_id:
             result["peer_status"] = peer_res
         else:
@@ -278,7 +353,8 @@ def cmd_status(args):
 
 
 def cmd_wait(args):
-    url = resolve_a2a_url(args.url, cluster_name=getattr(args, "cluster", None))
+    target_cluster = getattr(args, "cluster", None)
+    url = resolve_a2a_url(args.url, target_cluster=target_cluster)
     sender = getattr(args, "sender", None) or infer_current_agent_name()
     ack = not getattr(args, "no_ack", False)
     result = asyncio.run(
@@ -297,7 +373,7 @@ def cmd_wait(args):
 
 
 def cmd_cancel(args):
-    url = resolve_a2a_url(args.url, cluster_name=getattr(args, "cluster", None))
+    url = resolve_a2a_url(args.url)
     result = asyncio.run(
         a2a_cancel_task(
             task_id=args.task_id,
@@ -308,27 +384,45 @@ def cmd_cancel(args):
 
 
 def cmd_log(args):
-    url = resolve_a2a_url(args.url, cluster_name=getattr(args, "cluster", None))
+    url = resolve_a2a_url(args.url)
     try:
         status_data = asyncio.run(a2a_get_task_status(task_id=args.task_id, base_url=url))
     except Exception:
         status_data = {}
 
-    log_file_rel = status_data.get("log_file")
     candidate_paths = []
+    log_file_rel = status_data.get("log_file")
     if log_file_rel:
         candidate_paths.append(log_file_rel)
         candidate_paths.append(os.path.abspath(log_file_rel))
 
-    pattern = f"**/.agents/tasks/*_{args.task_id}/*_execution.log"
-    for p in glob.glob(pattern, recursive=True):
-        candidate_paths.append(p)
+    meta = status_data.get("metadata") or {}
+    if isinstance(meta, dict):
+        if meta.get("log_file"):
+            candidate_paths.append(meta["log_file"])
+            candidate_paths.append(os.path.abspath(meta["log_file"]))
+        if meta.get("log_file_abs"):
+            candidate_paths.append(meta["log_file_abs"])
 
     target_file = None
     for cp in candidate_paths:
         if os.path.isfile(cp):
             target_file = cp
             break
+
+    if not target_file:
+        # Search upward for .agents/tasks/*_<task_id>/*_execution.log without unbounded recursive search
+        curr = os.path.abspath(os.getcwd())
+        while curr and curr != os.path.dirname(curr):
+            tasks_dir = os.path.join(curr, ".agents", "tasks")
+            if os.path.isdir(tasks_dir):
+                for match in glob.glob(os.path.join(tasks_dir, f"*_{args.task_id}", "*_execution.log")):
+                    if os.path.isfile(match):
+                        target_file = match
+                        break
+            if target_file:
+                break
+            curr = os.path.dirname(curr)
 
     if not target_file:
         print(json.dumps({
@@ -366,27 +460,27 @@ def main():
     # --- list subcommand ---
     p_list = subparsers.add_parser("list", aliases=["peers"], help="List available peer agents in the MOSAIC HF catalog")
     p_list.add_argument("--detailed", action="store_true", default=False, help="Include full agent card definitions")
-    p_list.add_argument("--cluster", default=None, help="Target cluster identifier from cluster_roster.json")
+    p_list.add_argument("--cluster", default=None, help="Target MESH cluster alias or host:port")
     p_list.add_argument("--url", default=None, help="Base A2A host URL (default: auto-discover from active workspace)")
     p_list.set_defaults(func=cmd_list)
 
     # --- describe subcommand ---
     p_describe = subparsers.add_parser("describe", aliases=["info"], help="Request description and capabilities of a peer agent")
     p_describe.add_argument("--peer", required=True, help="Target peer agent name to inspect")
-    p_describe.add_argument("--cluster", default=None, help="Target cluster identifier from cluster_roster.json")
+    p_describe.add_argument("--cluster", default=None, help="Target MESH cluster alias or host:port")
     p_describe.add_argument("--url", default=None, help="Base A2A host URL (default: auto-discover from active workspace)")
     p_describe.set_defaults(func=cmd_describe)
 
     # --- send subcommand ---
     p_send = subparsers.add_parser("send", help="Send a task to a peer agent (async by default)")
-    p_send.add_argument("--peer", required=True, help="Target peer agent name (e.g. dev_agent, infra_agent)")
+    p_send.add_argument("--peer", required=True, help="Target peer agent name (e.g. dev_agent, infra_agent, dev_agent@cluster)")
     p_send.add_argument("--message", required=True, help="Instruction or request message for the peer")
-    p_send.add_argument("--cluster", default=None, help="Target cluster identifier from cluster_roster.json")
+    p_send.add_argument("--cluster", default=None, help="Target MESH cluster alias or host:port")
     p_send.add_argument("--sync", action="store_true", default=False, help="Wait synchronously for task completion")
     p_send.add_argument("--timeout", type=float, default=180.0, help="Execution timeout in seconds")
     p_send.add_argument("--context-id", default=None, help="Conversational context session ID")
     p_send.add_argument("--task-id", default=None, help="Specific task ID anchor")
-    p_send.add_argument("--sender", default=os.getenv("MOSAIC_AGENT_NAME"), help="Calling agent name for causal DAG tracking")
+    p_send.add_argument("--sender", default=os.getenv("MESH_AGENT_NAME") or os.getenv("MOSAIC_AGENT_NAME"), help="Calling agent name for causal DAG tracking")
     p_send.add_argument("--parent-task-id", default=os.getenv("A2A_PARENT_TASK_ID"), help="Parent task ID anchor")
     p_send.add_argument("--url", default=None, help="Base A2A host URL (default: auto-discover from active workspace)")
     p_send.set_defaults(func=cmd_send)
@@ -395,8 +489,8 @@ def main():
     p_status = subparsers.add_parser("status", help="Query task execution status or peer runtime metrics")
     p_status.add_argument("--task-id", default=None, help="Specific task ID to inspect")
     p_status.add_argument("--peer", default=None, help="Peer agent name to inspect live runtime metrics")
-    p_status.add_argument("--cluster", default=None, help="Target cluster identifier from cluster_roster.json")
-    p_status.add_argument("--sender", default=os.getenv("MOSAIC_AGENT_NAME"), help="Calling agent name for acknowledgment tracking")
+    p_status.add_argument("--cluster", default=None, help="Target MESH cluster alias or host:port")
+    p_status.add_argument("--sender", default=os.getenv("MESH_AGENT_NAME") or os.getenv("MOSAIC_AGENT_NAME"), help="Calling agent name for acknowledgment tracking")
     p_status.add_argument("--no-ack", action="store_true", default=False, help="Do not mark task acknowledged or prune pending mailbox callbacks")
     p_status.add_argument("--url", default=None, help="Base A2A host URL (default: auto-discover from active workspace)")
     p_status.set_defaults(func=cmd_status)
@@ -404,10 +498,10 @@ def main():
     # --- wait subcommand ---
     p_wait = subparsers.add_parser("wait", help="Wait / poll for an ongoing task to complete")
     p_wait.add_argument("--task-id", required=True, help="Task ID to await")
-    p_wait.add_argument("--cluster", default=None, help="Target cluster identifier from cluster_roster.json")
+    p_wait.add_argument("--cluster", default=None, help="Target MESH cluster alias or host:port")
     p_wait.add_argument("--timeout", type=float, default=180.0, help="Maximum wait time in seconds")
     p_wait.add_argument("--interval", type=float, default=2.0, help="Polling interval in seconds")
-    p_wait.add_argument("--sender", default=os.getenv("MOSAIC_AGENT_NAME"), help="Calling agent name for acknowledgment tracking")
+    p_wait.add_argument("--sender", default=os.getenv("MESH_AGENT_NAME") or os.getenv("MOSAIC_AGENT_NAME"), help="Calling agent name for acknowledgment tracking")
     p_wait.add_argument("--no-ack", action="store_true", default=False, help="Do not mark task acknowledged or prune pending mailbox callbacks")
     p_wait.add_argument("--url", default=None, help="Base A2A host URL (default: auto-discover from active workspace)")
     p_wait.set_defaults(func=cmd_wait)
@@ -415,14 +509,12 @@ def main():
     # --- cancel subcommand ---
     p_cancel = subparsers.add_parser("cancel", help="Cancel / abort an active peer task")
     p_cancel.add_argument("--task-id", required=True, help="Task ID to cancel")
-    p_cancel.add_argument("--cluster", default=None, help="Target cluster identifier from cluster_roster.json")
     p_cancel.add_argument("--url", default=None, help="Base A2A host URL (default: auto-discover from active workspace)")
     p_cancel.set_defaults(func=cmd_cancel)
 
     # --- log subcommand ---
     p_log = subparsers.add_parser("log", help="Inspect execution log for a specific task")
     p_log.add_argument("--task-id", required=True, help="Task ID whose logs to inspect")
-    p_log.add_argument("--cluster", default=None, help="Target cluster identifier from cluster_roster.json")
     p_log.add_argument("--tail", type=int, default=50, help="Number of trailing lines to view (default: 50)")
     p_log.add_argument("--url", default=None, help="Base A2A host URL (default: auto-discover from active workspace)")
     p_log.set_defaults(func=cmd_log)

@@ -11,6 +11,9 @@ export MOSAIC_ECP_REPO_URL="${MOSAIC_ECP_REPO_URL:-git@github.com:vivekvjnk/ECP_
 export MOSAIC_ECP_REF="${MOSAIC_ECP_REF:-main}"
 export MOSAIC_ECP_PROVIDER="${MOSAIC_ECP_PROVIDER:-git}"
 
+# Default Cypress Colab GPU delegation remote via rclone
+export CYPRESS_RCLONE_REMOTE="${CYPRESS_RCLONE_REMOTE:-cypress_runtime:cypress_colab_runtime}"
+
 # Track child PIDs for graceful lifecycle management
 WS_SERVER_PID=""
 SNAPSHOT_PID=""

@@ -1,6 +1,6 @@
 ---
 name: cypress-pcb-placer
-description: Systematically executes, diagnoses, and tunes Cypress GPU-accelerated PCB component placement optimization runs. Manages Bookshelf /FIXED anchor placement, resolves density and wirelength divergence, and applies the 4-regime diagnostic decision tree.
+description: Systematically executes, diagnoses, and tunes Cypress GPU-accelerated PCB component placement optimization runs. Supports transparent cloud GPU delegation to Google Colab T4 runtimes via rclone, manages Bookshelf /FIXED anchor placement, resolves density and wirelength divergence, and applies the 4-regime diagnostic decision tree.
 license: Apache-2.0
 metadata:
   author: MOSAIC-Team
@@ -9,6 +9,8 @@ metadata:
   tags:
     - pcb-placement
     - cypress
+    - colab-gpu
+    - rclone
     - fixed-anchors
     - dreamplace
     - hyperparameter-tuning
@@ -16,34 +18,136 @@ metadata:
 
 # Cypress PCB Placer
 
-This capability package provides operational knowledge and systematic diagnostic decision procedures to execute component placement optimization and hyperparameter tuning using the **Cypress PCB Placement Framework**.
+This capability package provides operational knowledge and systematic diagnostic decision procedures to execute component placement optimization and hyperparameter tuning using the **Cypress PCB Placement Framework**. It supports transparent **cloud GPU delegation via Google Colab** (backed by NVIDIA T4 GPUs) over `rclone`, as well as local container execution.
 
 ---
 
-## 1. Operational Knowledge
+## 1. Cloud GPU Delegation Architecture (Google Colab via rclone)
 
-### Tool Execution Wrappers
-Cypress executes GPU non-linear placement optimization within its designated container workspace. Use the bundled wrapper scripts under `tools/`:
+Because non-linear electrostatic PCB placement requires CUDA GPU acceleration (PyTorch + custom CUDA operators), the execution wrapper `tools/run_placer.sh` can delegate computation to a remote Google Colab GPU runtime via Google Drive:
 
-- **Run Placement Optimization**:
-  ```bash
-  tools/run_placer.sh <path_to_config_json>
-  ```
-  *Example:* `tools/run_placer.sh configs/test_small1.json`
-
-- **Run Hyperparameter Exploration (MOTPE Search)**:
-  ```bash
-  tools/run_placer_tuner.sh <config_space_json> <aux_file_path> <ppa_json> <results_dir>
-  ```
-
-- **Monitor Telemetry Logs**:
-  ```bash
-  tail -f DREAMPlace.log
-  ```
+```text
+┌─────────────────────────────────┐
+│ Host Workspace (run_placer.sh)  │
+│  • Reads <design>.json & .aux   │
+│  • Prepares job bundle          │
+└───────────────┬─────────────────┘
+                │ rclone copy
+                ▼
+┌─────────────────────────────────────────────────────────┐
+│ Google Drive (CYPRESS_RCLONE_REMOTE)                    │
+│   cypress_colab_runtime/queue/<job_name>/               │
+│     ├── config.json, .nodes, .nets, .pl, .scl, .aux     │
+│     └── READY                                           │
+└───────────────┬─────────────────────────────────────────┘
+                │ Polled by Colab worker
+                ▼
+┌─────────────────────────────────────────────────────────┐
+│ Google Colab Cloud GPU Worker (T4 / A100)               │
+│   Cypress_Colab_Runner.ipynb                            │
+│     • Runs Cypress DREAMPlace GPU Placement             │
+│     • Emits <design>.gp.pl, DREAMPlace.log, plots       │
+│     • Moves bundle to completed/<job_name>/             │
+└───────────────┬─────────────────────────────────────────┘
+                │ Polled by host submit_job.py
+                ▼
+┌─────────────────────────────────┐
+│ Host Workspace (run_placer.sh)  │
+│  • Downloads completed results  │
+│  • Consolidates .gp.pl & logs   │
+│  • Hands off to back-annotation │
+└─────────────────────────────────┘
+```
 
 ---
 
-## 2. Bookshelf `/FIXED` Anchor Placement Protocol
+## 2. Prerequisites for Cloud GPU Delegation
+
+Before dispatching placement jobs to Google Colab, verify all three prerequisites:
+
+### Prerequisite 1: Colab Worker Running in Cloud
+1. Open the runner notebook **`Cypress_Colab_Runner.ipynb`** (located under `cypress-colab-runner/notebooks/`) in Google Colab.
+2. Ensure the Colab runtime type is configured to **GPU (T4 or higher)** (`Runtime` $\rightarrow$ `Change runtime type` $\rightarrow$ `T4 GPU`).
+3. Run all cells to initialize the Cypress SIF/Singularity environment and start the continuous queue worker:
+   ```text
+   [WORKER] Watching cypress_colab_runtime/queue/ for incoming jobs...
+   ```
+
+### Prerequisite 2: Host Machine rclone Authentication
+1. `rclone` must be installed on the host machine (`which rclone`).
+2. An rclone remote pointing to Google Drive must be configured (typically named `cypress_runtime:`):
+   ```bash
+   rclone listremotes
+   # Output must contain: cypress_runtime:
+   ```
+
+### Prerequisite 3: Environment Variable Configured
+Set the default remote target path in your shell or `.env`:
+```bash
+export CYPRESS_RCLONE_REMOTE="cypress_runtime:cypress_colab_runtime"
+```
+
+---
+
+## 3. Operational Tool Usage
+
+The core execution wrapper is bundled in `tools/run_placer.sh`:
+
+```bash
+tools/run_placer.sh [options] <config_json_path> [output_dir]
+```
+
+### Key Parameters:
+- `<config_json_path>`: Path to Cypress placement configuration JSON.
+- `[output_dir]`: Target directory to consolidate placement outputs (`.gp.pl`, `DREAMPlace.log`, plots). Defaults to the directory specified in config or `./results`.
+- `--remote <rclone_target>`: Overrides rclone remote target (defaults to `$CYPRESS_RCLONE_REMOTE`).
+- `--local`: Forces local container execution using `dreamplace/Placer.py`.
+- `--dry-run`: Validates configuration and displays execution plan without dispatching.
+- `--name <job_name>`: Explicit job identifier for queue tracking.
+
+### Invocation Examples
+
+1. **Standard Remote Colab Placement**:
+   ```bash
+   .agents/skills/cypress-pcb-placer/tools/run_placer.sh configs/power_circuit.json ./results
+   ```
+
+2. **Dry-Run Validation**:
+   ```bash
+   .agents/skills/cypress-pcb-placer/tools/run_placer.sh --dry-run configs/control_circuit.json
+   ```
+
+3. **Hyperparameter Tuning (MOTPE Search)**:
+   ```bash
+   tools/run_placer_tuner.sh <config_space_json> <aux_file_path> <ppa_json> <results_dir>
+   ```
+
+---
+
+## 4. Telemetry Streaming & Back-Annotation Handoff
+
+When a job is dispatched via `tools/run_placer.sh`:
+1. The tool packages the configuration and all referenced Bookshelf files (`.aux`, `.nodes`, `.nets`, `.pl`, `.scl`).
+2. Transmits the payload to `CYPRESS_RCLONE_REMOTE/queue/<job_name>` on Google Drive.
+3. Automatically streams completion status and telemetry to the terminal.
+4. Downloads the output package into `output_dir/` upon completion:
+   - `<design_name>.gp.pl`: Placed coordinates file.
+   - `DREAMPlace.log`: Convergence and density telemetry.
+   - `summary.json`: Timing, HPWL, and overflow metrics.
+   - Optimization curves and layout render images.
+
+### Back-Annotation into Circuit TSX / Circuit JSON:
+Once `<design_name>.gp.pl` is generated, hand off to `circuitjson-bookshelf-converter` to update coordinates:
+```bash
+python3 .agents/skills/circuitjson-bookshelf-converter/tools/matrix_converter.py from_bookshelf_pcb \
+  path/to/original_circuit.json \
+  results/<design_name>.gp.pl \
+  path/to/placed_circuit.json
+```
+
+---
+
+## 5. Bookshelf `/FIXED` Anchor Placement Protocol
 
 In physical PCB layout synthesis, certain critical components must maintain immutable positions defined by external boundaries, mounting mechanics, or isolation zones:
 
@@ -66,7 +170,7 @@ MOUNTING_HOLE_2 98000 48000 : N /FIXED
 
 ---
 
-## 3. Four-Regime Diagnostic Decision Tree
+## 6. Four-Regime Diagnostic Decision Tree
 
 When evaluating real-time placement runs, inspect `DREAMPlace.log` telemetry to identify the optimization regime and apply targeted parameter adjustments in your JSON configuration:
 
@@ -111,7 +215,7 @@ When evaluating real-time placement runs, inspect `DREAMPlace.log` telemetry to 
 
 ---
 
-## 4. Verification
+## 7. Verification
 
 A placement run is verified and considered successful when all of the following criteria are met:
 
