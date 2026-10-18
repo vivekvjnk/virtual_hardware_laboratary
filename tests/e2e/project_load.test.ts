@@ -5,6 +5,7 @@ import * as os from 'os';
 import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
 import { VHLWebUI, isValidVhlProject } from '../../src/workspace/vhlWebUI.js';
+import { formatUrl } from '../../src/config/network.js';
 import { setProjectState, getProjectState, projectContext } from '../../src/workspace/projectContext.js';
 
 describe('End-to-End User Project Load and Structural Validation', () => {
@@ -114,7 +115,7 @@ describe('End-to-End User Project Load and Structural Validation', () => {
         webUI = new VHLWebUI(tempWorkspace, 0);
         await webUI.isReady;
         const apiPort = webUI.getApiPort();
-        baseUrl = `http://127.0.0.1:${apiPort}`;
+        baseUrl = formatUrl(apiPort);
     });
 
     afterAll(async () => {

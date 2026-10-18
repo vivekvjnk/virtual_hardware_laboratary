@@ -114,6 +114,12 @@ def parse_peer_destination(peer_raw: Optional[str], cluster_flag: Optional[str] 
     return peer_str, target_cluster
 
 
+def get_default_base_url() -> str:
+    host = os.getenv("VHL_HOST") or os.getenv("MOSAIC_HOST") or "localhost"
+    base = os.getenv("VHL_BASE_URL") or f"http://{host}"
+    return base.rstrip("/")
+
+
 def resolve_a2a_url(cli_url: str | None = None, target_cluster: str | None = None) -> str:
     """
     Dynamically resolves the A2A host URL for intra-cluster or inter-cluster communication.
@@ -127,7 +133,7 @@ def resolve_a2a_url(cli_url: str | None = None, target_cluster: str | None = Non
        - STRICT local-first resolution using caller's own MESH_CLUSTER_URL or local workspace lockfile.
        - NEVER scan foreign instances in ~/.mosaic/instances/ to prevent cross-cluster leaks!
     """
-    if cli_url and cli_url not in ("http://127.0.0.1:8000", "http://localhost:8000"):
+    if cli_url and cli_url not in ("http://127.0.0.1:8000", "http://localhost:8000", f"{get_default_base_url()}:8000"):
         return cli_url
 
     # --- Scenario 1: Inter-cluster target specified ---
@@ -169,7 +175,7 @@ def resolve_a2a_url(cli_url: str | None = None, target_cluster: str | None = Non
                             ):
                                 try:
                                     os.kill(int(pid), 0)
-                                    return idata.get("server_url", f"http://127.0.0.1:{idata.get('port', 8000)}")
+                                    return idata.get("server_url", f"{get_default_base_url()}:{idata.get('port', 8000)}")
                                 except Exception:
                                     pass
                         except Exception:
@@ -231,7 +237,7 @@ def resolve_a2a_url(cli_url: str | None = None, target_cluster: str | None = Non
         return env_url.strip()
 
     # NEVER scan global ~/.mesh/instances/*.json for bare names to avoid cross-cluster crosstalk!
-    return cli_url or "http://127.0.0.1:8000"
+    return cli_url or f"{get_default_base_url()}:8000"
 
 
 def infer_current_agent_name() -> Optional[str]:

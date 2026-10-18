@@ -8,6 +8,7 @@ import { open } from 'sqlite';
 import { execSync } from 'child_process';
 import { VHLWebUI } from '../../src/workspace/vhlWebUI.js';
 import { VHLWorkspaceManager } from '../../src/workspace/vhlWorkspaceManager.js';
+import { formatUrl } from '../../src/config/network.js';
 
 describe('Phase 1: Native Substrate Consolidation End-to-End Test Suite', () => {
     let tempWorkspace: string;
@@ -25,7 +26,7 @@ describe('Phase 1: Native Substrate Consolidation End-to-End Test Suite', () => 
         webUI = new VHLWebUI(tempWorkspace, 0);
         await webUI.isReady;
         const apiPort = webUI.getApiPort();
-        baseUrl = `http://127.0.0.1:${apiPort}`;
+        baseUrl = formatUrl(apiPort);
     });
 
     afterAll(async () => {

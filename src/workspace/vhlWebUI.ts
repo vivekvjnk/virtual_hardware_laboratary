@@ -16,6 +16,7 @@ import { open } from 'sqlite';
 import { VHLWorkspaceManager } from './vhlWorkspaceManager.js';
 import { evaluateCircuit } from '../vap/evaluator.js';
 import { ClusterSupervisor } from './clusterSupervisor.js';
+import { formatUrl } from '../config/network.js';
 
 export async function isValidVhlProject(
     projectPath: string,
@@ -781,7 +782,7 @@ export class VHLWebUI {
         this.isGatewayStarted = true;
 
         const proxy = httpProxy.createProxyServer({
-            target: `http://127.0.0.1:${this.TSC_DEV_PORT}`,
+            target: formatUrl(this.TSC_DEV_PORT),
             ws: true,
         });
 

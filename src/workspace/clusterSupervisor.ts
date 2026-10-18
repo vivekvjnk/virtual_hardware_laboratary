@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import net from "node:net";
+import { formatUrl } from "../config/network.js";
 
 export interface ClusterInstance {
     clusterId: string;
@@ -142,52 +143,108 @@ export class ClusterSupervisor {
     }
 
     /**
-     * Dynamically allocates an available port for a cluster, avoiding host port conflicts
+     * Searches for a base port such that `requiredCount` consecutive ports
+     * [base, base + requiredCount - 1] are available.
+     * If base port is not available, checks the next 100 set (8000, 8100, 8200, ...).
      */
-    public async allocatePort(clusterId: string): Promise<number> {
+    public async findAvailableBasePort(
+        requiredCount: number = 1,
+        startBase: number = this.ROOT_PORT
+    ): Promise<number> {
+        const maxPort = 65000;
+        for (let candidateBase = startBase; candidateBase <= maxPort - requiredCount; candidateBase += 100) {
+            let blockAvailable = true;
+            for (let i = 0; i < requiredCount; i++) {
+                const port = candidateBase + i;
+                if (!(await this.isPortAvailable(port))) {
+                    blockAvailable = false;
+                    break;
+                }
+            }
+            if (blockAvailable) {
+                return candidateBase;
+            }
+        }
+
+        throw new Error(
+            `Exceeded maximum cluster port allocation range searching for ${requiredCount} consecutive ports starting from ${startBase}`
+        );
+    }
+
+    /**
+     * Dynamically allocates an available port for a cluster, avoiding host port conflicts.
+     * Guarantees that there are enough consecutive ports available from base port for all
+     * MESH instances (number of MESH instances = Number of modules + 1(main worktree)).
+     */
+    public async allocatePort(clusterId: string, totalInstances?: number): Promise<number> {
+        const count = totalInstances ?? Math.max(this.clusters.size, 1);
+
+        // 1. Root / Assembly cluster (base port holder)
+        if (clusterId === "root") {
+            const existingRootPort = this.portAllocations.get("root");
+            if (existingRootPort !== undefined) {
+                let canKeep = true;
+                for (let i = 0; i < count; i++) {
+                    const port = existingRootPort + i;
+                    const isRunning = Array.from(this.clusters.values()).some(
+                        (c) => c.port === port && c.status === "running"
+                    );
+                    if (!isRunning && !(await this.isPortAvailable(port))) {
+                        canKeep = false;
+                        break;
+                    }
+                }
+                if (canKeep) {
+                    return existingRootPort;
+                }
+
+                // Existing base block is invalid/broken, clear stale non-running allocations
+                for (const [id] of this.portAllocations.entries()) {
+                    const inst = this.clusters.get(id);
+                    if (!inst || inst.status !== "running") {
+                        this.portAllocations.delete(id);
+                    }
+                }
+            }
+
+            const basePort = await this.findAvailableBasePort(count, this.ROOT_PORT);
+            this.portAllocations.set("root", basePort);
+            return basePort;
+        }
+
+        // 2. Module clusters
+        let basePort = this.portAllocations.get("root");
+        if (basePort === undefined) {
+            basePort = await this.findAvailableBasePort(count, this.ROOT_PORT);
+            this.portAllocations.set("root", basePort);
+        }
+
+        // Check if this module already has a valid allocation in the current base block
         if (this.portAllocations.has(clusterId)) {
             const existingPort = this.portAllocations.get(clusterId)!;
             const instance = this.clusters.get(clusterId);
-            // If already running on this port, keep it
-            if (instance && instance.status === "running") {
-                return existingPort;
-            }
-            // If port is still available on host, keep it
-            if (await this.isPortAvailable(existingPort)) {
-                return existingPort;
+            if (existingPort > basePort && existingPort < basePort + 100) {
+                if (instance && instance.status === "running") {
+                    return existingPort;
+                }
+                if (await this.isPortAvailable(existingPort)) {
+                    return existingPort;
+                }
             }
         }
 
         const currentlyAllocated = new Set(this.portAllocations.values());
 
-        // Check if root port 8000 is available on the host
-        const isRoot8000Available = await this.isPortAvailable(this.ROOT_PORT);
-
-        // If port 8000 is occupied (e.g. by orchestrator or another server),
-        // shift root to 8100 and modules to 8101..8150 (or next free block)
-        const effectiveRootStart = isRoot8000Available ? 8000 : 8100;
-        const moduleRangeStart = isRoot8000Available ? 8001 : 8101;
-        const moduleRangeEnd = isRoot8000Available ? 8050 : 8150;
-
-        if (clusterId === "root") {
-            let portCandidate = effectiveRootStart;
-            while (currentlyAllocated.has(portCandidate) || !(await this.isPortAvailable(portCandidate))) {
-                portCandidate++;
-            }
-            this.portAllocations.set("root", portCandidate);
-            return portCandidate;
-        }
-
-        // Module clusters
-        for (let port = moduleRangeStart; port <= moduleRangeEnd; port++) {
+        // Allocate the lowest available consecutive port in the base block (basePort + 1 .. basePort + 99)
+        for (let port = basePort + 1; port < basePort + 100; port++) {
             if (!currentlyAllocated.has(port) && (await this.isPortAvailable(port))) {
                 this.portAllocations.set(clusterId, port);
                 return port;
             }
         }
 
-        // Secondary fallback search if range exhausted
-        for (let port = 8200; port <= 8300; port++) {
+        // Fallback search if 100-block range is exhausted
+        for (let port = basePort + 100; port <= 65000; port++) {
             if (!currentlyAllocated.has(port) && (await this.isPortAvailable(port))) {
                 this.portAllocations.set(clusterId, port);
                 return port;
@@ -214,12 +271,13 @@ export class ClusterSupervisor {
         // Ensure 'root' is processed first so it gets the base root port
         const entries = Object.entries(worktrees);
         entries.sort(([a], [b]) => (a === "root" ? -1 : b === "root" ? 1 : a.localeCompare(b)));
+        const totalInstances = entries.length;
 
         // 1. Build roster map with dynamically allocated non-conflicting ports
         for (const [clusterId, wtPath] of entries) {
             const isRoot = clusterId === "root";
-            const port = await this.allocatePort(clusterId);
-            const url = `http://127.0.0.1:${port}`;
+            const port = await this.allocatePort(clusterId, totalInstances);
+            const url = formatUrl(port);
 
             roster.clusters[clusterId] = {
                 name: isRoot ? "Assembly Root" : clusterId,
@@ -276,7 +334,7 @@ export class ClusterSupervisor {
         port?: number
     ): Promise<ClusterInstance> {
         const allocatedPort = port || (await this.allocatePort(clusterId));
-        const url = `http://127.0.0.1:${allocatedPort}`;
+        const url = formatUrl(allocatedPort);
         const isRoot = clusterId === "root";
 
         let instance = this.clusters.get(clusterId);

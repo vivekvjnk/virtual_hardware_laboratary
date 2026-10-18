@@ -3,6 +3,7 @@ import * as fs from 'fs/promises';
 import { existsSync } from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import * as net from 'net';
 import { execSync } from 'child_process';
 import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
@@ -11,6 +12,7 @@ import { VHLWorkspaceManager } from '../../src/workspace/vhlWorkspaceManager.js'
 import { ClusterSupervisor } from '../../src/workspace/clusterSupervisor.js';
 import { scaffoldModuleCluster, scaffoldRootCluster } from '../../src/workspace/clusterScaffolding.js';
 import { PROJECT_ROOT } from '../../src/config/paths.js';
+import { formatUrl } from '../../src/config/network.js';
 
 describe('MOSAIC Multi-Cluster Architecture End-to-End Test Suite', () => {
     let tempWorkspace: string;
@@ -39,7 +41,7 @@ describe('MOSAIC Multi-Cluster Architecture End-to-End Test Suite', () => {
         // Spin up VHLWebUI on ephemeral test port (0)
         webUI = new VHLWebUI(tempWorkspace, 0);
         await webUI.isReady;
-        baseUrl = `http://127.0.0.1:${webUI.getApiPort()}`;
+        baseUrl = formatUrl(webUI.getApiPort());
     });
 
     afterAll(async () => {
@@ -168,15 +170,15 @@ print("CARDS_OK")
 
             // Verify port allocation
             expect(roster.clusters.root.port).toBeGreaterThanOrEqual(8000);
-            expect(roster.clusters.root.url).toBe(`http://127.0.0.1:${roster.clusters.root.port}`);
+            expect(roster.clusters.root.url).toBe(formatUrl(roster.clusters.root.port));
             expect(roster.clusters.root.type).toBe('assembly');
 
             expect(roster.clusters.mod_sensor.port).toBeGreaterThan(roster.clusters.root.port);
-            expect(roster.clusters.mod_sensor.url).toBe(`http://127.0.0.1:${roster.clusters.mod_sensor.port}`);
+            expect(roster.clusters.mod_sensor.url).toBe(formatUrl(roster.clusters.mod_sensor.port));
             expect(roster.clusters.mod_sensor.type).toBe('module');
 
             expect(roster.clusters.mod_telemetry.port).toBeGreaterThan(roster.clusters.mod_sensor.port);
-            expect(roster.clusters.mod_telemetry.url).toBe(`http://127.0.0.1:${roster.clusters.mod_telemetry.port}`);
+            expect(roster.clusters.mod_telemetry.url).toBe(formatUrl(roster.clusters.mod_telemetry.port));
             expect(roster.clusters.mod_telemetry.type).toBe('module');
 
             // Verify cluster_roster.json is written into all worktrees
@@ -189,6 +191,128 @@ print("CARDS_OK")
                 expect(content.clusters.mod_sensor.port).toBe(roster.clusters.mod_sensor.port);
                 expect(content.clusters.mod_telemetry.port).toBe(roster.clusters.mod_telemetry.port);
             }
+        });
+
+        it('searches next 100 block (8100) when base port 8000 is occupied', async () => {
+            const blockServer = net.createServer();
+            let serverBound = false;
+            try {
+                await new Promise<void>((resolve, reject) => {
+                    blockServer.once('error', reject);
+                    blockServer.listen(8000, '127.0.0.1', () => {
+                        serverBound = true;
+                        resolve();
+                    });
+                });
+            } catch {
+                // If 8000 already occupied by another service on host, test proceeds naturally
+            }
+
+            try {
+                const supervisor = new ClusterSupervisor();
+                const basePort = await supervisor.findAvailableBasePort(3, 8000);
+                expect(basePort).toBeGreaterThanOrEqual(8100);
+                expect(basePort % 100).toBe(0);
+            } finally {
+                if (serverBound) {
+                    await new Promise<void>((resolve) => blockServer.close(() => resolve()));
+                }
+            }
+        });
+
+        it('ensures enough consecutive ports for all MESH instances by advancing to next 100 set if any intermediate port is occupied', async () => {
+            // Find current available base for 3 instances
+            const testSupervisor = new ClusterSupervisor();
+            const currentBase = await testSupervisor.findAvailableBasePort(3, 8000);
+
+            // Block an intermediate consecutive port (base + 1) in that block
+            const blockServer = net.createServer();
+            let serverBound = false;
+            try {
+                await new Promise<void>((resolve, reject) => {
+                    blockServer.once('error', reject);
+                    blockServer.listen(currentBase + 1, '127.0.0.1', () => {
+                        serverBound = true;
+                        resolve();
+                    });
+                });
+            } catch {
+                // If port already occupied, proceed
+            }
+
+            try {
+                const supervisor = new ClusterSupervisor();
+                const nextBase = await supervisor.findAvailableBasePort(3, currentBase);
+                // Must have advanced by at least 100 because currentBase + 1 was occupied
+                expect(nextBase).toBeGreaterThanOrEqual(currentBase + 100);
+                expect(nextBase % 100).toBe(0);
+
+                // Verify roster generation allocates consecutive ports from this new base
+                const roster = await supervisor.generateClusterRoster(PROJECT_NAME, projRoot, {
+                    root: rootWt,
+                    mod_sensor: mod1Wt,
+                    mod_telemetry: mod2Wt
+                });
+
+                expect(roster.clusters.root.port).toBe(nextBase);
+                expect(roster.clusters.mod_sensor.port).toBe(nextBase + 1);
+                expect(roster.clusters.mod_telemetry.port).toBe(nextBase + 2);
+            } finally {
+                if (serverBound) {
+                    await new Promise<void>((resolve) => blockServer.close(() => resolve()));
+                }
+            }
+        });
+
+        it('jumps across multiple 100 blocks when consecutive sets are unavailable', async () => {
+            const supervisor = new ClusterSupervisor();
+            const startBase = await supervisor.findAvailableBasePort(1, 8000);
+
+            // Block ports in two consecutive 100 sets: startBase and startBase + 100
+            const server1 = net.createServer();
+            const server2 = net.createServer();
+            let bound1 = false;
+            let bound2 = false;
+
+            try {
+                await new Promise<void>((res) => {
+                    server1.listen(startBase, '127.0.0.1', () => { bound1 = true; res(); });
+                    server1.once('error', () => res());
+                });
+                await new Promise<void>((res) => {
+                    server2.listen(startBase + 100, '127.0.0.1', () => { bound2 = true; res(); });
+                    server2.once('error', () => res());
+                });
+
+                const allocatedBase = await supervisor.findAvailableBasePort(2, startBase);
+                expect(allocatedBase).toBeGreaterThanOrEqual(startBase + 200);
+                expect(allocatedBase % 100).toBe(0);
+            } finally {
+                if (bound1) await new Promise<void>((r) => server1.close(() => r()));
+                if (bound2) await new Promise<void>((r) => server2.close(() => r()));
+            }
+        });
+
+        it('uses centralized configurable URL pointing to localhost by default and respecting VHL_BASE_URL/VHL_HOST', async () => {
+            // Default check
+            expect(formatUrl(8000)).toBe('http://localhost:8000');
+
+            // Custom VHL_HOST check
+            process.env.VHL_HOST = 'custom-mesh.internal';
+            expect(formatUrl(8000)).toBe('http://custom-mesh.internal:8000');
+            delete process.env.VHL_HOST;
+
+            // Custom VHL_BASE_URL check
+            process.env.VHL_BASE_URL = 'https://mesh-cloud.io';
+            expect(formatUrl(8000)).toBe('https://mesh-cloud.io:8000');
+            delete process.env.VHL_BASE_URL;
+
+            // Verify supervisor uses configured formatUrl
+            const supervisor = new ClusterSupervisor();
+            const roster = await supervisor.generateClusterRoster(PROJECT_NAME, projRoot, {
+                root: rootWt
+            });
+            expect(roster.clusters.root.url).toBe(`http://localhost:${roster.clusters.root.port}`);
         });
     });
 
@@ -236,7 +360,7 @@ print("CARDS_OK")
             const clusterMap = new Map(clusterData.clusters.map((c: any) => [c.clusterId, c]));
             expect(clusterMap.has('root')).toBe(true);
             expect(clusterMap.get('root').port).toBeGreaterThanOrEqual(8000);
-            expect(clusterMap.get('root').url).toBe(`http://127.0.0.1:${clusterMap.get('root').port}`);
+            expect(clusterMap.get('root').url).toBe(formatUrl(clusterMap.get('root').port));
 
             expect(clusterMap.has('mod_sensor')).toBe(true);
             expect(clusterMap.get('mod_sensor').port).toBeGreaterThan(clusterMap.get('root').port);
@@ -311,7 +435,7 @@ print("CARDS_OK")
 
             // Invariant: Root port is >= 8000 and URL matches
             expect(roster.clusters.root.port).toBeGreaterThanOrEqual(8000);
-            expect(roster.clusters.root.url).toBe(`http://127.0.0.1:${roster.clusters.root.port}`);
+            expect(roster.clusters.root.url).toBe(formatUrl(roster.clusters.root.port));
             expect(roster.clusters.root.type).toBe('assembly');
 
             // Invariant: All 7 modules are allocated unique ports
@@ -330,7 +454,7 @@ print("CARDS_OK")
             for (const mod of expectedModules) {
                 expect(roster.clusters[mod]).toBeDefined();
                 expect(roster.clusters[mod].port).toBeGreaterThan(roster.clusters.root.port);
-                expect(roster.clusters[mod].url).toBe(`http://127.0.0.1:${roster.clusters[mod].port}`);
+                expect(roster.clusters[mod].url).toBe(formatUrl(roster.clusters[mod].port));
                 expect(roster.clusters[mod].type).toBe('module');
                 expect(roster.clusters[mod].lead).toBe('archy');
                 ports.add(roster.clusters[mod].port);
