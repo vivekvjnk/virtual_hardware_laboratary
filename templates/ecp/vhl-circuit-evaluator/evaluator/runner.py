@@ -21,7 +21,7 @@ from .models import (
 from .sanitizer import sanitize_lines
 from .taxonomy import ErrorTaxonomy
 
-
+# TODO: Add support for Windows based systems
 def _find_tsci() -> str:
     path = shutil.which("tsci")
     if path:

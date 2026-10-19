@@ -365,6 +365,8 @@ export class ClusterSupervisor {
             return instance;
         }
 
+        const canonicalWorktreePath = await fs.realpath(worktreePath).catch(() => worktreePath);
+
         instance.status = "starting";
         instance.error = undefined;
 
@@ -375,7 +377,7 @@ export class ClusterSupervisor {
         const mosaicBin = this.findMosaicBinary();
         const args = [
             "host",
-            "--workspace", worktreePath,
+            "--workspace", canonicalWorktreePath,
             "--port", String(allocatedPort),
             "--strict-port",
             "--no-reload",
@@ -388,7 +390,7 @@ export class ClusterSupervisor {
 
         try {
             const proc = spawn(mosaicBin, args, {
-                cwd: worktreePath,
+                cwd: canonicalWorktreePath,
                 stdio: ["ignore", "pipe", "pipe"],
                 detached: true,
                 env: {
@@ -533,6 +535,26 @@ export class ClusterSupervisor {
         console.log(`[ClusterSupervisor] Stopping all ${this.clusters.size} clusters...`);
         const stopPromises = Array.from(this.clusters.keys()).map((id) => this.stopCluster(id));
         await Promise.all(stopPromises);
+    }
+
+    /**
+     * Returns a specific tracked cluster by clusterId
+     */
+    public getCluster(clusterId: string): ClusterInfo | undefined {
+        const c = this.clusters.get(clusterId);
+        if (!c) return undefined;
+        return {
+            clusterId: c.clusterId,
+            port: c.port,
+            url: c.url,
+            worktreePath: c.worktreePath,
+            type: c.type,
+            lead: c.lead,
+            status: c.status,
+            pid: c.pid,
+            startedAt: c.startedAt,
+            error: c.error
+        };
     }
 
     /**

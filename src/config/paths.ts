@@ -2,6 +2,7 @@
 
 import path from "path";
 import { fileURLToPath } from "url";
+import { existsSync } from "fs";
 import * as os from 'os';
 
 /**
@@ -81,6 +82,8 @@ export const EVAL_RESULTS_DIR = path.join(PROJECT_ROOT, "eval_results");
  * Workspace directory.
  * 
  * Default location for the workspace folder.
+ * Defaults to the top-level repository workspace if present, falling back to local workspace.
  * This is easily configurable via environment variable.
  */
-export const WORKSPACE_DIR = process.env.VHL_WORKSPACE_DIR || path.join(PROJECT_ROOT, "workspace");
+const repoWorkspace = path.resolve(PROJECT_ROOT, "..", "workspace");
+export const WORKSPACE_DIR = process.env.VHL_WORKSPACE_DIR || (existsSync(repoWorkspace) ? repoWorkspace : path.join(PROJECT_ROOT, "workspace"));

@@ -402,7 +402,7 @@ export class VHLWebUI {
                 const support_dirs = [".sync_scratch", ".zip_temp", "lib", "node_modules", ".tmp", "circuits", "eval_results", "logs"];
                 const entries = await fs.readdir(this.workspaceDir, { withFileTypes: true });
                 const projects = entries
-                    .filter(d => d.isDirectory() && !support_dirs.includes(d.name) && !d.name.startsWith('.'))
+                    .filter(d => (d.isDirectory() || d.isSymbolicLink()) && !support_dirs.includes(d.name) && !d.name.startsWith('.'))
                     .map(d => ({
                         id: d.name,
                         name: d.name,
@@ -415,7 +415,8 @@ export class VHLWebUI {
 
                 // For each project, validate and try to get more info from its state.db
                 for (const project of projects) {
-                    const projectPath = path.join(this.workspaceDir, project.id);
+                    let projectPath = path.join(this.workspaceDir, project.id);
+                    projectPath = await fs.realpath(projectPath).catch(() => projectPath);
                     const validation = await isValidVhlProject(projectPath, project.id);
                     project.isValid = validation.valid;
                     if (!validation.valid) {
@@ -481,12 +482,110 @@ export class VHLWebUI {
             }
         });
 
-        app.get('/api/agents/:agentId/messages', (req, res) => {
-            res.status(200).send({ messages: [] });
+        app.get('/api/agents/:agentId/messages', async (req, res) => {
+            try {
+                const rawAgentId = (Array.isArray(req.params.agentId) ? req.params.agentId[0] : req.params.agentId) as string;
+                const lastDot = rawAgentId.lastIndexOf('.');
+                const clusterId = lastDot !== -1 ? rawAgentId.substring(0, lastDot) : 'root';
+                const agentName = lastDot !== -1 ? rawAgentId.substring(lastDot + 1) : rawAgentId;
+
+                let cluster = this.clusterSupervisor.getCluster(clusterId);
+                if (!cluster) {
+                    const allClusters = this.clusterSupervisor.getClusters();
+                    cluster = allClusters.find(c => 
+                        c.clusterId.toLowerCase() === clusterId.toLowerCase() || 
+                        c.clusterId.endsWith(`_${clusterId}`)
+                    );
+                }
+
+                if (!cluster) {
+                    return res.status(200).send({ messages: [] });
+                }
+
+                const clusterUrl = cluster.url || `http://127.0.0.1:${cluster.port}`;
+                const wsParam = cluster.worktreePath ? `&workspace_path=${encodeURIComponent(cluster.worktreePath)}` : '';
+                const historyUrl = `${clusterUrl}/agent/conversations/history?agent_name=${encodeURIComponent(agentName)}${wsParam}`;
+
+                const response = await fetch(historyUrl);
+                if (!response.ok) {
+                    return res.status(200).send({ messages: [] });
+                }
+
+                const history = await response.json();
+                if (!Array.isArray(history)) {
+                    return res.status(200).send({ messages: [] });
+                }
+
+                const messages = history.map((item: any, idx: number) => {
+                    const textContent = item.text || (Array.isArray(item.thinking) && item.thinking.length > 0 ? item.thinking.join('\n\n') : '') || '';
+                    return {
+                        id: `msg-${idx}`,
+                        sender: item.role === 'user' ? 'HIL' : agentName,
+                        payload: { text: textContent },
+                        timestamp: item.timestamp || new Date().toISOString()
+                    };
+                });
+
+                res.status(200).send({ messages });
+            } catch (err: any) {
+                console.error(`[VHLWebUI] Error getting messages for ${req.params.agentId}:`, err);
+                res.status(200).send({ messages: [] });
+            }
         });
 
-        app.post('/api/agents/:agentId/send', (req, res) => {
-            res.status(200).send({ status: 'Message sent' });
+        app.post('/api/agents/:agentId/send', async (req, res) => {
+            try {
+                const rawAgentId = (Array.isArray(req.params.agentId) ? req.params.agentId[0] : req.params.agentId) as string;
+                const lastDot = rawAgentId.lastIndexOf('.');
+                const clusterId = lastDot !== -1 ? rawAgentId.substring(0, lastDot) : 'root';
+                const agentName = lastDot !== -1 ? rawAgentId.substring(lastDot + 1) : rawAgentId;
+
+                let cluster = this.clusterSupervisor.getCluster(clusterId);
+                if (!cluster) {
+                    const allClusters = this.clusterSupervisor.getClusters();
+                    cluster = allClusters.find(c => 
+                        c.clusterId.toLowerCase() === clusterId.toLowerCase() || 
+                        c.clusterId.endsWith(`_${clusterId}`)
+                    );
+                }
+
+                if (!cluster) {
+                    return res.status(404).send({ error: `Cluster not found for '${clusterId}'` });
+                }
+
+                const messageText = req.body.text || req.body.message || '';
+                const filePath = req.body.file_path || null;
+
+                const payloadObj: Record<string, any> = { text: messageText };
+                if (filePath) {
+                    payloadObj.file_path = filePath;
+                }
+
+                const clusterUrl = cluster.url || `http://127.0.0.1:${cluster.port}`;
+                const forwardResp = await fetch(`${clusterUrl}/agent/message`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        agent_name: agentName,
+                        message_type: 'MESSAGE',
+                        payload: payloadObj
+                    })
+                });
+
+                if (!forwardResp.ok) {
+                    const errorText = await forwardResp.text();
+                    return res.status(forwardResp.status).send({ error: `MESH cluster returned ${forwardResp.status}: ${errorText}` });
+                }
+
+                const forwardData = await forwardResp.json();
+                res.status(200).send({
+                    status: 'Message sent',
+                    message_id: forwardData.message_id || forwardData.id || `msg-${Date.now()}`
+                });
+            } catch (err: any) {
+                console.error(`[VHLWebUI] Error sending message to ${req.params.agentId}:`, err);
+                res.status(500).send({ error: err.message });
+            }
         });
 
 
@@ -574,11 +673,13 @@ export class VHLWebUI {
             }
             console.log(`[VHLWebUI] Loading project ${project_id}`);
             
-            const projectPath = path.isAbsolute(project_id) ? project_id : path.join(this.workspaceDir, project_id);
+            let projectPath = path.isAbsolute(project_id) ? project_id : path.join(this.workspaceDir, project_id);
 
             if (!existsSync(projectPath)) {
                 return res.status(404).send({ error: `Project directory not found: ${project_id}` });
             }
+
+            projectPath = await fs.realpath(projectPath).catch(() => projectPath);
 
             const validation = await isValidVhlProject(projectPath, path.basename(projectPath));
             if (!validation.valid) {

@@ -191,10 +191,12 @@ export class VHLWorkspaceManager {
      * Resolves project root and stable worktree, loads modules and settings from SQLite.
      */
     async loadProject(projectId: string): Promise<string> {
-        const projectRoot = path.isAbsolute(projectId) ? path.resolve(projectId) : path.resolve(this.workspaceRoot, projectId);
+        let projectRoot = path.isAbsolute(projectId) ? path.resolve(projectId) : path.resolve(this.workspaceRoot, projectId);
         if (!existsSync(projectRoot)) {
             throw new Error(`Project directory not found: ${projectRoot}`);
         }
+
+        projectRoot = await fs.realpath(projectRoot).catch(() => projectRoot);
 
         this.project_root = projectRoot;
         this.actualProjectId = path.basename(projectRoot);

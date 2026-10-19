@@ -9,6 +9,7 @@
  */
 
 import { spawn } from "child_process";
+import { existsSync } from "fs";
 import * as fs from "fs/promises";
 import * as path from "path";
 import { prepareMetadata } from "./metadata.js";
@@ -53,7 +54,10 @@ export function evaluateCircuit(
         let processClosed = false;
         const startTime = Date.now();
 
-        const proc = spawn("tsci", ["build", circuit_name], {
+        const tsciBin = existsSync("/opt/homebrew/bin/tsci")
+            ? "/opt/homebrew/bin/tsci"
+            : (existsSync("/usr/local/bin/tsci") ? "/usr/local/bin/tsci" : "tsci");
+        const proc = spawn(tsciBin, ["build", circuit_name], {
             stdio: "pipe",
             cwd: evalDir,
             env: {
