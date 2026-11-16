@@ -171,52 +171,7 @@ describe('Phase 1: Native Substrate Consolidation End-to-End Test Suite', () => 
         });
     });
 
-    describe('d) Synchronous VAP Evaluation (POST /api/vap/evaluate)', () => {
-        it('evaluates a circuit file synchronously and returns decision, logs, and eval_status', async () => {
-            // Create a minimal synthetic circuit TSX file
-            const circuitDir = path.join(tempWorkspace, 'circuit_test');
-            await fs.mkdir(circuitDir, { recursive: true });
-            const circuitFile = path.join(circuitDir, 'test_circuit.tsx');
-            await fs.writeFile(
-                circuitFile,
-                'export default () => <resistor resistance="1k" />;'
-            );
-
-            const res = await fetch(`${baseUrl}/api/vap/evaluate`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    file_path: circuitFile,
-                    timeout_ms: 60000
-                })
-            });
-
-            expect(res.status).toBe(200);
-            const data = await res.json();
-            expect(data).toHaveProperty('decision');
-            expect(data).toHaveProperty('logs');
-            expect(Array.isArray(data.logs)).toBe(true);
-            expect(data).toHaveProperty('eval_status');
-            expect(data).toHaveProperty('metadata');
-            expect(typeof data.success).toBe('boolean');
-        });
-
-        it('returns 404 when evaluating a non-existent circuit file', async () => {
-            const res = await fetch(`${baseUrl}/api/vap/evaluate`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    file_path: path.join(tempWorkspace, 'non_existent_circuit.tsx')
-                })
-            });
-
-            expect(res.status).toBe(404);
-            const data = await res.json();
-            expect(data.error).toContain('not found');
-        });
-    });
-
-    describe('e) Real BMS Project Invariant Verification', () => {
+    describe('d) Real BMS Project Invariant Verification', () => {
         const BMS_PROJECT_PATH = '/Users/vivek/Virtual_Labs/bms-project_e0505ca9';
 
         it('seamlessly loads real bms-project_e0505ca9 with 7 modules and attaches worktrees', async () => {

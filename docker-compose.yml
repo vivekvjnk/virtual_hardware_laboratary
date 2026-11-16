@@ -20,7 +20,6 @@ services:
     environment:
       - VHL_TRANSPORT=http
       - PORT=8080
-      - VAP_PORT=8081
       - VHL_LIBRARY_DIR=/app/lib
       - SNAPSHOT_PORT=8083
       - VHL_WORKSPACE_DIR=${VHL_WORKSPACE_DIR:-/workspace}

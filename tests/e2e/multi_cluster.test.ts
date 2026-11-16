@@ -14,7 +14,7 @@ import { scaffoldModuleCluster, scaffoldRootCluster } from '../../src/workspace/
 import { PROJECT_ROOT } from '../../src/config/paths.js';
 import { formatUrl } from '../../src/config/network.js';
 
-describe('MOSAIC Multi-Cluster Architecture End-to-End Test Suite', () => {
+describe('MESH Multi-Cluster Architecture End-to-End Test Suite', () => {
     let tempWorkspace: string;
     let webUI: VHLWebUI;
     let baseUrl: string;
@@ -124,7 +124,7 @@ describe('MOSAIC Multi-Cluster Architecture End-to-End Test Suite', () => {
                 expect(existsSync(path.join(mCardsDir, 'ana.json'))).toBe(true);
             }
 
-            // 7. Validate all cards with MOSAIC card_validator.py
+            // 7. Validate all cards with MESH card_validator.py
             const cardFiles: string[] = [
                 ...expectedRootCards.map(c => path.join(rootCardsDir, c)),
                 path.join(mod1Wt, '.agents', 'well_known', 'archy.json'),
@@ -144,7 +144,7 @@ for dev_path in ["/Users/vivek/Agentics/MESH_Dev", "/Users/vivek/Agentics/MESH_I
 try:
     from mesh.core.card_validator import load_and_validate_agent_card_file
 except ImportError:
-    from mosaic.core.card_validator import load_and_validate_agent_card_file
+    from mesh.core.card_validator import load_and_validate_agent_card_file
 
 paths = sys.argv[1:]
 for p in paths:

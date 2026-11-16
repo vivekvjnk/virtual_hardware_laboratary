@@ -47,7 +47,6 @@ When `./start.sh` executes, it spawns and monitors the following background proc
 | :--- | :--- | :--- |
 | **`server`** | `src/server/` | Implements the WebSocket relay server (`RelayAgentHandler`) coordinating real-time message routing between WebUI, Backend, and Runtime. |
 | **`workspace`** | `src/workspace/` | Houses `VHLRuntime` and `vhlWebUI.ts`, providing the Express REST/RPC API on port `3022`, project loading, and module setup. |
-| **`vap`** | `src/vap/` | The Validation/Agent/Prototyping engine. Runs isolated circuit evaluation (`tsci eval`), linting, and footprint validation. |
 | **`mcp`** | `src/mcp/` | Model Context Protocol servers exposing terminal commands, library registries, and UI snapshot capture to agents. |
 | **`runtime`** | `src/runtime/` | Core filesystem management for persistent component libraries and `tscircuit` toolchain execution. |
 | **`editor`** | `src/editor/` | Filesystem abstractions (`localFilesystem.ts`) supporting remote RPC file manipulation for WebUI editor sessions. |
@@ -98,12 +97,12 @@ The Express server running on port `3022` exposes REST and RPC endpoints consume
 
 ---
 
-## VAP Engine & Component Validation (`src/vap/`)
+## Circuit Validation & Synthesis Architecture
 
-The VAP engine enforces deterministic circuit correctness:
-1. **Isolated Execution**: Runs `tsci eval` on generated `.tsx` code inside an isolated process.
-2. **Deterministic Checks**: Validates pin connectivity, component overlap, footprint existence, and DRC rules.
-3. **Outcome Generation**: Emits `VAP_COMPLETE` and `VAP_DECISION` (`ACCEPT`, `REJECT`, `UNDECIDED`) over the relay to notify agents and frontend.
+Deterministic circuit correctness and evaluation are orchestrated through the **MESH multi-agent framework** using workflow instructions and Engineering Capability Packages (ECPs), primarily:
+1. **`vhl-circuit-evaluator` ECP**: Runs standalone deterministic evaluation (`tsci build`), strips ANSI escape sequences, extracts structured diagnostic errors, and enforces non-terminating timeout warnings.
+2. **`module-synthesis-workflow`**: Defines stage gates (SCUD netlist generation, component procurement, circuit synthesis, self-healing rectification loops).
+3. **`circuit-json-analysis` ECP**: Validates pin connectivity, component overlap, footprint existence, and design rule checks (DRC).
 
 ---
 

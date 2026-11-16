@@ -14,7 +14,6 @@ import { getProjectRootDir, getProjectDir, projectContext, getProjectState, setP
 import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
 import { VHLWorkspaceManager } from './vhlWorkspaceManager.js';
-import { evaluateCircuit } from '../vap/evaluator.js';
 import { ClusterSupervisor } from './clusterSupervisor.js';
 import { formatUrl } from '../config/network.js';
 
@@ -720,86 +719,6 @@ export class VHLWebUI {
                 res.status(500).send({ error: `Failed to load project: ${err.message}` });
             }
         });
-
-        app.post(['/api/circuit/evaluate', '/api/vap/evaluate'], async (req, res) => {
-            try {
-                const { project_id, module_name, circuit_name, file_path, timeout_ms } = req.body;
-                let evalDir: string = "";
-                let targetCircuitName: string = "";
-
-                if (file_path) {
-                    const resolvedPath = path.isAbsolute(file_path) ? file_path : path.resolve(this.workspaceDir, file_path);
-                    if (!existsSync(resolvedPath)) {
-                        return res.status(404).send({ error: `Circuit file not found: ${file_path}` });
-                    }
-                    evalDir = path.dirname(resolvedPath);
-                    targetCircuitName = path.basename(resolvedPath);
-                } else if (module_name || circuit_name) {
-                    const targetProj = project_id || getProjectState().project_id;
-                    const worktrees = getProjectState().worktrees || {};
-                    const wtPath = module_name ? worktrees[module_name] : (worktrees['root'] || getProjectState().project_root_dir);
-
-                    const candidateName = circuit_name || (module_name ? `${module_name}.tsx` : 'index.circuit.tsx');
-                    const cleanCircuitName = candidateName.endsWith('.tsx') ? candidateName : `${candidateName}.tsx`;
-
-                    let candidatePaths: string[] = [];
-                    if (wtPath) {
-                        candidatePaths.push(
-                            path.join(wtPath, module_name || '', 'Workspace', cleanCircuitName),
-                            path.join(wtPath, 'Workspace', cleanCircuitName),
-                            path.join(wtPath, module_name || '', cleanCircuitName),
-                            path.join(wtPath, cleanCircuitName)
-                        );
-                    }
-                    if (targetProj) {
-                        const projDir = path.isAbsolute(targetProj) ? targetProj : path.join(this.workspaceDir, targetProj);
-                        candidatePaths.push(
-                            path.join(projDir, `${targetProj}_${module_name}`, module_name || '', 'Workspace', cleanCircuitName),
-                            path.join(projDir, module_name || '', 'Workspace', cleanCircuitName),
-                            path.join(projDir, cleanCircuitName)
-                        );
-                    }
-
-                    const foundPath = candidatePaths.find(p => existsSync(p));
-                    if (foundPath) {
-                        evalDir = path.dirname(foundPath);
-                        targetCircuitName = path.basename(foundPath);
-                    } else if (wtPath && existsSync(wtPath)) {
-                        evalDir = module_name && existsSync(path.join(wtPath, module_name, 'Workspace'))
-                            ? path.join(wtPath, module_name, 'Workspace')
-                            : wtPath;
-                        targetCircuitName = cleanCircuitName;
-                    } else {
-                        return res.status(404).send({
-                            error: `Could not resolve circuit file '${cleanCircuitName}' for module '${module_name}'`
-                        });
-                    }
-                } else {
-                    return res.status(400).send({
-                        error: "Missing required parameters: provide either file_path or (module_name/circuit_name)"
-                    });
-                }
-
-                const resultsDir = path.join(evalDir, 'eval_results');
-                await fs.mkdir(resultsDir, { recursive: true });
-
-                const timeout = timeout_ms ? Number(timeout_ms) : 300000;
-                const result = await evaluateCircuit(targetCircuitName, resultsDir, evalDir, timeout);
-
-                res.status(200).send({
-                    decision: result.decision,
-                    logs: result.logs,
-                    eval_status: result.eval_status,
-                    timedOut: result.timedOut,
-                    metadata: result.metadata,
-                    success: result.decision === 'ACCEPT'
-                });
-            } catch (err: any) {
-                console.error('[VHLWebUI] Error during circuit evaluation:', err);
-                res.status(500).send({ error: `Evaluation error: ${err.message}` });
-            }
-        });
-
 
         app.get('/api/clusters', (req, res) => {
             res.status(200).send({ clusters: this.clusterSupervisor.getClusters() });

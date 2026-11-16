@@ -14,14 +14,14 @@ async function renderCardTemplate(
 }
 
 /**
- * Scaffolds an autonomous MOSAIC Agent Cluster inside a module worktree.
+ * Scaffolds an autonomous MESH Agent Cluster inside a module worktree.
  * Creates the .agents/ directory tree, symlinks canonical VHL skills,
  * generates module-scoped declarative Agent Cards, and establishes the synthesis workflow contract.
  *
  * @param worktreePath - Absolute path to the module worktree
  * @param moduleName - Name of the hardware module
  * @param projectId - Project identifier
- * @param runtimeRoot - Root directory of vhl-runtime-mosaic where canonical skills reside
+ * @param runtimeRoot - Root directory of vhl-runtime-mesh where canonical skills reside
  */
 export async function scaffoldModuleCluster(
     worktreePath: string,
@@ -142,7 +142,7 @@ export async function scaffoldModuleCluster(
 
 > **Project:** ${projectId}  
 > **Module Worktree:** ${worktreePath}  
-> **Architecture:** MOSAIC Multi-Cluster Autonomous Triad  
+> **Architecture:** MESH Multi-Cluster Autonomous Triad  
 
 ---
 
@@ -195,13 +195,13 @@ export async function scaffoldModuleCluster(
 }
 
 /**
- * Scaffolds an autonomous MOSAIC Agent Cluster for root assemblies in the root worktree.
+ * Scaffolds an autonomous MESH Agent Cluster for root assemblies in the root worktree.
  * Creates the .agents/ directory tree, symlinks canonical VHL skills,
  * discovers assembly targets, and generates flat, namespaced Agent Cards for each assembly.
  *
  * @param rootWorktreePath - Absolute path to the project root worktree (<project_id>_root)
  * @param projectId - Project identifier
- * @param runtimeRoot - Root directory of vhl-runtime-mosaic where canonical skills reside
+ * @param runtimeRoot - Root directory of vhl-runtime-mesh where canonical skills reside
  * @param assemblies - Optional list of assembly names (e.g. ['control_circuit', 'power_circuit'])
  */
 export async function scaffoldRootCluster(
@@ -364,7 +364,7 @@ export async function scaffoldRootCluster(
 
 > **Project:** ${projectId}  
 > **Root Worktree:** ${rootWorktreePath}  
-> **Architecture:** MOSAIC Multi-Cluster Assembly Flat Cluster (Port 8000)  
+> **Architecture:** MESH Multi-Cluster Assembly Flat Cluster (Port 8000)  
 > **Configured Assemblies:** ${resolvedAssemblies.join(", ")}  
 
 ---

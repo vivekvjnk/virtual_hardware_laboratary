@@ -1,9 +1,3 @@
-export interface VapContext {
-    circuit_name: string;
-    results_dir: string;
-    datetime: string;
-}
-
 export interface RuntimeSender {
     send(msg: any): void;
     sendError(type: string, message: string): void;
